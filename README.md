@@ -24,7 +24,7 @@ Python 版本：当前工作区 `.venv` 使用本机 Python 3.14。
 ## AkShare Research Data Collection
 
 Collect one year of daily data for 30 STAR Market stocks selected by current
-turnover, plus Luxshare Precision (`sz002475`) as an extra observation symbol:
+turnover:
 
 ```bash
 PYTHONPATH=src python scripts/collect_akshare_research_daily.py --limit 30

@@ -26,7 +26,7 @@ def main() -> int:
     import pandas as pd
 
     date_range = one_year_akshare_date_range()
-    estimate = estimate_daily_collection_size(symbol_count=args.limit + 1)
+    estimate = estimate_daily_collection_size(symbol_count=args.limit)
 
     raw_dir = Path(args.raw_dir)
     processed_dir = Path(args.processed_dir)
@@ -38,22 +38,14 @@ def main() -> int:
         spot_df.to_dict("records"),
         star_limit=args.limit,
     )
-    if len(universe) < args.limit + 1:
+    if len(universe) < args.limit:
         raise RuntimeError(f"Only found {len(universe)} STAR Market symbols.")
 
     frames = []
     start_iso = akshare_date_to_iso(date_range.start)
     end_iso = akshare_date_to_iso(date_range.end)
     for candidate in universe:
-        if candidate.symbol.startswith("sh688") or candidate.symbol.startswith("sh689"):
-            history = ak.stock_zh_kcb_daily(symbol=candidate.symbol, adjust=args.adjust)
-        else:
-            history = ak.stock_zh_a_daily(
-                symbol=candidate.symbol,
-                start_date=date_range.start,
-                end_date=date_range.end,
-                adjust=args.adjust,
-            )
+        history = ak.stock_zh_kcb_daily(symbol=candidate.symbol, adjust=args.adjust)
         history["_date"] = history["date"].map(date_value_to_iso)
         history = history[(history["_date"] >= start_iso) & (history["_date"] <= end_iso)].copy()
         history = history.drop(columns=["_date"])

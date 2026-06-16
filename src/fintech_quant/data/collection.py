@@ -6,9 +6,6 @@ from typing import Any, Mapping, Sequence
 
 
 STAR_MARKET_PREFIXES = ("688", "689")
-DEFAULT_EXTRA_SYMBOLS = (
-    ("sz002475", "立讯精密"),
-)
 
 
 @dataclass(frozen=True)
@@ -95,15 +92,8 @@ def select_star_market_universe(
 def build_research_universe(
     records: Sequence[Mapping[str, Any]],
     star_limit: int = 30,
-    extra_symbols: Sequence[tuple[str, str]] = DEFAULT_EXTRA_SYMBOLS,
 ) -> list[StockCandidate]:
-    universe = select_star_market_universe(records, limit=star_limit)
-    seen = {item.symbol for item in universe}
-    for symbol, name in extra_symbols:
-        if symbol not in seen:
-            universe.append(StockCandidate(symbol=symbol, name=name, turnover=0.0))
-            seen.add(symbol)
-    return universe
+    return select_star_market_universe(records, limit=star_limit)
 
 
 def _is_star_market_symbol(symbol: str) -> bool:

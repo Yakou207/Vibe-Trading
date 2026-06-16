@@ -1,14 +1,14 @@
 # Data Quality Review
 
 Generated after collecting one year of AkShare daily data for 30 STAR Market
-stocks plus Luxshare Precision (`sz002475`).
+stocks.
 
 ## Dataset Grain
 
 - Source file: `data/processed/akshare_research_daily.csv`
 - Intended grain: one row per `代码` and trading `date`
-- Current symbol count: 31
-- Current row count: 7,091
+- Current symbol count: 30
+- Current row count: 6,848
 - Date range: 2025-06-16 to 2026-06-16
 
 ## Checks Performed
@@ -30,10 +30,6 @@ stocks plus Luxshare Precision (`sz002475`).
 - Two STAR Market symbols have short history because they listed in 2026:
   `sh688808` starts on 2026-04-24 and `sh688820` starts on 2026-04-21. This is
   expected history coverage, not a failed download.
-- `sz002475` currently ends on 2026-06-15 in AkShare's Sina daily endpoint,
-  while the STAR Market Sina endpoint includes 2026-06-16 rows. Treat Luxshare
-  as one trading day stale until a second AkShare endpoint or a later refresh
-  confirms 2026-06-16.
 - High prices for `sh688808`, `sh688498`, and `sh688256` are not local
   processing artifacts. AkShare historical rows, AkShare/Sina spot rows, and
   Yahoo Finance samples agree on the same order of magnitude for recent closes.
@@ -45,6 +41,6 @@ stocks plus Luxshare Precision (`sz002475`).
 
 - Use the dataset for early feature engineering and baseline strategy work.
 - Do not yet use it for production-grade model training without adding a
-  refresh/freshness gate and a source reconciliation step for non-STAR symbols.
+  refresh/freshness gate and a source reconciliation step.
 - Keep `outputs/data_quality_report.json` as the latest machine-readable audit
   output after each collection run.

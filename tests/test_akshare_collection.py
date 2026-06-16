@@ -30,9 +30,8 @@ class AkShareCollectionTest(unittest.TestCase):
 
         research_universe = build_research_universe(records, star_limit=30)
 
-        self.assertEqual(len(research_universe), 31)
-        self.assertEqual(research_universe[-1].symbol, "sz002475")
-        self.assertEqual(research_universe[-1].name, "立讯精密")
+        self.assertEqual(len(research_universe), 30)
+        self.assertNotIn("sz002475", {item.symbol for item in research_universe})
 
     def test_one_year_date_range_uses_akshare_format(self) -> None:
         from fintech_quant.data.collection import one_year_akshare_date_range
