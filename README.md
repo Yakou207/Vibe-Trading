@@ -21,20 +21,26 @@ python -m unittest discover -s tests
 
 Python 版本：当前工作区 `.venv` 使用本机 Python 3.14。
 
-## AkShare STAR Market Data Collection
+## AkShare Research Data Collection
 
 Collect one year of daily data for 30 STAR Market stocks selected by current
-turnover:
+turnover, plus Luxshare Precision (`sz002475`) as an extra observation symbol:
 
 ```bash
-PYTHONPATH=src python scripts/collect_akshare_star_daily.py --limit 30
+PYTHONPATH=src python scripts/collect_akshare_research_daily.py --limit 30
 ```
 
 Outputs:
 
 - `data/raw/akshare/daily/`: one raw CSV per symbol.
-- `data/processed/akshare_star_30_universe.csv`: selected stock universe.
-- `data/processed/akshare_star_30_daily.csv`: combined daily price table.
+- `data/processed/akshare_research_universe.csv`: selected stock universe.
+- `data/processed/akshare_research_daily.csv`: combined daily price table.
+
+Run a local quality audit:
+
+```bash
+PYTHONPATH=src python scripts/audit_local_daily_data.py
+```
 
 ## Project Layout
 

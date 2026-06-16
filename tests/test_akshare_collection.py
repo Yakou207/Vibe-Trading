@@ -6,7 +6,7 @@ from datetime import date
 
 class AkShareCollectionTest(unittest.TestCase):
     def test_selects_30_star_market_symbols_by_turnover(self) -> None:
-        from fintech_quant.data.collection import select_star_market_universe
+        from fintech_quant.data.collection import build_research_universe, select_star_market_universe
 
         records = [
             {"代码": "600000", "名称": "Not STAR", "成交额": 999_000_000},
@@ -27,6 +27,12 @@ class AkShareCollectionTest(unittest.TestCase):
         self.assertEqual(universe[0].symbol, "688031")
         self.assertEqual(universe[-1].symbol, "688002")
         self.assertTrue(all(item.symbol.startswith("688") for item in universe))
+
+        research_universe = build_research_universe(records, star_limit=30)
+
+        self.assertEqual(len(research_universe), 31)
+        self.assertEqual(research_universe[-1].symbol, "sz002475")
+        self.assertEqual(research_universe[-1].name, "立讯精密")
 
     def test_one_year_date_range_uses_akshare_format(self) -> None:
         from fintech_quant.data.collection import one_year_akshare_date_range
