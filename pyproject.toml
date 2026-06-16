@@ -1,0 +1,33 @@
+[project]
+name = "fintech-quant-agent"
+version = "0.1.0"
+description = "A research-first A-share quantitative trading system with RL buy/sell/hold strategy support."
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+data = [
+    "akshare",
+    "finnhub-python",
+    "yfinance",
+]
+research = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+]
+rl = [
+    "gymnasium",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
