@@ -42,6 +42,18 @@ Run a local quality audit:
 PYTHONPATH=src python scripts/audit_local_daily_data.py
 ```
 
+Build daily indicator features:
+
+```bash
+PYTHONPATH=src python scripts/build_daily_features.py
+```
+
+Run the current buy-and-hold walk-forward baseline:
+
+```bash
+PYTHONPATH=src python scripts/run_walk_forward_baseline.py
+```
+
 ## Project Layout
 
 ```text
