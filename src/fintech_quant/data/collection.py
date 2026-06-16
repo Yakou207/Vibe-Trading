@@ -28,13 +28,20 @@ class DataSizeEstimate:
     runtime_megabytes: float
 
 
-def one_year_akshare_date_range(today: date | None = None) -> AkShareDateRange:
+def historical_akshare_date_range(years: int = 5, today: date | None = None) -> AkShareDateRange:
     end = today or date.today()
-    start = end - timedelta(days=365)
+    try:
+        start = end.replace(year=end.year - years)
+    except ValueError:
+        start = end.replace(year=end.year - years, day=28)
     return AkShareDateRange(
         start=start.strftime("%Y%m%d"),
         end=end.strftime("%Y%m%d"),
     )
+
+
+def one_year_akshare_date_range(today: date | None = None) -> AkShareDateRange:
+    return historical_akshare_date_range(years=1, today=today)
 
 
 def akshare_date_to_iso(value: str) -> str:
@@ -56,11 +63,12 @@ def date_value_to_iso(value: Any) -> str:
 
 def estimate_daily_collection_size(
     symbol_count: int,
-    trading_days: int = 250,
+    years: int = 5,
+    trading_days_per_year: int = 250,
     csv_bytes_per_row: int = 220,
     runtime_bytes_per_row: int = 1_200,
 ) -> DataSizeEstimate:
-    rows = symbol_count * trading_days
+    rows = symbol_count * years * trading_days_per_year
     bytes_per_megabyte = 1024 * 1024
     return DataSizeEstimate(
         rows=rows,

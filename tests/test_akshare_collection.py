@@ -33,12 +33,12 @@ class AkShareCollectionTest(unittest.TestCase):
         self.assertEqual(len(research_universe), 30)
         self.assertNotIn("sz002475", {item.symbol for item in research_universe})
 
-    def test_one_year_date_range_uses_akshare_format(self) -> None:
-        from fintech_quant.data.collection import one_year_akshare_date_range
+    def test_historical_date_range_uses_akshare_format(self) -> None:
+        from fintech_quant.data.collection import historical_akshare_date_range
 
-        date_range = one_year_akshare_date_range(today=date(2026, 6, 16))
+        date_range = historical_akshare_date_range(years=5, today=date(2026, 6, 16))
 
-        self.assertEqual(date_range.start, "20250616")
+        self.assertEqual(date_range.start, "20210616")
         self.assertEqual(date_range.end, "20260616")
 
     def test_accepts_sina_prefixed_star_market_symbols(self) -> None:
@@ -60,14 +60,14 @@ class AkShareCollectionTest(unittest.TestCase):
         self.assertEqual(akshare_date_to_iso("20250616"), "2025-06-16")
         self.assertEqual(date_value_to_iso(date(2026, 6, 16)), "2026-06-16")
 
-    def test_estimates_30_symbol_daily_collection_as_small_local_files(self) -> None:
+    def test_estimates_30_symbol_five_year_daily_collection_as_small_local_files(self) -> None:
         from fintech_quant.data.collection import estimate_daily_collection_size
 
-        estimate = estimate_daily_collection_size(symbol_count=30, trading_days=250)
+        estimate = estimate_daily_collection_size(symbol_count=30, years=5)
 
-        self.assertEqual(estimate.rows, 7500)
-        self.assertLess(estimate.csv_megabytes, 5.0)
-        self.assertLess(estimate.runtime_megabytes, 20.0)
+        self.assertEqual(estimate.rows, 37500)
+        self.assertLess(estimate.csv_megabytes, 10.0)
+        self.assertLess(estimate.runtime_megabytes, 50.0)
 
 
 if __name__ == "__main__":

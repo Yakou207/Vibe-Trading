@@ -8,15 +8,16 @@ from fintech_quant.data.collection import (
     build_research_universe,
     date_value_to_iso,
     estimate_daily_collection_size,
-    one_year_akshare_date_range,
+    historical_akshare_date_range,
 )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Collect one year of daily AkShare data for the research universe."
+        description="Collect five years of daily AkShare data for the research universe."
     )
     parser.add_argument("--limit", type=int, default=30)
+    parser.add_argument("--years", type=int, default=5)
     parser.add_argument("--adjust", default="qfq", choices=["", "qfq", "hfq"])
     parser.add_argument("--raw-dir", default="data/raw/akshare/daily")
     parser.add_argument("--processed-dir", default="data/processed")
@@ -25,8 +26,8 @@ def main() -> int:
     import akshare as ak
     import pandas as pd
 
-    date_range = one_year_akshare_date_range()
-    estimate = estimate_daily_collection_size(symbol_count=args.limit)
+    date_range = historical_akshare_date_range(years=args.years)
+    estimate = estimate_daily_collection_size(symbol_count=args.limit, years=args.years)
 
     raw_dir = Path(args.raw_dir)
     processed_dir = Path(args.processed_dir)

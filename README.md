@@ -23,11 +23,11 @@ Python 版本：当前工作区 `.venv` 使用本机 Python 3.14。
 
 ## AkShare Research Data Collection
 
-Collect one year of daily data for 30 STAR Market stocks selected by current
+Collect five years of daily data for 30 STAR Market stocks selected by current
 turnover:
 
 ```bash
-PYTHONPATH=src python scripts/collect_akshare_research_daily.py --limit 30
+PYTHONPATH=src python scripts/collect_akshare_research_daily.py --limit 30 --years 5
 ```
 
 Outputs:

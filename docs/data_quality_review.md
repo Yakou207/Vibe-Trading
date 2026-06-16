@@ -1,6 +1,6 @@
 # Data Quality Review
 
-Generated after collecting one year of AkShare daily data for 30 STAR Market
+Generated after collecting five years of AkShare daily data for 30 STAR Market
 stocks.
 
 ## Dataset Grain
@@ -8,8 +8,8 @@ stocks.
 - Source file: `data/processed/akshare_research_daily.csv`
 - Intended grain: one row per `代码` and trading `date`
 - Current symbol count: 30
-- Current row count: 6,848
-- Date range: 2025-06-16 to 2026-06-16
+- Current row count: 29,334
+- Date range: 2021-06-16 to 2026-06-16
 
 ## Checks Performed
 
