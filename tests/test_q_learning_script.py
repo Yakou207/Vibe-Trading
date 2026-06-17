@@ -23,7 +23,10 @@ class QLearningScriptTest(unittest.TestCase):
                     {
                         "代码": "sh688001",
                         "date": date.date().isoformat(),
+                        "open": close,
                         "close": close,
+                        "volume": 1000,
+                        "return_1d": 0.01,
                         "rsi_14": 80.0,
                         "macd_hist": 0.2,
                         "return_5d": 0.1,

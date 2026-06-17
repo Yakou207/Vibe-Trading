@@ -20,7 +20,10 @@ class BacktestBaselineScriptTest(unittest.TestCase):
                 {
                     "代码": ["sh688001", "sh688002", "sh688001", "sh688002"],
                     "date": ["2024-01-02", "2024-01-02", "2024-01-03", "2024-01-03"],
+                    "open": [10.0, 20.0, 10.5, 19.5],
                     "close": [10.0, 20.0, 11.0, 19.0],
+                    "volume": [1000, 1000, 1000, 1000],
+                    "return_1d": [0.0, 0.0, 0.1, -0.05],
                 }
             ).to_csv(features_csv, index=False)
 
@@ -56,7 +59,7 @@ class BacktestBaselineScriptTest(unittest.TestCase):
             payload = json.loads(output_json.read_text(encoding="utf-8"))
             self.assertEqual(payload["strategy"], "equal_weight_buy_and_hold")
             self.assertEqual(payload["metrics"]["trade_count"], 2)
-            self.assertEqual(payload["metrics"]["final_equity"], 10200.0)
+            self.assertEqual(payload["metrics"]["final_equity"], 10100.0)
             self.assertEqual(len(payload["equity_curve"]), 2)
 
 

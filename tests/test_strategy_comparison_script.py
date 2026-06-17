@@ -23,7 +23,10 @@ class StrategyComparisonScriptTest(unittest.TestCase):
                     {
                         "代码": "sh688001",
                         "date": date.date().isoformat(),
+                        "open": 10.0 + index,
                         "close": 10.0 + index,
+                        "volume": 1000,
+                        "return_1d": 0.01,
                         "rsi_14": 45.0,
                         "macd_hist": 0.2,
                         "return_5d": 0.1,
