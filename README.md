@@ -82,6 +82,12 @@ hold-only, buy-and-hold, RSI/MACD, and Q-learning:
 PYTHONPATH=src python scripts/run_strategy_comparison_report.py
 ```
 
+Run multi-seed RL stability training from the root training folder:
+
+```bash
+PYTHONPATH=src python3 training/run_rl_stability_report.py
+```
+
 ## Project Layout
 
 ```text

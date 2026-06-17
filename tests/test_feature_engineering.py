@@ -98,6 +98,34 @@ class FeatureEngineeringTest(unittest.TestCase):
         self.assertEqual(features["close_position"].tolist(), [0.5, 0.5, 0.5])
         self.assertEqual(features["rsi_14"].tolist(), [50.0, 50.0, 50.0])
 
+    def test_daily_indicators_add_trend_factors_for_rl_state(self) -> None:
+        from fintech_quant.features.indicators import build_daily_feature_frame, feature_columns
+
+        frame = pd.DataFrame(
+            {
+                "代码": ["sh688001"] * 65,
+                "名称": ["A"] * 65,
+                "date": pd.date_range("2024-01-01", periods=65, freq="D").astype(str),
+                "open": list(range(10, 75)),
+                "high": list(range(11, 76)),
+                "low": list(range(9, 74)),
+                "close": list(range(10, 75)),
+                "volume": [100] * 65,
+                "after_volume": [0] * 65,
+                "after_amount": [0] * 65,
+                "outstanding_share": [1000] * 65,
+                "turnover": [0.1] * 65,
+            }
+        )
+
+        features = build_daily_feature_frame(frame)
+
+        for column in ("return_20d", "return_60d", "ma_20_slope", "ma_60_slope"):
+            self.assertIn(column, features.columns)
+            self.assertIn(column, feature_columns())
+        self.assertGreater(features.loc[64, "return_20d"], 0)
+        self.assertGreater(features.loc[64, "ma_20_slope"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

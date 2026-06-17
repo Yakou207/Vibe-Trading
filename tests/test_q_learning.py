@@ -22,7 +22,9 @@ class QLearningTest(unittest.TestCase):
             {
                 "rsi_14": [20.0, 50.0, 80.0],
                 "macd_hist": [-0.2, 0.0, 0.2],
-                "return_5d": [-0.10, 0.0, 0.10],
+                "return_20d": [-0.10, 0.0, 0.10],
+                "close_to_ma_20": [-0.20, 0.0, 0.20],
+                "ma_20_slope": [-0.05, 0.0, 0.05],
                 "volatility_20": [0.01, 0.02, 0.03],
             }
         )
@@ -32,13 +34,34 @@ class QLearningTest(unittest.TestCase):
             {
                 "rsi_14": 75.0,
                 "macd_hist": 0.5,
-                "return_5d": 0.2,
+                "return_20d": 0.2,
+                "close_to_ma_20": 0.2,
+                "ma_20_slope": 0.1,
                 "volatility_20": 0.04,
             },
             position_flag=1,
         )
 
-        self.assertEqual(state, ("rsi_high", "macd_positive", "return_up", "vol_high", 1))
+        self.assertEqual(
+            state,
+            ("rsi_high", "macd_positive", "trend_up", "price_above_ma", "slope_up", "vol_high", 1),
+        )
+
+    def test_drawdown_penalty_reduces_reward_after_equity_drop(self) -> None:
+        from fintech_quant.training.q_learning import training_reward
+        from fintech_quant.trading import TradeAction
+
+        penalized = training_reward(
+            action=TradeAction.HOLD,
+            position_flag=1,
+            next_position_flag=1,
+            next_return=0.01,
+            trade_penalty=0.0,
+            drawdown=0.20,
+            drawdown_penalty=0.5,
+        )
+
+        self.assertAlmostEqual(penalized, -0.09)
 
     def test_q_learning_updates_profitable_buy_action(self) -> None:
         from fintech_quant.training.q_learning import QLearningConfig, train_q_learning
@@ -52,6 +75,9 @@ class QLearningTest(unittest.TestCase):
                 "rsi_14": [75.0, 75.0, 75.0],
                 "macd_hist": [0.1, 0.1, 0.1],
                 "return_5d": [0.1, 0.1, 0.1],
+                "return_20d": [0.1, 0.1, 0.1],
+                "close_to_ma_20": [0.1, 0.1, 0.1],
+                "ma_20_slope": [0.1, 0.1, 0.1],
                 "volatility_20": [0.01, 0.01, 0.01],
                 "target_next_return_1d": [0.10, 0.09, 0.0],
             }
@@ -77,6 +103,9 @@ class QLearningTest(unittest.TestCase):
                 "rsi_14": [80.0, 80.0],
                 "macd_hist": [0.2, 0.2],
                 "return_5d": [0.2, 0.2],
+                "return_20d": [0.2, 0.2],
+                "close_to_ma_20": [0.2, 0.2],
+                "ma_20_slope": [0.2, 0.2],
                 "volatility_20": [0.01, 0.01],
                 "target_next_return_1d": [0.10, 0.0],
             }

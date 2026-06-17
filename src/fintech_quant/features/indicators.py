@@ -14,6 +14,8 @@ def build_daily_feature_frame(daily: pd.DataFrame) -> pd.DataFrame:
     groups = frame.groupby("代码", group_keys=False)
     frame["return_1d"] = groups["close"].pct_change()
     frame["return_5d"] = groups["close"].pct_change(periods=5)
+    frame["return_20d"] = groups["close"].pct_change(periods=20)
+    frame["return_60d"] = groups["close"].pct_change(periods=60)
     frame["log_return_1d"] = groups["close"].transform(lambda value: _log_return(value))
 
     for window in (5, 10, 20, 60):
@@ -21,6 +23,9 @@ def build_daily_feature_frame(daily: pd.DataFrame) -> pd.DataFrame:
             lambda value, size=window: value.rolling(size, min_periods=1).mean()
         )
         frame[f"close_to_ma_{window}"] = frame["close"] / frame[f"ma_{window}"] - 1
+
+    frame["ma_20_slope"] = groups["ma_20"].pct_change(periods=5)
+    frame["ma_60_slope"] = groups["ma_60"].pct_change(periods=5)
 
     frame["volume_ma_5"] = groups["volume"].transform(
         lambda value: value.rolling(5, min_periods=1).mean()
@@ -64,6 +69,8 @@ def feature_columns() -> list[str]:
         "turnover",
         "return_1d",
         "return_5d",
+        "return_20d",
+        "return_60d",
         "log_return_1d",
         "ma_5",
         "close_to_ma_5",
@@ -71,8 +78,10 @@ def feature_columns() -> list[str]:
         "close_to_ma_10",
         "ma_20",
         "close_to_ma_20",
+        "ma_20_slope",
         "ma_60",
         "close_to_ma_60",
+        "ma_60_slope",
         "volume_ma_5",
         "volume_ma_20",
         "volume_ratio_20",

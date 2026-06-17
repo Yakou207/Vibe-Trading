@@ -10,7 +10,7 @@ from fintech_quant.strategies.base import Strategy
 from fintech_quant.trading import TradeAction, TradeDecision
 
 
-State = tuple[str, str, str, str, int]
+State = tuple[str, str, str, str, str, str, int]
 ACTIONS = (TradeAction.HOLD, TradeAction.BUY, TradeAction.SELL)
 
 
@@ -18,14 +18,22 @@ ACTIONS = (TradeAction.HOLD, TradeAction.BUY, TradeAction.SELL)
 class StateBinner:
     return_low: float
     return_high: float
+    price_to_ma_low: float
+    price_to_ma_high: float
+    slope_low: float
+    slope_high: float
     volatility_low: float
     volatility_high: float
 
     @classmethod
     def fit(cls, frame: pd.DataFrame) -> StateBinner:
         return cls(
-            return_low=_quantile(frame.get("return_5d", pd.Series([0.0])), 1 / 3),
-            return_high=_quantile(frame.get("return_5d", pd.Series([0.0])), 2 / 3),
+            return_low=_quantile(frame.get("return_20d", pd.Series([0.0])), 1 / 3),
+            return_high=_quantile(frame.get("return_20d", pd.Series([0.0])), 2 / 3),
+            price_to_ma_low=_quantile(frame.get("close_to_ma_20", pd.Series([0.0])), 1 / 3),
+            price_to_ma_high=_quantile(frame.get("close_to_ma_20", pd.Series([0.0])), 2 / 3),
+            slope_low=_quantile(frame.get("ma_20_slope", pd.Series([0.0])), 1 / 3),
+            slope_high=_quantile(frame.get("ma_20_slope", pd.Series([0.0])), 2 / 3),
             volatility_low=_quantile(frame.get("volatility_20", pd.Series([0.0])), 1 / 3),
             volatility_high=_quantile(frame.get("volatility_20", pd.Series([0.0])), 2 / 3),
         )
@@ -35,12 +43,28 @@ class StateBinner:
             _rsi_bin(_float(row.get("rsi_14"), 50.0)),
             _macd_bin(_float(row.get("macd_hist"), 0.0)),
             _three_way_bin(
-                _float(row.get("return_5d"), 0.0),
+                _float(row.get("return_20d"), 0.0),
                 self.return_low,
                 self.return_high,
-                "return_down",
-                "return_neutral",
-                "return_up",
+                "trend_down",
+                "trend_flat",
+                "trend_up",
+            ),
+            _three_way_bin(
+                _float(row.get("close_to_ma_20"), 0.0),
+                self.price_to_ma_low,
+                self.price_to_ma_high,
+                "price_below_ma",
+                "price_near_ma",
+                "price_above_ma",
+            ),
+            _three_way_bin(
+                _float(row.get("ma_20_slope"), 0.0),
+                self.slope_low,
+                self.slope_high,
+                "slope_down",
+                "slope_flat",
+                "slope_up",
             ),
             _three_way_bin(
                 _float(row.get("volatility_20"), 0.0),
@@ -63,6 +87,7 @@ class QLearningConfig:
     min_epsilon: float = 0.05
     epsilon_decay: float = 0.95
     trade_penalty: float = 0.0005
+    drawdown_penalty: float = 0.0
     seed: int = 42
 
     def exploration_rate(self, episode: int) -> float:
@@ -95,20 +120,27 @@ def train_q_learning(frame: pd.DataFrame, config: QLearningConfig | None = None)
 
     for episode in range(config.episodes):
         exploration_rate = config.exploration_rate(episode)
-        for _symbol, symbol_rows in grouped:
+        for _symbol, rows in grouped:
             position_flag = 0
-            rows = symbol_rows.to_dict("records")
+            equity = 1.0
+            peak_equity = 1.0
             for index, row in enumerate(rows[:-1]):
                 next_row = rows[index + 1]
                 state = binner.transform_row(row, position_flag)
                 action = _choose_action(model, state, exploration_rate, rng)
                 next_position_flag = _next_position(position_flag, action)
-                reward = _training_reward(
+                next_return = _float(row.get("target_next_return_1d"), 0.0)
+                next_equity = equity * (1 + next_position_flag * next_return)
+                peak_equity = max(peak_equity, next_equity)
+                drawdown = 0.0 if peak_equity == 0 else max(0.0, 1 - next_equity / peak_equity)
+                reward = training_reward(
                     action=action,
                     position_flag=position_flag,
                     next_position_flag=next_position_flag,
-                    next_return=_float(row.get("target_next_return_1d"), 0.0),
+                    next_return=next_return,
                     trade_penalty=config.trade_penalty,
+                    drawdown=drawdown,
+                    drawdown_penalty=config.drawdown_penalty,
                 )
                 next_state = binner.transform_row(next_row, next_position_flag)
                 old_q = model.q_value(state, action)
@@ -117,6 +149,7 @@ def train_q_learning(frame: pd.DataFrame, config: QLearningConfig | None = None)
                     reward + config.gamma * best_next - old_q
                 )
                 position_flag = next_position_flag
+                equity = next_equity
     return model
 
 
@@ -134,11 +167,14 @@ class QLearningStrategy(Strategy):
         return TradeDecision(action=action, confidence=confidence, reason="Q-learning table policy.")
 
 
-def _training_groups(frame: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
+def _training_groups(frame: pd.DataFrame) -> list[tuple[str, list[dict[str, object]]]]:
     training = frame.dropna(subset=["target_next_return_1d"]).copy()
     training["date"] = pd.to_datetime(training["date"]).dt.date.astype(str)
     training = training.sort_values(["代码", "date"])
-    return [(str(symbol), group.copy()) for symbol, group in training.groupby("代码", sort=True)]
+    return [
+        (str(symbol), group.to_dict("records"))
+        for symbol, group in training.groupby("代码", sort=True)
+    ]
 
 
 def _choose_action(
@@ -162,16 +198,18 @@ def _next_position(position_flag: int, action: TradeAction) -> int:
     return position_flag
 
 
-def _training_reward(
+def training_reward(
     action: TradeAction,
     position_flag: int,
     next_position_flag: int,
     next_return: float,
     trade_penalty: float,
+    drawdown: float = 0.0,
+    drawdown_penalty: float = 0.0,
 ) -> float:
     exposure = next_position_flag
     penalty = trade_penalty if action is not TradeAction.HOLD and next_position_flag != position_flag else 0.0
-    return exposure * next_return - penalty
+    return exposure * next_return - penalty - drawdown_penalty * drawdown
 
 
 def _quantile(series: pd.Series, q: float) -> float:
