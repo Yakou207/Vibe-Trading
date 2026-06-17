@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
+from fintech_quant.strategies.base import Strategy
+from fintech_quant.trading import TradeAction, TradeDecision
 from fintech_quant.training.walk_forward import WalkForwardWindow, slice_window
 
 
@@ -38,3 +41,14 @@ def evaluate_buy_and_hold(features: pd.DataFrame, window: WalkForwardWindow) -> 
         test_rows=len(test),
         test_cumulative_return=round(cumulative_return, 10),
     )
+
+
+@dataclass(frozen=True)
+class EqualWeightBuyAndHoldStrategy(Strategy):
+    name: str = "equal_weight_buy_and_hold"
+    target_weight: float = 0.1
+
+    def decide(self, state: dict[str, Any]) -> TradeDecision:
+        if int(state.get("position_quantity", 0)) > 0:
+            return TradeDecision(TradeAction.HOLD, 1.0, "Already holding this symbol.")
+        return TradeDecision(TradeAction.BUY, self.target_weight, "Buy once, then hold.")

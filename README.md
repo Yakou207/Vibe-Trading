@@ -54,6 +54,20 @@ Run the current buy-and-hold walk-forward baseline:
 PYTHONPATH=src python scripts/run_walk_forward_baseline.py
 ```
 
+Run the real daily portfolio backtest baseline with costs, lot sizing, T+1
+sellability, position limits, and drawdown risk gating:
+
+```bash
+PYTHONPATH=src python scripts/run_backtest_baseline.py
+```
+
+Run the initial Gymnasium-compatible RL environment smoke training loop with a
+deterministic random policy:
+
+```bash
+PYTHONPATH=src python scripts/train_rl_random_policy.py --episodes 10
+```
+
 ## Project Layout
 
 ```text
