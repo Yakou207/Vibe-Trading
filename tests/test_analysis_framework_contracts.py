@@ -95,6 +95,9 @@ class AnalysisFrameworkContractsTest(unittest.TestCase):
         self.assertEqual(report["report"], "factor_diagnostics")
         self.assertEqual(report["factor_count"], 2)
         self.assertIn("factor_a", report["factors"])
+        self.assertEqual(report["factors"]["factor_a"]["rank_ic"], 1.0)
+        self.assertEqual(report["factors"]["factor_b"]["rank_ic"], -1.0)
+        self.assertIn("top_abs_ic", report)
 
 
 if __name__ == "__main__":

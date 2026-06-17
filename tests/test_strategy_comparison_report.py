@@ -8,6 +8,7 @@ import pandas as pd
 class StrategyComparisonReportTest(unittest.TestCase):
     def test_comparison_report_contains_metrics_and_rl_diagnostics(self) -> None:
         from fintech_quant.reports.strategy_comparison import run_strategy_comparison_report
+        from fintech_quant.training.dqn import DQNConfig
         from fintech_quant.training.q_learning import QLearningConfig
 
         rows = []
@@ -28,6 +29,7 @@ class StrategyComparisonReportTest(unittest.TestCase):
         report = run_strategy_comparison_report(
             pd.DataFrame(rows),
             q_config=QLearningConfig(episodes=2, epsilon=0.0, seed=1),
+            dqn_config=DQNConfig(episodes=1, epsilon=0.0, batch_size=2, seed=1),
             train_years=2,
             test_years=1,
             initial_cash=10_000.0,
@@ -43,12 +45,19 @@ class StrategyComparisonReportTest(unittest.TestCase):
         window = report["windows"][0]
         self.assertEqual(
             set(window["strategies"]),
-            {"hold_only", "equal_weight_buy_and_hold", "rsi_macd_rule", "q_learning_v1"},
+            {
+                "hold_only",
+                "equal_weight_buy_and_hold",
+                "rsi_macd_rule",
+                "q_learning_v1",
+                "dqn_v1",
+            },
         )
         for metrics in window["strategies"].values():
             self.assertIn("sharpe_ratio", metrics)
             self.assertIn("total_return", metrics)
         self.assertIn("q_learning_v1_vs_equal_weight_buy_and_hold", window["excess_returns"])
+        self.assertIn("dqn_v1_vs_equal_weight_buy_and_hold", window["excess_returns"])
         diagnostics = window["rl_diagnostics"]
         self.assertGreater(diagnostics["q_state_count"], 0)
         self.assertIn("buy", diagnostics["action_counts"])
@@ -57,6 +66,10 @@ class StrategyComparisonReportTest(unittest.TestCase):
         self.assertIn("hold", diagnostics["decision_action_counts"])
         self.assertIn("top_buy_states", diagnostics)
         self.assertIn("top_sell_states", diagnostics)
+        dqn_diagnostics = window["dqn_diagnostics"]
+        self.assertIn("feature_columns", dqn_diagnostics)
+        self.assertIn("decision_action_counts", dqn_diagnostics)
+        self.assertIn("hold", dqn_diagnostics["decision_action_counts"])
 
 
 if __name__ == "__main__":

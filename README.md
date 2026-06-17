@@ -16,7 +16,7 @@
 
 ```bash
 source .venv/bin/activate
-python -m unittest discover -s tests
+PYTHONPATH=src .venv/bin/python -m unittest discover -s tests
 ```
 
 Python 版本：当前工作区 `.venv` 使用本机 Python 3.14。
@@ -76,10 +76,23 @@ PYTHONPATH=src python scripts/run_walk_forward_q_learning.py
 ```
 
 Run the strategy comparison and RL diagnostics report with Sharpe ratio,
-hold-only, buy-and-hold, RSI/MACD, and Q-learning:
+hold-only, buy-and-hold, RSI/MACD, Q-learning, and PyTorch DQN:
 
 ```bash
 PYTHONPATH=src python scripts/run_strategy_comparison_report.py
+```
+
+Run the factor diagnostics report:
+
+```bash
+PYTHONPATH=src python scripts/run_factor_diagnostics_report.py
+```
+
+Build the local research dashboard from the strategy, factor, and data quality
+reports:
+
+```bash
+PYTHONPATH=src python scripts/build_research_dashboard.py
 ```
 
 Run multi-seed RL stability training from the root training folder:

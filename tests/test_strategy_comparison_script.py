@@ -43,7 +43,13 @@ class StrategyComparisonScriptTest(unittest.TestCase):
                     str(output_json),
                     "--episodes",
                     "2",
+                    "--dqn-episodes",
+                    "1",
+                    "--dqn-batch-size",
+                    "2",
                     "--epsilon",
+                    "0",
+                    "--dqn-epsilon",
                     "0",
                     "--train-years",
                     "2",
@@ -73,6 +79,8 @@ class StrategyComparisonScriptTest(unittest.TestCase):
             payload = json.loads(output_json.read_text(encoding="utf-8"))
             self.assertEqual(payload["report"], "strategy_comparison_diagnostics")
             self.assertEqual(len(payload["windows"]), 1)
+            self.assertIn("dqn", payload)
+            self.assertIn("dqn_v1", payload["windows"][0]["strategies"])
 
 
 if __name__ == "__main__":
