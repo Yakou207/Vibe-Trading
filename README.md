@@ -88,6 +88,27 @@ Run multi-seed RL stability training from the root training folder:
 PYTHONPATH=src python3 training/run_rl_stability_report.py
 ```
 
+## Analysis Framework
+
+The project now reserves structured module boundaries for non-price analysis:
+
+```text
+src/fintech_quant/data/
+  fundamental_provider.py   基本面数据记录与标准表结构
+  news_provider.py          新闻/NLP 原始记录与标准表结构
+src/fintech_quant/features/
+  fundamental.py            基本面因子入口
+  nlp.py                    新闻关注度因子入口
+  sentiment.py              情绪因子入口
+  factor_diagnostics.py     IC / Rank IC / coverage 因子诊断
+src/fintech_quant/reports/
+  factor_report.py          因子诊断报告 payload
+```
+
+These modules are intentionally lightweight contracts first. Real AkShare
+fundamental data, news sources, and NLP sentiment models can plug into these
+boundaries without changing the RL or backtest interfaces.
+
 ## Project Layout
 
 ```text
