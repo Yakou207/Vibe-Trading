@@ -12,7 +12,7 @@ class StrategyComparisonReportTest(unittest.TestCase):
         from fintech_quant.training.q_learning import QLearningConfig
 
         rows = []
-        for date in pd.date_range("2020-01-01", "2023-12-31", freq="90D"):
+        for date in pd.date_range("2020-01-01", "2024-12-31", freq="90D"):
             index = len(rows)
             rows.append(
                 {
@@ -41,8 +41,15 @@ class StrategyComparisonReportTest(unittest.TestCase):
         )
 
         self.assertEqual(report["report"], "strategy_comparison_diagnostics")
-        self.assertEqual(len(report["windows"]), 1)
+        self.assertIn("validation_modes", report)
+        self.assertEqual(set(report["validation_modes"]), {"rolling", "expanding"})
+        self.assertEqual(len(report["windows"]), len(report["validation_modes"]["rolling"]))
+        self.assertGreaterEqual(len(report["validation_modes"]["rolling"]), 1)
+        self.assertGreaterEqual(len(report["validation_modes"]["expanding"]), 1)
+        self.assertIn("look_ahead_bias_controls", report["validation"])
         window = report["windows"][0]
+        self.assertEqual(window["validation_mode"], "rolling")
+        self.assertLess(window["train_end"], window["test_start"])
         self.assertEqual(
             set(window["strategies"]),
             {
@@ -68,8 +75,21 @@ class StrategyComparisonReportTest(unittest.TestCase):
         self.assertIn("top_sell_states", diagnostics)
         dqn_diagnostics = window["dqn_diagnostics"]
         self.assertIn("feature_columns", dqn_diagnostics)
+        self.assertNotIn("target_next_return_1d", dqn_diagnostics["feature_columns"])
+        self.assertNotIn("target_action", dqn_diagnostics["feature_columns"])
+        self.assertEqual(dqn_diagnostics["scaler_fit_start"], window["train_start"])
+        self.assertEqual(dqn_diagnostics["scaler_fit_end"], window["train_end"])
+        self.assertEqual(dqn_diagnostics["scaler_fit_rows"], window["train_rows"])
         self.assertIn("decision_action_counts", dqn_diagnostics)
         self.assertIn("hold", dqn_diagnostics["decision_action_counts"])
+
+        expanding_window = report["validation_modes"]["expanding"][0]
+        self.assertEqual(expanding_window["validation_mode"], "expanding")
+        self.assertLess(expanding_window["train_end"], expanding_window["test_start"])
+        self.assertEqual(
+            expanding_window["dqn_diagnostics"]["scaler_fit_end"],
+            expanding_window["train_end"],
+        )
 
 
 if __name__ == "__main__":

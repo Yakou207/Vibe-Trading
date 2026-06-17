@@ -20,7 +20,29 @@ class ResearchDashboardTest(unittest.TestCase):
                 json.dumps(
                     {
                         "report": "strategy_comparison_diagnostics",
+                        "validation": {
+                            "look_ahead_bias_controls": [
+                                "DQN scaler is fit only on each in-sample train window.",
+                                "Out-of-sample rows are used only for backtesting.",
+                            ]
+                        },
                         "dqn": {"episodes": 1, "epsilon": 0.2},
+                        "validation_modes": {
+                            "rolling": [
+                                {
+                                    "window_name": "rolling_1",
+                                    "strategies": {},
+                                    "dqn_diagnostics": {},
+                                }
+                            ],
+                            "expanding": [
+                                {
+                                    "window_name": "expanding_1",
+                                    "strategies": {},
+                                    "dqn_diagnostics": {},
+                                }
+                            ],
+                        },
                         "windows": [
                             {
                                 "window_name": "rolling_1",
@@ -110,6 +132,9 @@ class ResearchDashboardTest(unittest.TestCase):
             self.assertEqual(completed.returncode, 0, completed.stderr)
             html = output_html.read_text(encoding="utf-8")
             self.assertIn("Strategy Comparison", html)
+            self.assertIn("Validation Modes", html)
+            self.assertIn("rolling", html)
+            self.assertIn("expanding", html)
             self.assertIn("DQN", html)
             self.assertIn("Factor Diagnostics", html)
             self.assertIn("rsi_14", html)

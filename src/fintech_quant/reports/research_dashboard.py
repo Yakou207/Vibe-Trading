@@ -28,6 +28,7 @@ def render_research_dashboard(
             "<h1>Quant Research Dashboard</h1>",
             '<p class="subtitle">A-share daily research view combining factor diagnostics and RL strategy outcomes.</p>',
             _coverage_section(data_quality_report, factor_report, strategy_report),
+            _validation_section(strategy_report),
             _strategy_section(latest_window),
             _dqn_section(strategy_report, latest_window),
             _factor_section(factor_report),
@@ -79,6 +80,26 @@ def _strategy_section(window: dict[str, Any]) -> str:
     <thead><tr><th>Strategy</th><th>Total Return</th><th>Sharpe</th><th>Max Drawdown</th><th>Trades</th></tr></thead>
     <tbody>{''.join(rows)}</tbody>
   </table>
+</section>
+"""
+
+
+def _validation_section(strategy_report: dict[str, Any]) -> str:
+    validation_modes = strategy_report.get("validation_modes", {})
+    mode_cards = [
+        (mode, f"{len(windows)} windows")
+        for mode, windows in validation_modes.items()
+    ]
+    controls = strategy_report.get("validation", {}).get("look_ahead_bias_controls", [])
+    controls_html = "".join(f"<li>{escape(str(control))}</li>" for control in controls)
+    if not controls_html:
+        controls_html = "<li>No explicit look-ahead controls recorded.</li>"
+    return f"""
+<section>
+  <h2>Validation Modes</h2>
+  <div class="cards">{''.join(_card(str(mode), value) for mode, value in mode_cards)}</div>
+  <h3>Look-ahead Controls</h3>
+  <ul>{controls_html}</ul>
 </section>
 """
 

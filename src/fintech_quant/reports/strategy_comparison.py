@@ -12,7 +12,8 @@ from fintech_quant.strategies.rule_based import RsiMacdRuleStrategy
 from fintech_quant.training.dqn import DQNConfig, DQNModel, DQNStrategy, train_dqn
 from fintech_quant.training.q_learning import QLearningConfig, QLearningModel, QLearningStrategy
 from fintech_quant.training.q_learning import train_q_learning
-from fintech_quant.training.walk_forward import rolling_windows, slice_window
+from fintech_quant.training.walk_forward import expanding_windows, rolling_windows, slice_window
+from fintech_quant.training.walk_forward import WalkForwardWindow
 from fintech_quant.trading import TradeAction
 
 
@@ -40,7 +41,58 @@ def run_strategy_comparison_report(
         stamp_tax_rate=stamp_tax_rate,
         slippage_rate=slippage_rate,
     )
-    windows = rolling_windows(pd.to_datetime(features["date"]), train_years, test_years)
+    dates = pd.to_datetime(features["date"])
+    rolling_payload = _run_validation_windows(
+        features=features,
+        windows=rolling_windows(dates, train_years, test_years),
+        validation_mode="rolling",
+        q_config=q_config,
+        dqn_config=dqn_config,
+        backtest_config=backtest_config,
+        target_weight=target_weight,
+    )
+    expanding_payload = _run_validation_windows(
+        features=features,
+        windows=expanding_windows(dates, train_years, test_years),
+        validation_mode="expanding",
+        q_config=q_config,
+        dqn_config=dqn_config,
+        backtest_config=backtest_config,
+        target_weight=target_weight,
+    )
+    return {
+        "report": "strategy_comparison_diagnostics",
+        "validation": {
+            "mode": "rolling_and_expanding_walk_forward",
+            "train_years": train_years,
+            "test_years": test_years,
+            "look_ahead_bias_controls": [
+                "Each walk-forward window slices train and test rows by date before model training.",
+                "DQN scaler and network are fit only on the in-sample train rows for that window.",
+                "DQN recomputes next-return labels inside each train window so labels cannot cross into out-of-sample rows.",
+                "Out-of-sample rows are used only for backtesting and diagnostics after training.",
+                "DQN feature columns exclude target_next_return_1d and target_action.",
+            ],
+        },
+        "q_learning": asdict(q_config),
+        "dqn": asdict(dqn_config),
+        "windows": rolling_payload,
+        "validation_modes": {
+            "rolling": rolling_payload,
+            "expanding": expanding_payload,
+        },
+    }
+
+
+def _run_validation_windows(
+    features: pd.DataFrame,
+    windows: list[WalkForwardWindow],
+    validation_mode: str,
+    q_config: QLearningConfig,
+    dqn_config: DQNConfig,
+    backtest_config: BacktestConfig,
+    target_weight: float,
+) -> list[dict[str, object]]:
     payload_windows: list[dict[str, object]] = []
     for window in windows:
         train, test = slice_window(features, window)
@@ -64,6 +116,7 @@ def run_strategy_comparison_report(
         payload_windows.append(
             {
                 "window_name": window.name,
+                "validation_mode": validation_mode,
                 "train_start": window.train_start.isoformat(),
                 "train_end": window.train_end.isoformat(),
                 "test_start": window.test_start.isoformat(),
@@ -90,24 +143,13 @@ def run_strategy_comparison_report(
                     results["dqn_v1"],
                     test,
                     target_weight,
+                    train_start=window.train_start.isoformat(),
+                    train_end=window.train_end.isoformat(),
+                    train_rows=len(train),
                 ),
             }
         )
-    return {
-        "report": "strategy_comparison_diagnostics",
-        "validation": {
-            "mode": "rolling_walk_forward",
-            "train_years": train_years,
-            "test_years": test_years,
-            "look_ahead_bias_control": (
-                "Q-learning is trained only on train rows; all strategies are "
-                "backtested on the same held-out test rows."
-            ),
-        },
-        "q_learning": asdict(q_config),
-        "dqn": asdict(dqn_config),
-        "windows": payload_windows,
-    }
+    return payload_windows
 
 
 def q_learning_diagnostics(
@@ -135,12 +177,18 @@ def dqn_diagnostics(
     backtest_result: object,
     test: pd.DataFrame,
     target_weight: float,
+    train_start: str | None = None,
+    train_end: str | None = None,
+    train_rows: int | None = None,
 ) -> dict[str, object]:
     action_counts = Counter(trade.action.value for trade in backtest_result.trades)
     for action in TradeAction:
         action_counts.setdefault(action.value, 0)
     return {
         **model.diagnostics(),
+        "scaler_fit_start": train_start,
+        "scaler_fit_end": train_end,
+        "scaler_fit_rows": train_rows if train_rows is not None else model.scaler_fit_rows,
         "trade_count": len(backtest_result.trades),
         "action_counts": dict(sorted(action_counts.items())),
         "decision_action_counts": _dqn_decision_action_counts(model, test, target_weight),

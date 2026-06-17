@@ -97,6 +97,7 @@ class DQNModel:
     scaler: FeatureScaler
     config: DQNConfig
     training_steps: int
+    scaler_fit_rows: int
 
     def q_values(self, row: Mapping[str, object], position_flag: int) -> list[float]:
         self.network.eval()
@@ -118,6 +119,7 @@ class DQNModel:
             "config": asdict(self.config),
             "feature_columns": list(self.scaler.columns),
             "training_steps": self.training_steps,
+            "scaler_fit_rows": self.scaler_fit_rows,
         }
 
 
@@ -219,13 +221,19 @@ def train_dqn(frame: pd.DataFrame, config: DQNConfig | None = None) -> DQNModel:
         scaler=scaler,
         config=config,
         training_steps=training_steps,
+        scaler_fit_rows=len(frame),
     )
 
 
 def _training_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    training = frame.dropna(subset=["target_next_return_1d"]).copy()
+    training = frame.copy()
     training["date"] = pd.to_datetime(training["date"]).dt.date.astype(str)
-    return training.sort_values(["代码", "date"]).reset_index(drop=True)
+    training = training.sort_values(["代码", "date"]).reset_index(drop=True)
+    # Recompute labels inside the supplied in-sample frame so the final train row
+    # for each symbol cannot inherit an out-of-sample next-day return.
+    groups = training.groupby("代码", group_keys=False)
+    training["target_next_return_1d"] = groups["close"].pct_change().groupby(training["代码"]).shift(-1)
+    return training.dropna(subset=["target_next_return_1d"]).reset_index(drop=True)
 
 
 def _training_groups(frame: pd.DataFrame) -> list[tuple[str, list[dict[str, object]]]]:
