@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import unittest
+
+import pandas as pd
+
+
+class StrategyComparisonReportTest(unittest.TestCase):
+    def test_comparison_report_contains_metrics_and_rl_diagnostics(self) -> None:
+        from fintech_quant.reports.strategy_comparison import run_strategy_comparison_report
+        from fintech_quant.training.q_learning import QLearningConfig
+
+        rows = []
+        for date in pd.date_range("2020-01-01", "2023-12-31", freq="90D"):
+            index = len(rows)
+            rows.append(
+                {
+                    "代码": "sh688001",
+                    "date": date.date().isoformat(),
+                    "close": 10.0 + index,
+                    "rsi_14": 45.0 if index % 2 == 0 else 75.0,
+                    "macd_hist": 0.2 if index % 2 == 0 else -0.2,
+                    "return_5d": 0.1,
+                    "volatility_20": 0.01,
+                    "target_next_return_1d": 0.05,
+                }
+            )
+        report = run_strategy_comparison_report(
+            pd.DataFrame(rows),
+            q_config=QLearningConfig(episodes=2, epsilon=0.0, seed=1),
+            train_years=2,
+            test_years=1,
+            initial_cash=10_000.0,
+            target_weight=0.5,
+            max_position_weight=0.6,
+            commission_rate=0.0,
+            stamp_tax_rate=0.0,
+            slippage_rate=0.0,
+        )
+
+        self.assertEqual(report["report"], "strategy_comparison_diagnostics")
+        self.assertEqual(len(report["windows"]), 1)
+        window = report["windows"][0]
+        self.assertEqual(
+            set(window["strategies"]),
+            {"hold_only", "equal_weight_buy_and_hold", "rsi_macd_rule", "q_learning_v1"},
+        )
+        for metrics in window["strategies"].values():
+            self.assertIn("sharpe_ratio", metrics)
+            self.assertIn("total_return", metrics)
+        self.assertIn("q_learning_v1_vs_equal_weight_buy_and_hold", window["excess_returns"])
+        diagnostics = window["rl_diagnostics"]
+        self.assertGreater(diagnostics["q_state_count"], 0)
+        self.assertIn("buy", diagnostics["action_counts"])
+        self.assertIn("sell", diagnostics["action_counts"])
+        self.assertIn("decision_action_counts", diagnostics)
+        self.assertIn("hold", diagnostics["decision_action_counts"])
+        self.assertIn("top_buy_states", diagnostics)
+        self.assertIn("top_sell_states", diagnostics)
+
+
+if __name__ == "__main__":
+    unittest.main()

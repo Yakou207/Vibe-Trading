@@ -38,6 +38,7 @@ class BacktestingEngineTest(unittest.TestCase):
         self.assertEqual(result.metrics.end_date, "2024-01-03")
         self.assertAlmostEqual(result.metrics.final_equity, 10_200.0)
         self.assertAlmostEqual(result.metrics.total_return, 0.02)
+        self.assertIsInstance(result.metrics.sharpe_ratio, float)
 
     def test_backtest_rejects_missing_required_columns(self) -> None:
         from fintech_quant.backtesting.engine import BacktestConfig, run_daily_backtest

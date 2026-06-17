@@ -75,6 +75,13 @@ walk-forward train/test evaluation:
 PYTHONPATH=src python scripts/run_walk_forward_q_learning.py
 ```
 
+Run the strategy comparison and RL diagnostics report with Sharpe ratio,
+hold-only, buy-and-hold, RSI/MACD, and Q-learning:
+
+```bash
+PYTHONPATH=src python scripts/run_strategy_comparison_report.py
+```
+
 ## Project Layout
 
 ```text

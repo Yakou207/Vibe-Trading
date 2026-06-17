@@ -36,6 +36,7 @@ class BacktestMetrics:
     final_equity: float
     total_return: float
     annualized_return: float
+    sharpe_ratio: float
     max_drawdown: float
     trade_count: int
     buy_count: int
@@ -156,6 +157,7 @@ def _build_metrics(initial_cash: float, portfolio: Portfolio) -> BacktestMetrics
         final_equity=round(last.equity, 10),
         total_return=round(total_return, 10),
         annualized_return=round(annualized_return, 10),
+        sharpe_ratio=round(_sharpe_ratio(portfolio), 10),
         max_drawdown=round(portfolio.max_drawdown, 10),
         trade_count=len(portfolio.trades),
         buy_count=buy_count,
@@ -163,3 +165,16 @@ def _build_metrics(initial_cash: float, portfolio: Portfolio) -> BacktestMetrics
         start_date=first.date,
         end_date=last.date,
     )
+
+
+def _sharpe_ratio(portfolio: Portfolio) -> float:
+    equities = [snapshot.equity for snapshot in portfolio.snapshots]
+    if len(equities) < 2:
+        return 0.0
+    returns = pd.Series(equities).pct_change().dropna()
+    if returns.empty:
+        return 0.0
+    volatility = returns.std()
+    if volatility == 0 or pd.isna(volatility):
+        return 0.0
+    return float((returns.mean() / volatility) * (252**0.5))
