@@ -68,6 +68,13 @@ deterministic random policy:
 PYTHONPATH=src python scripts/train_rl_random_policy.py --episodes 10
 ```
 
+Run the first learnable RL v1 report with tabular Q-learning and epsilon-greedy
+walk-forward train/test evaluation:
+
+```bash
+PYTHONPATH=src python scripts/run_walk_forward_q_learning.py
+```
+
 ## Project Layout
 
 ```text
