@@ -14,6 +14,40 @@
 data providers -> feature pipeline -> strategy decision -> risk gate -> backtest/paper account -> report
 ```
 
+## Current Implemented Interfaces
+
+- `fintech_quant.data.akshare_provider.AkShareProvider` loads AkShare daily A-share
+  bars through a narrow `history(symbol, start, end)` interface and normalizes
+  fields into English OHLCV keys.
+- `fintech_quant.backtesting.metrics.calculate_equity_metrics` calculates total
+  return, annualized return, Sharpe ratio, and max drawdown from an equity curve.
+- `fintech_quant.reports.research_results.build_dashboard_model` reads the local
+  `outputs/` and `data/processed/` artifacts into one dashboard-ready model.
+- `fintech_quant.reports.dashboard` is a local Streamlit app for strategy
+  comparison, PnL/equity review, data quality, and factor diagnostics.
+
+## Dashboard Data Contract
+
+The dashboard intentionally consumes stable local artifacts instead of ad hoc
+notebook state:
+
+```text
+outputs/strategy_comparison_report.json  strategy/window metrics
+outputs/baseline_backtest.json           baseline metrics and equity_curve
+outputs/data_quality_report.json         source freshness and quality checks
+outputs/factor_diagnostics_report.json   factor IC/rank IC diagnostics
+data/processed/akshare_research_features.csv feature coverage summary
+```
+
+Future backtests should export one result bundle per strategy/run with:
+
+```text
+metadata -> metrics -> equity_curve -> trades -> diagnostics
+```
+
+This is required before the dashboard can show multi-strategy PnL lines rather
+than only the current baseline equity curve.
+
 ## RL Role
 
 第一版采用单票 buy/sell/hold 决策接口：

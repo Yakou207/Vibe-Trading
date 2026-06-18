@@ -1,4 +1,6 @@
 import unittest
+import tomllib
+from pathlib import Path
 
 
 class ProjectContractsTest(unittest.TestCase):
@@ -33,6 +35,16 @@ class ProjectContractsTest(unittest.TestCase):
         self.assertEqual(decision.action, TradeAction.HOLD)
         self.assertEqual(decision.confidence, 0.0)
         self.assertIn("untrained", decision.reason.lower())
+
+    def test_project_declares_dashboard_dependencies_and_entrypoint(self) -> None:
+        pyproject = tomllib.loads(Path("pyproject.toml").read_text())
+
+        dashboard_deps = pyproject["project"]["optional-dependencies"]["dashboard"]
+        scripts = pyproject["project"]["scripts"]
+
+        self.assertIn("streamlit", dashboard_deps)
+        self.assertIn("plotly", dashboard_deps)
+        self.assertEqual(scripts["fintech-quant-dashboard"], "fintech_quant.reports.dashboard:main")
 
 
 if __name__ == "__main__":

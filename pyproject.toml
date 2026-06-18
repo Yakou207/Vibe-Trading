@@ -3,8 +3,11 @@ name = "fintech-quant-agent"
 version = "0.1.0"
 description = "A research-first A-share quantitative trading system with RL buy/sell/hold strategy support."
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 dependencies = []
+
+[project.scripts]
+fintech-quant-dashboard = "fintech_quant.reports.dashboard:main"
 
 [project.optional-dependencies]
 dev = [
@@ -20,8 +23,14 @@ research = [
     "pandas",
     "matplotlib",
 ]
+dashboard = [
+    "pandas",
+    "plotly",
+    "streamlit",
+]
 rl = [
     "gymnasium",
+    "torch",
 ]
 
 [tool.ruff]

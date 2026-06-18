@@ -15,11 +15,34 @@
 ## Local Setup
 
 ```bash
-source .venv/bin/activate
-python -m unittest discover -s tests
+python -m venv .venv
+.venv/bin/python -m pip install -e ".[data,research,dashboard,rl]"
+make check-env
+make test
 ```
 
-Python 版本：当前工作区 `.venv` 使用本机 Python 3.14。
+Python 版本：项目声明支持 Python 3.11+。当前工作区 `.venv` 使用本机 Python 3.14。
+
+## Local Dashboard
+
+Run the local research dashboard with:
+
+```bash
+make dashboard
+```
+
+The dashboard reads local research outputs from:
+
+- `outputs/strategy_comparison_report.json`
+- `outputs/baseline_backtest.json`
+- `outputs/data_quality_report.json`
+- `outputs/factor_diagnostics_report.json`
+- `data/processed/akshare_research_features.csv`
+
+The first dashboard version is a research monitoring surface, not a live brokerage
+or same-close executable trading system. It is intended to compare strategies,
+monitor return, Sharpe ratio, max drawdown, trades, baseline PnL/equity curve,
+data quality, and factor diagnostics.
 
 ## Project Layout
 
@@ -35,6 +58,15 @@ src/fintech_quant/
   execution/     模拟交易账户和未来券商接口
   reports/       回测报告、交易日志、研究记录
 ```
+
+## Current Engineering Contract
+
+- `fintech_quant.data.AkShareProvider` is the primary A-share daily data adapter.
+- `fintech_quant.backtesting.metrics.calculate_equity_metrics` owns return,
+  Sharpe ratio, and max drawdown calculation from an equity curve.
+- `fintech_quant.reports.research_results.build_dashboard_model` is the stable
+  data contract for dashboards and future reports.
+- `make test` is the supported local regression command.
 
 ## Reference Repositories Studied
 
