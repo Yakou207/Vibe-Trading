@@ -130,6 +130,16 @@ that are not committed to Git. Each record keeps:
 - `summary`
 - `risk_tags`
 
+The repository is split into two retention classes:
+
+- text financial/report records: regulatory policy, company announcements,
+  financial reports, sector events, and market sentiment text are retained for
+  the most recent 3 years only;
+- selected-universe stock data records: all normalized price, factor,
+  capital-flow, risk, and score records for stocks that enter the selected
+  research universe are retained without the 3-year pruning rule because they
+  are training material for future RL state and reward design.
+
 Initial categories:
 
 - `regulatory_policy`
