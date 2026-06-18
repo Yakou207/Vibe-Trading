@@ -11,6 +11,7 @@ class ProjectContractsTest(unittest.TestCase):
         self.assertEqual(settings.frequency, "1d")
         self.assertEqual(settings.execution_mode, "paper")
         self.assertIn("akshare", settings.data_sources)
+        self.assertIn("tushare", settings.data_sources)
         self.assertIn("yahoo", settings.data_sources)
         self.assertIn("finnhub", settings.data_sources)
 

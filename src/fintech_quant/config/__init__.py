@@ -16,5 +16,5 @@ def default_settings() -> Settings:
         market="a_share",
         frequency="1d",
         execution_mode="paper",
-        data_sources=("akshare", "yahoo", "finnhub"),
+        data_sources=("akshare", "tushare", "yahoo", "finnhub"),
     )
