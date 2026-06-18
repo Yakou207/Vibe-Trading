@@ -12,5 +12,6 @@ data/raw/
 data/processed/
 data/models/
 outputs/
+.worktrees/
 *.sqlite
 *.db
