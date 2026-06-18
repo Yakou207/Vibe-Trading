@@ -49,7 +49,7 @@ class InformationRecord:
 
     @property
     def retention_class(self) -> RetentionClass:
-        if self.category is InformationCategory.STOCK_DATA:
+        if self.category is InformationCategory.STOCK_DATA and "selected_universe" in self.risk_tags:
             return RetentionClass.SELECTED_UNIVERSE_STOCK_DATA
         return RetentionClass.TEXT_FINANCIAL_REPORT
 

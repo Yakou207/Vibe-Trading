@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import calendar
 import json
 from dataclasses import asdict
 from datetime import date
@@ -39,7 +40,8 @@ class InformationRepository:
         return sorted(records, key=lambda record: record.published_at)
 
     def prune_text_records(self, today: date) -> int:
-        cutoff = date(today.year - 3, today.month, today.day)
+        cutoff_day = min(today.day, calendar.monthrange(today.year - 3, today.month)[1])
+        cutoff = date(today.year - 3, today.month, cutoff_day)
         records = self._read_all()
         kept = [
             record
