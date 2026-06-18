@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from random import Random
 from typing import Deque, Mapping, NamedTuple
 
@@ -123,6 +123,17 @@ class DQNModel:
         }
 
 
+@dataclass
+class DQNTrainingRun:
+    model: DQNModel
+    target_network: DQNNetwork
+    optimizer_state: dict[str, object]
+    replay: Deque[Transition]
+    episodes_trained: int
+    metadata: dict[str, object] = field(default_factory=dict)
+    metrics: dict[str, object] = field(default_factory=dict)
+
+
 @dataclass(frozen=True)
 class DQNStrategy(Strategy):
     model: DQNModel
@@ -137,6 +148,14 @@ class DQNStrategy(Strategy):
 
 
 def train_dqn(frame: pd.DataFrame, config: DQNConfig | None = None) -> DQNModel:
+    return train_dqn_run(frame, config).model
+
+
+def train_dqn_run(
+    frame: pd.DataFrame,
+    config: DQNConfig | None = None,
+    initial_run: DQNTrainingRun | None = None,
+) -> DQNTrainingRun:
     config = config or DQNConfig()
     if frame.empty:
         raise ValueError("DQN training frame must not be empty.")
@@ -146,26 +165,38 @@ def train_dqn(frame: pd.DataFrame, config: DQNConfig | None = None) -> DQNModel:
 
     torch.manual_seed(config.seed)
     rng = Random(config.seed)
-    scaler = FeatureScaler.fit(training)
-    network = DQNNetwork(
-        input_size=len(scaler.columns) + 1,
-        hidden_layers=config.hidden_layers,
-        output_size=len(ACTIONS),
-    )
-    target_network = DQNNetwork(
-        input_size=len(scaler.columns) + 1,
-        hidden_layers=config.hidden_layers,
-        output_size=len(ACTIONS),
-    )
-    target_network.load_state_dict(network.state_dict())
+    if initial_run is None:
+        scaler = FeatureScaler.fit(training)
+        network = DQNNetwork(
+            input_size=len(scaler.columns) + 1,
+            hidden_layers=config.hidden_layers,
+            output_size=len(ACTIONS),
+        )
+        target_network = DQNNetwork(
+            input_size=len(scaler.columns) + 1,
+            hidden_layers=config.hidden_layers,
+            output_size=len(ACTIONS),
+        )
+        target_network.load_state_dict(network.state_dict())
+        replay: Deque[Transition] = deque(maxlen=config.replay_capacity)
+        training_steps = 0
+        episodes_trained = 0
+    else:
+        scaler = initial_run.model.scaler
+        network = initial_run.model.network
+        target_network = initial_run.target_network
+        replay = deque(initial_run.replay, maxlen=config.replay_capacity)
+        training_steps = initial_run.model.training_steps
+        episodes_trained = initial_run.episodes_trained
+
     optimizer = torch.optim.Adam(network.parameters(), lr=config.learning_rate)
+    if initial_run is not None:
+        optimizer.load_state_dict(initial_run.optimizer_state)
     loss_fn = nn.MSELoss()
-    replay: Deque[Transition] = deque(maxlen=config.replay_capacity)
-    training_steps = 0
 
     grouped = _training_groups(training)
     for episode in range(config.episodes):
-        epsilon = config.exploration_rate(episode)
+        epsilon = config.exploration_rate(episodes_trained + episode)
         for _symbol, rows in grouped:
             position_flag = 0
             equity = 1.0
@@ -216,12 +247,19 @@ def train_dqn(frame: pd.DataFrame, config: DQNConfig | None = None) -> DQNModel:
                 equity = next_equity
 
     target_network.load_state_dict(network.state_dict())
-    return DQNModel(
+    model = DQNModel(
         network=network,
         scaler=scaler,
         config=config,
         training_steps=training_steps,
         scaler_fit_rows=len(frame),
+    )
+    return DQNTrainingRun(
+        model=model,
+        target_network=target_network,
+        optimizer_state=optimizer.state_dict(),
+        replay=replay,
+        episodes_trained=episodes_trained + config.episodes,
     )
 
 

@@ -82,6 +82,18 @@ hold-only, buy-and-hold, RSI/MACD, Q-learning, and PyTorch DQN:
 PYTHONPATH=src python scripts/run_strategy_comparison_report.py
 ```
 
+Run resumable DQN continual training with local checkpoint rotation:
+
+```bash
+PYTHONPATH=src python training/run_dqn_continual_training.py --resume latest
+```
+
+Use `--fresh` for a new model run. Checkpoints are written under
+`data/models/dqn/` by default, with the latest 10 runs retained locally. The
+checkpoint includes model weights, target-network weights, optimizer state,
+replay buffer, scaler, config, training state, and metrics. `data/models/` is
+ignored by Git.
+
 Run the factor diagnostics report:
 
 ```bash
