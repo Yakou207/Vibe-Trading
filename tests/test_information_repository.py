@@ -90,7 +90,7 @@ class InformationRepositoryTest(unittest.TestCase):
             self.assertEqual(removed, 0)
             self.assertEqual(len(repo.query(symbol="000001")), 1)
 
-    def test_non_selected_stock_data_is_pruned_by_text_policy(self) -> None:
+    def test_non_selected_stock_data_is_not_pruned_by_text_policy(self) -> None:
         from fintech_quant.information import InformationCategory, InformationRecord, InformationRepository
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -110,8 +110,8 @@ class InformationRepositoryTest(unittest.TestCase):
             repo.append(old_stock_data)
             removed = repo.prune_text_records(today=date(2026, 6, 18))
 
-            self.assertEqual(removed, 1)
-            self.assertEqual(repo.query(symbol="000001"), [])
+            self.assertEqual(removed, 0)
+            self.assertEqual([record.title for record in repo.query(symbol="000001")], ["Non-selected training row"])
 
     def test_prune_text_records_handles_leap_day_cutoff(self) -> None:
         from fintech_quant.information import InformationCategory, InformationRecord, InformationRepository

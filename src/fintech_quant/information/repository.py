@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from fintech_quant.data.symbols import normalize_a_share_symbol
-from fintech_quant.information.models import InformationCategory, InformationRecord, RetentionClass
+from fintech_quant.information.models import InformationCategory, InformationRecord, TEXT_CATEGORIES
 
 
 class InformationRepository:
@@ -46,8 +46,7 @@ class InformationRepository:
         kept = [
             record
             for record in records
-            if record.retention_class is RetentionClass.SELECTED_UNIVERSE_STOCK_DATA
-            or record.published_at >= cutoff
+            if record.category not in TEXT_CATEGORIES or record.published_at >= cutoff
         ]
         removed = len(records) - len(kept)
         self._write_all(kept)
