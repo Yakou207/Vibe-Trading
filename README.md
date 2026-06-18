@@ -39,10 +39,18 @@ The dashboard reads local research outputs from:
 - `outputs/factor_diagnostics_report.json`
 - `data/processed/akshare_research_features.csv`
 
-The first dashboard version is a research monitoring surface, not a live brokerage
-or same-close executable trading system. It is intended to compare strategies,
-monitor return, Sharpe ratio, max drawdown, trades, baseline PnL/equity curve,
-data quality, and factor diagnostics.
+The dashboard is a research cockpit, not a live brokerage or same-close
+executable trading system. It is organized around a strategy decision workflow:
+
+- Overview: shortlist the strongest strategy by risk-adjusted performance.
+- PnL: inspect baseline equity and drawdown behavior.
+- Strategy Lab: inspect one strategy across walk-forward windows.
+- Factors: review factor diagnostics.
+- Data Ops: verify source paths, file availability, data freshness, and quality.
+
+The dashboard data layer is configured through `DashboardConfig` and
+`DashboardDataSource`, so future model upgrades can point at different outputs,
+frequencies, or execution modes without rewriting the Streamlit UI.
 
 ## Project Layout
 
@@ -66,6 +74,9 @@ src/fintech_quant/
   Sharpe ratio, and max drawdown calculation from an equity curve.
 - `fintech_quant.reports.research_results.build_dashboard_model` is the stable
   data contract for dashboards and future reports.
+- `fintech_quant.reports.research_results.DashboardDataSource` is the preferred
+  extensibility point for non-daily data, paper-trading feeds, and future model
+  result bundles.
 - `make test` is the supported local regression command.
 
 ## Reference Repositories Studied

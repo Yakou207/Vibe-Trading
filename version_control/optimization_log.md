@@ -23,3 +23,20 @@
 - Add formal A-share execution constraints to the backtest engine: T+1, lot size,
   suspension, limit-up/limit-down, fees, tax, and slippage.
 - Keep walk-forward training and testing separation mandatory for future RL work.
+
+## 2026-06-18 Dashboard UX Pass
+
+### Problems Addressed
+
+- Reworked the dashboard into a research cockpit with Overview, PnL, Strategy
+  Lab, Factors, and Data Ops tabs.
+- Added an explicit reload action for local research artifacts.
+- Added a strategy recommendation helper that prioritizes risk-adjusted
+  performance instead of raw return alone.
+- Replaced deprecated Streamlit `use_container_width` calls with the current
+  `width="stretch"` API.
+- Introduced `DashboardConfig` and `DashboardDataSource` so future non-daily
+  data, paper-trading feeds, and model-versioned result bundles can plug into
+  the same dashboard UI.
+- Fixed dashboard process management during verification by replacing the stale
+  Streamlit process that was still listening on port 8501.

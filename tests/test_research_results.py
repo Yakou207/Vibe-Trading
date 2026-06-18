@@ -5,6 +5,21 @@ from pathlib import Path
 
 
 class ResearchResultsTest(unittest.TestCase):
+    def test_dashboard_config_supports_non_daily_future_sources(self) -> None:
+        from fintech_quant.reports.research_results import DashboardConfig
+
+        config = DashboardConfig(
+            market="a_share",
+            frequency="1m",
+            execution_mode="paper",
+            strategy_comparison_path=Path("custom/strategy.json"),
+            equity_curve_path=Path("custom/equity.json"),
+        )
+
+        self.assertEqual(config.frequency, "1m")
+        self.assertEqual(config.execution_mode, "paper")
+        self.assertEqual(config.strategy_comparison_path, Path("custom/strategy.json"))
+
     def test_load_strategy_comparison_flattens_validation_windows(self) -> None:
         from fintech_quant.reports.research_results import load_strategy_comparison
 
@@ -49,7 +64,7 @@ class ResearchResultsTest(unittest.TestCase):
         self.assertEqual(rows[0]["max_drawdown"], -0.08)
 
     def test_build_dashboard_model_uses_real_result_contract(self) -> None:
-        from fintech_quant.reports.research_results import build_dashboard_model
+        from fintech_quant.reports.research_results import DashboardDataSource
 
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -111,9 +126,11 @@ class ResearchResultsTest(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            model = build_dashboard_model(root)
+            model = DashboardDataSource(root).load()
 
         self.assertEqual(model["source_status"]["strategy_comparison"], "ready")
+        self.assertEqual(model["config"]["frequency"], "1d")
+        self.assertEqual(model["config"]["execution_mode"], "research")
         self.assertEqual(len(model["strategy_rows"]), 1)
         self.assertEqual(len(model["equity_curve"]), 2)
         self.assertEqual(model["data_quality"]["passes_core_checks"], True)

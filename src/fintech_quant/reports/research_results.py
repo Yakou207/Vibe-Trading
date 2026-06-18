@@ -2,50 +2,81 @@ from __future__ import annotations
 
 import csv
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from fintech_quant.backtesting.metrics import calculate_equity_metrics
 
 
+@dataclass(frozen=True)
+class DashboardConfig:
+    market: str = "a_share"
+    frequency: str = "1d"
+    execution_mode: str = "research"
+    strategy_comparison_path: Path = Path("outputs/strategy_comparison_report.json")
+    equity_curve_path: Path = Path("outputs/baseline_backtest.json")
+    data_quality_path: Path = Path("outputs/data_quality_report.json")
+    factor_diagnostics_path: Path = Path("outputs/factor_diagnostics_report.json")
+    features_path: Path = Path("data/processed/akshare_research_features.csv")
+
+
+@dataclass(frozen=True)
+class DashboardDataSource:
+    project_root: Path | str
+    config: DashboardConfig = DashboardConfig()
+
+    def load(self) -> dict[str, Any]:
+        root = Path(self.project_root)
+        strategy_path = root / self.config.strategy_comparison_path
+        baseline_path = root / self.config.equity_curve_path
+        data_quality_path = root / self.config.data_quality_path
+        factor_path = root / self.config.factor_diagnostics_path
+        features_path = root / self.config.features_path
+
+        strategy_rows = load_strategy_comparison(strategy_path) if strategy_path.exists() else []
+        baseline = _load_json(baseline_path) if baseline_path.exists() else {}
+        equity_curve = list(baseline.get("equity_curve", []))
+        data_quality = _load_json(data_quality_path) if data_quality_path.exists() else {}
+        factor_diagnostics = _load_json(factor_path) if factor_path.exists() else {}
+        feature_summary = load_feature_summary(features_path) if features_path.exists() else {}
+
+        equity_metrics = None
+        if equity_curve:
+            equity_metrics = calculate_equity_metrics(equity_curve).__dict__
+
+        return {
+            "config": {
+                "market": self.config.market,
+                "frequency": self.config.frequency,
+                "execution_mode": self.config.execution_mode,
+            },
+            "source_paths": {
+                "strategy_comparison": str(self.config.strategy_comparison_path),
+                "equity_curve": str(self.config.equity_curve_path),
+                "data_quality": str(self.config.data_quality_path),
+                "factor_diagnostics": str(self.config.factor_diagnostics_path),
+                "features": str(self.config.features_path),
+            },
+            "source_status": {
+                "strategy_comparison": _status(strategy_path),
+                "equity_curve": _status(baseline_path),
+                "data_quality": _status(data_quality_path),
+                "factor_diagnostics": _status(factor_path),
+                "features": _status(features_path),
+            },
+            "strategy_rows": strategy_rows,
+            "equity_curve": equity_curve,
+            "baseline_metrics": baseline.get("metrics", {}),
+            "equity_metrics": equity_metrics,
+            "data_quality": data_quality,
+            "factor_diagnostics": factor_diagnostics,
+            "feature_summary": feature_summary,
+        }
+
+
 def build_dashboard_model(project_root: Path | str) -> dict[str, Any]:
-    root = Path(project_root)
-    outputs_dir = root / "outputs"
-    processed_dir = root / "data" / "processed"
-
-    strategy_path = outputs_dir / "strategy_comparison_report.json"
-    baseline_path = outputs_dir / "baseline_backtest.json"
-    data_quality_path = outputs_dir / "data_quality_report.json"
-    factor_path = outputs_dir / "factor_diagnostics_report.json"
-    features_path = processed_dir / "akshare_research_features.csv"
-
-    strategy_rows = load_strategy_comparison(strategy_path) if strategy_path.exists() else []
-    baseline = _load_json(baseline_path) if baseline_path.exists() else {}
-    equity_curve = list(baseline.get("equity_curve", []))
-    data_quality = _load_json(data_quality_path) if data_quality_path.exists() else {}
-    factor_diagnostics = _load_json(factor_path) if factor_path.exists() else {}
-    feature_summary = load_feature_summary(features_path) if features_path.exists() else {}
-
-    equity_metrics = None
-    if equity_curve:
-        equity_metrics = calculate_equity_metrics(equity_curve).__dict__
-
-    return {
-        "source_status": {
-            "strategy_comparison": _status(strategy_path),
-            "baseline_backtest": _status(baseline_path),
-            "data_quality": _status(data_quality_path),
-            "factor_diagnostics": _status(factor_path),
-            "features": _status(features_path),
-        },
-        "strategy_rows": strategy_rows,
-        "equity_curve": equity_curve,
-        "baseline_metrics": baseline.get("metrics", {}),
-        "equity_metrics": equity_metrics,
-        "data_quality": data_quality,
-        "factor_diagnostics": factor_diagnostics,
-        "feature_summary": feature_summary,
-    }
+    return DashboardDataSource(project_root).load()
 
 
 def load_strategy_comparison(path: Path | str) -> list[dict[str, Any]]:
@@ -79,6 +110,8 @@ def load_strategy_comparison(path: Path | str) -> list[dict[str, Any]]:
                         "buy_count": int(metrics.get("buy_count", 0)),
                         "sell_count": int(metrics.get("sell_count", 0)),
                         "final_equity": float(metrics.get("final_equity", 0.0)),
+                        "model_version": str(metrics.get("model_version", "")),
+                        "data_frequency": str(metrics.get("data_frequency", "")),
                     }
                 )
     return rows
