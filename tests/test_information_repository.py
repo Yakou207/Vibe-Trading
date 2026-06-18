@@ -150,7 +150,7 @@ class InformationRepositoryTest(unittest.TestCase):
             self.assertEqual([record.title for record in repo.query(symbol="000001")], ["Leap cutoff boundary"])
 
     def test_fetch_information_script_runs_without_manual_pythonpath(self) -> None:
-        worktree = Path("/Users/yakou/Desktop/Vibe-Trading/.worktrees/a-share-research-system")
+        worktree = Path(__file__).resolve().parents[1]
         env = dict(os.environ)
         env.pop("PYTHONPATH", None)
         result = subprocess.run(
