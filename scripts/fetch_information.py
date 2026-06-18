@@ -24,12 +24,7 @@ def main() -> int:
 
     repository = InformationRepository(Path(args.output))
     fetcher = StaticInformationFetcher(records=[])
-    records = fetcher.fetch(
-        symbol=args.symbol,
-        sector=args.sector,
-        start=date.fromisoformat(args.start),
-        end=date.fromisoformat(args.end),
-    )
+    records = fetcher.fetch(args.symbol, args.sector, date.fromisoformat(args.start), date.fromisoformat(args.end))
     added = sum(1 for record in records if repository.append(record))
     print(f"stored_records={added}")
     return 0

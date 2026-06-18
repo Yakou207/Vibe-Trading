@@ -173,6 +173,48 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "stored_records=0")
         self.assertEqual(result.stderr, "")
 
+    def test_static_fetcher_normalizes_non_empty_symbol_filter(self) -> None:
+        from fintech_quant.information import InformationCategory, InformationRecord, StaticInformationFetcher
+
+        record = InformationRecord(
+            symbol="000001",
+            sector="banking",
+            published_at=date(2026, 1, 15),
+            source="exchange",
+            category=InformationCategory.COMPANY_ANNOUNCEMENT,
+            title="Normalized symbol match",
+            url="https://example.test/normalized",
+            summary="Matches normalized filter.",
+            risk_tags=(),
+        )
+        fetcher = StaticInformationFetcher(records=[record])
+
+        by_raw_symbol = fetcher.fetch("000001", None, date(2026, 1, 1), date(2026, 1, 31))
+        by_normalized_symbol = fetcher.fetch("000001.SZ", None, date(2026, 1, 1), date(2026, 1, 31))
+
+        self.assertEqual([item.title for item in by_raw_symbol], ["Normalized symbol match"])
+        self.assertEqual([item.title for item in by_normalized_symbol], ["Normalized symbol match"])
+
+    def test_static_fetcher_supports_positional_fetch_arguments(self) -> None:
+        from fintech_quant.information import InformationCategory, InformationRecord, StaticInformationFetcher
+
+        record = InformationRecord(
+            symbol="000001",
+            sector="banking",
+            published_at=date(2026, 1, 15),
+            source="exchange",
+            category=InformationCategory.COMPANY_ANNOUNCEMENT,
+            title="Positional fetch",
+            url="https://example.test/positional",
+            summary="Positional arguments work.",
+            risk_tags=(),
+        )
+        fetcher = StaticInformationFetcher(records=[record])
+
+        records = fetcher.fetch(None, "banking", date(2026, 1, 1), date(2026, 1, 31))
+
+        self.assertEqual([item.title for item in records], ["Positional fetch"])
+
 
 if __name__ == "__main__":
     unittest.main()
