@@ -26,7 +26,7 @@ def normalize_daily_bar(symbol: str, row: Mapping[str, object], source: str) -> 
         "high": _float_value(_first_present(row, ("high", "最高"))),
         "low": _float_value(_first_present(row, ("low", "最低"))),
         "close": _float_value(_first_present(row, ("close", "收盘"))),
-        "volume": _float_value(_first_present(row, ("volume", "成交量"))),
+        "volume": _float_value(_first_present(row, ("volume", "vol", "成交量"))),
         "amount": _float_value(_first_present(row, ("amount", "成交额"))),
         "source": source,
     }

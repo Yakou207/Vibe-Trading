@@ -10,10 +10,7 @@ class ProjectContractsTest(unittest.TestCase):
         self.assertEqual(settings.market, "a_share")
         self.assertEqual(settings.frequency, "1d")
         self.assertEqual(settings.execution_mode, "paper")
-        self.assertIn("akshare", settings.data_sources)
-        self.assertIn("tushare", settings.data_sources)
-        self.assertIn("yahoo", settings.data_sources)
-        self.assertIn("finnhub", settings.data_sources)
+        self.assertEqual(settings.data_sources, ("akshare", "tushare"))
 
     def test_trade_action_only_allows_buy_sell_hold(self) -> None:
         from fintech_quant.trading import TradeAction

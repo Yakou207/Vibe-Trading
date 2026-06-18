@@ -73,6 +73,41 @@ class DataLayerTest(unittest.TestCase):
         with self.assertRaises(MissingProviderCredential):
             provider.history("000001", date(2026, 1, 1), date(2026, 1, 2))
 
+    def test_tushare_provider_normalizes_successful_daily_rows(self) -> None:
+        from fintech_quant.data.tushare_provider import TushareProvider
+
+        def fetcher(**_: object) -> list[dict[str, object]]:
+            return [
+                {
+                    "trade_date": "20260603",
+                    "open": "10.2",
+                    "high": "10.6",
+                    "low": "10.0",
+                    "close": "10.4",
+                    "vol": "54321",
+                    "amount": "76543.2",
+                }
+            ]
+
+        provider = TushareProvider(token="token", fetcher=fetcher)
+
+        self.assertEqual(
+            provider.history("000001", date(2026, 6, 1), date(2026, 6, 3)),
+            [
+                {
+                    "symbol": "000001.SZ",
+                    "trade_date": "20260603",
+                    "open": 10.2,
+                    "high": 10.6,
+                    "low": 10.0,
+                    "close": 10.4,
+                    "volume": 54321.0,
+                    "amount": 76543.2,
+                    "source": "tushare",
+                }
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
