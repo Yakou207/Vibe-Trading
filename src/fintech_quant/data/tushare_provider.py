@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import importlib
 import os
 from collections.abc import Callable
 from datetime import date
 from typing import Any
 
 from fintech_quant.data.base import MarketDataProvider, normalize_daily_bar
-from fintech_quant.data.errors import MissingProviderCredential
+from fintech_quant.data.errors import MissingProviderCredential, MissingProviderDependency, ProviderFetchError
 from fintech_quant.data.symbols import normalize_a_share_symbol
 
 
@@ -30,13 +31,35 @@ class TushareProvider(MarketDataProvider):
 
     def _fetch(self, symbol: str, start: date, end: date) -> list[dict[str, Any]]:
         if self._fetcher is not None:
-            return list(self._fetcher(symbol=symbol, start=start, end=end, token=self._token))
-        import tushare as ts
+            return self._run_fetch(symbol, start, end, self._fetcher)
 
-        pro = ts.pro_api(self._token)
-        frame = pro.daily(
-            ts_code=symbol,
-            start_date=start.strftime("%Y%m%d"),
-            end_date=end.strftime("%Y%m%d"),
-        )
-        return frame.to_dict(orient="records")
+        try:
+            ts = importlib.import_module("tushare")
+        except ImportError as exc:
+            raise MissingProviderDependency("tushare is required for TushareProvider") from exc
+
+        return self._run_fetch(symbol, start, end, lambda **_: _load_daily_rows(ts, symbol, start, end, self._token))
+
+    def _run_fetch(
+        self,
+        symbol: str,
+        start: date,
+        end: date,
+        fetcher: Callable[..., Any],
+    ) -> list[dict[str, Any]]:
+        try:
+            return list(fetcher(symbol=symbol, start=start, end=end, token=self._token))
+        except Exception as exc:
+            raise ProviderFetchError(
+                f"tushare history fetch failed for {symbol} between {start.isoformat()} and {end.isoformat()}"
+            ) from exc
+
+
+def _load_daily_rows(ts: Any, symbol: str, start: date, end: date, token: str) -> list[dict[str, Any]]:
+    pro = ts.pro_api(token)
+    frame = pro.daily(
+        ts_code=symbol,
+        start_date=start.strftime("%Y%m%d"),
+        end_date=end.strftime("%Y%m%d"),
+    )
+    return frame.to_dict(orient="records")

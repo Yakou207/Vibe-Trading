@@ -22,15 +22,6 @@ class RetentionClass(Enum):
     SELECTED_UNIVERSE_STOCK_DATA = "selected_universe_stock_data"
 
 
-TEXT_CATEGORIES = {
-    InformationCategory.REGULATORY_POLICY,
-    InformationCategory.FINANCIAL_REPORT,
-    InformationCategory.COMPANY_ANNOUNCEMENT,
-    InformationCategory.SECTOR_EVENT,
-    InformationCategory.MARKET_SENTIMENT,
-}
-
-
 @dataclass(frozen=True)
 class InformationRecord:
     symbol: str | None
@@ -43,13 +34,17 @@ class InformationRecord:
     summary: str
     risk_tags: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if self.category is InformationCategory.STOCK_DATA and "selected_universe" not in self.risk_tags:
+            raise ValueError("STOCK_DATA records require the selected_universe risk tag")
+
     @property
     def normalized_symbol(self) -> str | None:
         return normalize_a_share_symbol(self.symbol) if self.symbol else None
 
     @property
     def retention_class(self) -> RetentionClass:
-        if self.category is InformationCategory.STOCK_DATA and "selected_universe" in self.risk_tags:
+        if self.category is InformationCategory.STOCK_DATA:
             return RetentionClass.SELECTED_UNIVERSE_STOCK_DATA
         return RetentionClass.TEXT_FINANCIAL_REPORT
 

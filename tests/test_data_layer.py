@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
+from unittest.mock import patch
 
 
 class DataLayerTest(unittest.TestCase):
@@ -46,6 +47,26 @@ class DataLayerTest(unittest.TestCase):
                 "source": "akshare",
             },
         )
+
+    def test_normalize_daily_bar_canonicalizes_trade_date_formats(self) -> None:
+        from datetime import datetime
+
+        from fintech_quant.data.base import normalize_daily_bar
+
+        cases = [
+            ("20260603", "2026-06-03"),
+            ("2026-06-03", "2026-06-03"),
+            (date(2026, 6, 3), "2026-06-03"),
+            (datetime(2026, 6, 3, 9, 30), "2026-06-03"),
+        ]
+
+        for raw_trade_date, expected in cases:
+            with self.subTest(raw_trade_date=raw_trade_date):
+                row = {"trade_date": raw_trade_date}
+                self.assertEqual(
+                    normalize_daily_bar("000001", row, "akshare")["trade_date"],
+                    expected,
+                )
 
     def test_provider_registry_auto_routes_a_share_to_akshare(self) -> None:
         from fintech_quant.data.base import MarketDataProvider
@@ -96,7 +117,7 @@ class DataLayerTest(unittest.TestCase):
             [
                 {
                     "symbol": "000001.SZ",
-                    "trade_date": "20260603",
+                    "trade_date": "2026-06-03",
                     "open": 10.2,
                     "high": 10.6,
                     "low": 10.0,
@@ -107,6 +128,29 @@ class DataLayerTest(unittest.TestCase):
                 }
             ],
         )
+
+    def test_akshare_provider_wraps_missing_dependency(self) -> None:
+        from fintech_quant.data.akshare_provider import AkShareProvider
+        from fintech_quant.data.errors import MissingProviderDependency
+
+        with patch(
+            "fintech_quant.data.akshare_provider.importlib.import_module",
+            side_effect=ImportError("No module named 'akshare'"),
+        ):
+            with self.assertRaisesRegex(MissingProviderDependency, "akshare"):
+                AkShareProvider().history("000001", date(2026, 6, 1), date(2026, 6, 3))
+
+    def test_tushare_provider_wraps_fetch_failures(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.data.tushare_provider import TushareProvider
+
+        def fetcher(**_: object) -> list[dict[str, object]]:
+            raise RuntimeError("upstream timeout")
+
+        provider = TushareProvider(token="token", fetcher=fetcher)
+
+        with self.assertRaisesRegex(ProviderFetchError, "tushare"):
+            provider.history("000001", date(2026, 6, 1), date(2026, 6, 3))
 
 
 if __name__ == "__main__":

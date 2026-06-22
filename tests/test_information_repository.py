@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from datetime import date
+import json
 from pathlib import Path
 
 
@@ -90,12 +91,11 @@ class InformationRepositoryTest(unittest.TestCase):
             self.assertEqual(removed, 0)
             self.assertEqual(len(repo.query(symbol="000001")), 1)
 
-    def test_non_selected_stock_data_is_not_pruned_by_text_policy(self) -> None:
-        from fintech_quant.information import InformationCategory, InformationRecord, InformationRepository
+    def test_stock_data_requires_selected_universe_tag(self) -> None:
+        from fintech_quant.information import InformationCategory, InformationRecord
 
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = InformationRepository(Path(tmp) / "info.jsonl")
-            old_stock_data = InformationRecord(
+        with self.assertRaisesRegex(ValueError, "selected_universe"):
+            InformationRecord(
                 symbol="000001",
                 sector=None,
                 published_at=date(2019, 1, 1),
@@ -103,15 +103,9 @@ class InformationRepositoryTest(unittest.TestCase):
                 category=InformationCategory.STOCK_DATA,
                 title="Non-selected training row",
                 url="",
-                summary="Should be pruned.",
+                summary="Should be rejected.",
                 risk_tags=(),
             )
-
-            repo.append(old_stock_data)
-            removed = repo.prune_text_records(today=date(2026, 6, 18))
-
-            self.assertEqual(removed, 0)
-            self.assertEqual([record.title for record in repo.query(symbol="000001")], ["Non-selected training row"])
 
     def test_prune_text_records_handles_leap_day_cutoff(self) -> None:
         from fintech_quant.information import InformationCategory, InformationRecord, InformationRepository
@@ -149,29 +143,95 @@ class InformationRepositoryTest(unittest.TestCase):
             self.assertEqual(removed, 1)
             self.assertEqual([record.title for record in repo.query(symbol="000001")], ["Leap cutoff boundary"])
 
-    def test_fetch_information_script_runs_without_manual_pythonpath(self) -> None:
+    def test_fetch_information_script_populates_repository_from_jsonl_fixture(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
         env = dict(os.environ)
         env.pop("PYTHONPATH", None)
-        result = subprocess.run(
-            [
-                sys.executable,
-                "scripts/fetch_information.py",
-                "--start",
-                "2026-01-01",
-                "--end",
-                "2026-01-31",
-            ],
-            cwd=worktree,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture_path = Path(tmp) / "fixture.jsonl"
+            output_path = Path(tmp) / "output.jsonl"
+            fixture_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001.SZ",
+                        "sector": "banking",
+                        "published_at": "2026-01-15",
+                        "source": "fixture",
+                        "category": "company_announcement",
+                        "title": "Fixture announcement",
+                        "url": "https://example.test/fixture-announcement",
+                        "summary": "Fixture-backed announcement.",
+                        "risk_tags": [],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertEqual(result.stdout.strip(), "stored_records=0")
-        self.assertEqual(result.stderr, "")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/fetch_information.py",
+                    "--source",
+                    "jsonl",
+                    "--input",
+                    str(fixture_path),
+                    "--symbol",
+                    "000001",
+                    "--start",
+                    "2026-01-01",
+                    "--end",
+                    "2026-01-31",
+                    "--output",
+                    str(output_path),
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual(result.stdout.strip(), "stored_records=1")
+            self.assertEqual(result.stderr, "")
+            self.assertIn("Fixture announcement", output_path.read_text(encoding="utf-8"))
+
+    def test_jsonl_fetcher_reads_source_backed_records(self) -> None:
+        from fintech_quant.information import JsonlInformationFetcher
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture_path = Path(tmp) / "fixture.jsonl"
+            fixture_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001.SZ",
+                        "sector": "banking",
+                        "published_at": "2026-01-15",
+                        "source": "fixture",
+                        "category": "company_announcement",
+                        "title": "Fixture announcement",
+                        "url": "https://example.test/fixture-announcement",
+                        "summary": "Fixture-backed announcement.",
+                        "risk_tags": [],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            records = JsonlInformationFetcher(fixture_path).fetch(
+                "000001",
+                None,
+                date(2026, 1, 1),
+                date(2026, 1, 31),
+            )
+
+            self.assertEqual([record.title for record in records], ["Fixture announcement"])
 
     def test_static_fetcher_normalizes_non_empty_symbol_filter(self) -> None:
         from fintech_quant.information import InformationCategory, InformationRecord, StaticInformationFetcher
