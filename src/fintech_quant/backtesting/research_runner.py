@@ -63,6 +63,7 @@ def run_scored_baseline_backtest(
     if not bars:
         raise ValueError("bars must contain at least one daily bar")
 
+    ordered_bars = _validate_one_symbol_daily_bars(bars, scores)
     active_strategy = strategy or ScoredBaselineStrategy()
     risk_by_date = risk_inputs or {}
     cash = float(initial_cash)
@@ -71,7 +72,7 @@ def run_scored_baseline_backtest(
     equity_curve: list[DailyEquity] = []
     risk_warnings: list[DatedRiskWarning] = []
 
-    for bar in sorted(bars, key=lambda item: _bar_date(item)):
+    for bar in ordered_bars:
         trade_date = _bar_date(bar)
         symbol = str(bar["symbol"])
         close = _bar_close(bar)
@@ -145,6 +146,33 @@ def run_scored_baseline_backtest(
             "risk_warning_count": len(risk_warnings),
         },
     )
+
+
+def _validate_one_symbol_daily_bars(
+    bars: Sequence[Mapping[str, object]],
+    scores: Mapping[date, StockScore],
+) -> list[Mapping[str, object]]:
+    ordered = sorted(bars, key=lambda item: _bar_date(item))
+    symbols = {str(bar["symbol"]) for bar in ordered}
+    if len(symbols) != 1:
+        raise ValueError("Research backtest runner accepts exactly one symbol")
+
+    seen_dates: set[date] = set()
+    symbol = next(iter(symbols))
+    for bar in ordered:
+        trade_date = _bar_date(bar)
+        if trade_date in seen_dates:
+            raise ValueError(f"Duplicate bar date: {trade_date.isoformat()}")
+        seen_dates.add(trade_date)
+
+        score = scores.get(trade_date)
+        if score is not None and score.symbol != symbol:
+            raise ValueError(
+                f"Score symbol {score.symbol} does not match bar symbol {symbol} "
+                f"for {trade_date.isoformat()}"
+            )
+
+    return ordered
 
 
 def _bar_date(bar: Mapping[str, object]) -> date:

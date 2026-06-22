@@ -63,6 +63,42 @@ class ResearchBacktestRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Missing score"):
             run_scored_baseline_backtest(bars, {}, initial_cash=1000.0)
 
+    def test_baseline_runner_rejects_mixed_symbols(self) -> None:
+        bars = [
+            {"symbol": "000001.SZ", "trade_date": "2026-01-01", "close": 10.0},
+            {"symbol": "600000.SH", "trade_date": "2026-01-02", "close": 12.0},
+        ]
+        scores = {
+            date(2026, 1, 1): make_score("000001.SZ", 80.0),
+            date(2026, 1, 2): make_score("600000.SH", 80.0),
+        }
+
+        with self.assertRaisesRegex(ValueError, "one symbol"):
+            run_scored_baseline_backtest(bars, scores, initial_cash=1000.0)
+
+    def test_baseline_runner_rejects_duplicate_bar_dates(self) -> None:
+        bars = [
+            {"symbol": "000001.SZ", "trade_date": "2026-01-01", "close": 10.0},
+            {"symbol": "000001.SZ", "trade_date": "2026-01-01", "close": 12.0},
+        ]
+        scores = {
+            date(2026, 1, 1): make_score("000001.SZ", 80.0),
+        }
+
+        with self.assertRaisesRegex(ValueError, "Duplicate bar date"):
+            run_scored_baseline_backtest(bars, scores, initial_cash=1000.0)
+
+    def test_baseline_runner_rejects_score_symbol_mismatch(self) -> None:
+        bars = [
+            {"symbol": "000001.SZ", "trade_date": "2026-01-01", "close": 10.0},
+        ]
+        scores = {
+            date(2026, 1, 1): make_score("600000.SH", 80.0),
+        }
+
+        with self.assertRaisesRegex(ValueError, "Score symbol"):
+            run_scored_baseline_backtest(bars, scores, initial_cash=1000.0)
+
 
 if __name__ == "__main__":
     unittest.main()
