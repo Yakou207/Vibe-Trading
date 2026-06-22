@@ -30,6 +30,23 @@ Phase 2 adds a deterministic one-symbol daily backtest runner for the scored bas
 
 This is the benchmark path for future DQN comparison. It intentionally keeps accounting simple before adding A-share execution constraints such as T+1, lot size, fees, slippage, and price-limit handling.
 
+## Phase 3 Data Pipeline
+
+Phase 3 adds a selected-universe daily data pipeline:
+
+```bash
+python scripts/refresh_research_data.py \
+  --source json \
+  --input bars.json \
+  --universe universe.csv \
+  --daily-output data/processed/akshare_research_daily.csv \
+  --feature-output data/processed/akshare_research_features.csv
+```
+
+Provider mode supports `--source auto`, `--source akshare`, or `--source tushare` with `--start` and `--end`. Tests use JSON fixture mode and do not hit network providers.
+
+Generated features include moving averages, RSI, MACD, daily returns, and rolling volatility for baseline and future DQN research.
+
 ## Local Setup
 
 ```bash
