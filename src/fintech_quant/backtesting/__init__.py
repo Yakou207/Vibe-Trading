@@ -6,10 +6,22 @@ from fintech_quant.backtesting.drawdown import (
     EquityPoint,
     calculate_drawdown,
 )
+from fintech_quant.backtesting.research_runner import (
+    BacktestTrade,
+    DailyEquity,
+    DatedRiskWarning,
+    ResearchBacktestResult,
+    run_scored_baseline_backtest,
+)
 
 __all__ = [
+    "BacktestTrade",
+    "DailyEquity",
+    "DatedRiskWarning",
     "DrawdownPoint",
     "DrawdownResult",
     "EquityPoint",
+    "ResearchBacktestResult",
     "calculate_drawdown",
+    "run_scored_baseline_backtest",
 ]
