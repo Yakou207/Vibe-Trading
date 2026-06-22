@@ -67,6 +67,7 @@ Feature CSV:
 - `ma250`
 - `close_above_ma20`
 - `close_above_ma60`
+- `close_above_ma250`
 - `rsi14`
 - `macd_line`
 - `macd_signal`

@@ -25,9 +25,9 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
             input_path.write_text(
                 json.dumps(
                     [
+                        _bar("000001", "2026-01-03", 12.0),
                         _bar("000001", "2026-01-01", 10.0),
                         _bar("000001", "2026-01-02", 11.0),
-                        _bar("000001", "2026-01-03", 12.0),
                     ],
                     ensure_ascii=False,
                     sort_keys=True,
@@ -64,6 +64,7 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
             self.assertIn("daily_rows=3", result.stdout)
             self.assertIn("feature_rows=3", result.stdout)
             self.assertIn("000001.SZ", daily_text)
+            self.assertLess(daily_text.index("2026-01-01"), daily_text.index("2026-01-03"))
             self.assertIn("return_1d", feature_text)
             self.assertIn("macd_positive", feature_text)
 

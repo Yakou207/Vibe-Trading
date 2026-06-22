@@ -91,16 +91,14 @@ def _write_csv(path: Path, rows: Sequence[Mapping[str, object]], fieldnames: Seq
 
 
 def _feature_fieldnames(rows: Sequence[Mapping[str, object]]) -> list[str]:
-    if not rows:
-        return list(DEFAULT_FEATURE_FIELDS)
-    seen = set(DAILY_BAR_FIELDS)
+    seen = set(DEFAULT_FEATURE_FIELDS)
     extra: list[str] = []
     for row in rows:
         for key in row:
             if key not in seen:
                 seen.add(key)
                 extra.append(str(key))
-    return [*DAILY_BAR_FIELDS, *extra]
+    return [*DEFAULT_FEATURE_FIELDS, *extra]
 
 
 def _optional_text(value: object | None) -> str | None:

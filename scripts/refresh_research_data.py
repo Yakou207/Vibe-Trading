@@ -53,7 +53,10 @@ def main() -> int:
         )
 
     universe_symbols = {member.symbol for member in universe}
-    selected_rows = [row for row in daily_rows if str(row["symbol"]) in universe_symbols]
+    selected_rows = sorted(
+        [row for row in daily_rows if str(row["symbol"]) in universe_symbols],
+        key=lambda row: (str(row["symbol"]), str(row["trade_date"])),
+    )
     feature_rows = enrich_daily_bars(selected_rows)
     write_daily_bars_csv(Path(args.daily_output), selected_rows)
     write_feature_rows_csv(Path(args.feature_output), feature_rows)

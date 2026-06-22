@@ -86,6 +86,22 @@ class ResearchDatasetTest(unittest.TestCase):
 
         self.assertEqual(list(daily[0]), ["symbol", "trade_date", "open", "high", "low", "close", "volume", "amount", "source"])
         self.assertEqual(daily[0]["symbol"], "000001.SZ")
+        self.assertEqual(list(features[0])[:14], [
+            "symbol",
+            "trade_date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "amount",
+            "source",
+            "return_1d",
+            "ma20",
+            "ma60",
+            "ma250",
+            "close_above_ma20",
+        ])
         self.assertIn("return_1d", features[0])
         self.assertIn("macd_positive", features[0])
 
