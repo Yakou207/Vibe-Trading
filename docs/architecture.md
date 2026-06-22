@@ -16,7 +16,7 @@ data providers -> feature pipeline -> strategy decision -> risk gate -> backtest
 
 ## Phase 1 Module Contracts
 
-- `data`: normalize A-share symbols and daily bars; route `source="auto"` to AkShare.
+- `data`: normalize A-share symbols and daily bars; route `source="auto"` to AkShare first so the research loop is built on a stable local schema before adding fallback providers.
 - `information`: persist classified text and selected-universe stock data records with distinct retention rules.
 - `features`: produce 35/25/25/15 stock scores with component reasons and missing-data confidence.
 - `risk`: evaluate portfolio, stock-specific, market, and systemic risk warnings.

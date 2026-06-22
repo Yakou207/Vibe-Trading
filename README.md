@@ -6,7 +6,7 @@
 
 ## Current Scope
 
-- 市场：A 股优先，保留 Yahoo Finance、Finnhub、AkShare 数据接口。
+- 市场：A 股优先，Phase 1 默认数据源为 AkShare，并保留 Tushare token-ready 适配器用于后续接入。
 - 频率：日频为主，不做高频交易。
 - 策略：第一版支持 RL buy/sell/hold 策略接口，同时保留多因子基线对照。
 - 交易约束：后续回测必须建模 T+1、涨跌停、停牌、手续费、印花税、滑点。

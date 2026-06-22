@@ -21,6 +21,32 @@ class PhaseOneFlowTest(unittest.TestCase):
                 InformationRecord(
                     symbol="000001",
                     sector="bank",
+                    published_at=date(2022, 1, 1),
+                    source="exchange",
+                    category=InformationCategory.FINANCIAL_REPORT,
+                    title="Old report",
+                    url="https://example.test/old-report",
+                    summary="Old text record.",
+                    risk_tags=(),
+                )
+            )
+            repo.append(
+                InformationRecord(
+                    symbol="000001",
+                    sector="bank",
+                    published_at=date(2019, 1, 1),
+                    source="local",
+                    category=InformationCategory.STOCK_DATA,
+                    title="Selected universe training row",
+                    url="",
+                    summary="Retained for RL.",
+                    risk_tags=("selected_universe",),
+                )
+            )
+            repo.append(
+                InformationRecord(
+                    symbol="000001",
+                    sector="bank",
                     published_at=date(2026, 1, 2),
                     source="exchange",
                     category=InformationCategory.FINANCIAL_REPORT,
@@ -30,6 +56,10 @@ class PhaseOneFlowTest(unittest.TestCase):
                     risk_tags=(),
                 )
             )
+            all_records_before_prune = repo.query(symbol="000001")
+            removed = repo.prune_text_records(today=date(2026, 6, 18))
+            records_after_prune = repo.query(symbol="000001")
+            normalized_records = repo.query(symbol="000001.SZ")
 
             score = score_stock(
                 ScoreInput(
@@ -67,7 +97,11 @@ class PhaseOneFlowTest(unittest.TestCase):
             )
             decision = ScoredBaselineStrategy().decide({"score": score, "risk_action": risk.action})
 
-            self.assertEqual(len(repo.query(symbol="000001")), 1)
+            self.assertEqual(len(all_records_before_prune), 3)
+            self.assertEqual({record.normalized_symbol for record in all_records_before_prune}, {"000001.SZ"})
+            self.assertEqual(removed, 1)
+            self.assertEqual([record.title for record in records_after_prune], ["Selected universe training row", "Recent report"])
+            self.assertEqual([record.title for record in normalized_records], ["Selected universe training row", "Recent report"])
             self.assertEqual(risk.action, RiskAction.NONE)
             self.assertLess(drawdown.max_drawdown, 0.15)
             self.assertEqual(decision.action, TradeAction.BUY)
