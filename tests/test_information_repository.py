@@ -233,6 +233,46 @@ class InformationRepositoryTest(unittest.TestCase):
 
             self.assertEqual([record.title for record in records], ["Fixture announcement"])
 
+    def test_akshare_notice_fetcher_maps_notice_rows(self) -> None:
+        from fintech_quant.information import AkShareNoticeFetcher, InformationCategory
+
+        def fetcher() -> list[dict[str, object]]:
+            return [
+                {
+                    "代码": "000001",
+                    "公告日期": "20260603",
+                    "公告标题": "Annual report released",
+                    "公告类型": "年度报告",
+                }
+            ]
+
+        records = AkShareNoticeFetcher(report_type="财务报告", fetcher=fetcher).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].normalized_symbol, "000001.SZ")
+        self.assertEqual(records[0].published_at, date(2026, 6, 3))
+        self.assertEqual(records[0].category, InformationCategory.FINANCIAL_REPORT)
+
+    def test_akshare_notice_fetcher_wraps_fetch_failures(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.information import AkShareNoticeFetcher
+
+        def fetcher() -> list[dict[str, object]]:
+            raise RuntimeError("upstream timeout")
+
+        with self.assertRaisesRegex(ProviderFetchError, "akshare notice"):
+            AkShareNoticeFetcher(fetcher=fetcher).fetch(
+                None,
+                None,
+                date(2026, 6, 1),
+                date(2026, 6, 30),
+            )
+
     def test_static_fetcher_normalizes_non_empty_symbol_filter(self) -> None:
         from fintech_quant.information import InformationCategory, InformationRecord, StaticInformationFetcher
 

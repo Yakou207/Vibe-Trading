@@ -64,7 +64,7 @@ class AkShareNoticeFetcher(InformationFetcher):
     def __init__(
         self,
         report_type: str = "重大事项",
-        recent_page: str = "1",
+        recent_page: int = 1,
         fetcher: Callable[[], object] | None = None,
     ) -> None:
         self._report_type = report_type
