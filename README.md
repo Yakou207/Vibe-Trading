@@ -24,6 +24,12 @@ AkShare is the default A-share provider. Tushare has a token-aware adapter for f
 
 Phase 1 implementation notes and system assessment are documented in `docs/phase-one-change-report.md`.
 
+## Phase 2 Baseline Runner
+
+Phase 2 adds a deterministic one-symbol daily backtest runner for the scored baseline strategy. It consumes normalized bars, precomputed `StockScore` values, and optional `RiskInput` records, then outputs trades, equity curve, risk warnings, drawdown, and summary metrics.
+
+This is the benchmark path for future DQN comparison. It intentionally keeps accounting simple before adding A-share execution constraints such as T+1, lot size, fees, slippage, and price-limit handling.
+
 ## Local Setup
 
 ```bash
