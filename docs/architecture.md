@@ -14,6 +14,15 @@
 data providers -> feature pipeline -> strategy decision -> risk gate -> backtest/paper account -> report
 ```
 
+## Phase 1 Module Contracts
+
+- `data`: normalize A-share symbols and daily bars; route `source="auto"` to AkShare.
+- `information`: persist classified text and selected-universe stock data records with distinct retention rules.
+- `features`: produce 35/25/25/15 stock scores with component reasons and missing-data confidence.
+- `risk`: evaluate portfolio, stock-specific, market, and systemic risk warnings.
+- `backtesting`: calculate drawdown from dated equity points independently of strategy.
+- `strategies`: provide a scored baseline decision policy for future DQN comparison.
+
 ## RL Role
 
 第一版采用单票 buy/sell/hold 决策接口：
