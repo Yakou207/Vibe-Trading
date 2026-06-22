@@ -8,6 +8,13 @@ from fintech_quant.data.errors import (
     UnknownDataProvider,
 )
 from fintech_quant.data.registry import ProviderRegistry
+from fintech_quant.data.research_dataset import (
+    UniverseMember,
+    collect_universe_history,
+    load_universe_csv,
+    write_daily_bars_csv,
+    write_feature_rows_csv,
+)
 from fintech_quant.data.symbols import infer_a_share_exchange, normalize_a_share_symbol
 from fintech_quant.data.tushare_provider import TushareProvider
 
@@ -20,8 +27,13 @@ __all__ = [
     "ProviderFetchError",
     "ProviderRegistry",
     "TushareProvider",
+    "UniverseMember",
     "UnknownDataProvider",
+    "collect_universe_history",
     "infer_a_share_exchange",
+    "load_universe_csv",
     "normalize_a_share_symbol",
     "normalize_daily_bar",
+    "write_daily_bars_csv",
+    "write_feature_rows_csv",
 ]

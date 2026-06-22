@@ -193,34 +193,77 @@ Ran 5 tests
 OK
 ```
 
-## Remaining Gaps For Phase 2
+## Phase 3 Data Pipeline Update
 
-1. Build a real local data refresh job for the selected stock universe.
-2. Add derived indicators from stored daily bars:
-   - MA20/MA60/MA250
-   - RSI
-   - MACD
-   - return and volatility features
-3. Add A-share execution constraints to the backtest runner:
+Phase 3 adds a selected-universe daily data and feature pipeline.
+
+The pipeline:
+
+- loads a selected-universe CSV
+- collects daily bars through an injected provider or fixture JSON
+- writes normalized daily bars to CSV
+- generates technical indicator feature rows
+- writes feature rows to CSV for baseline and future DQN research
+
+Generated features:
+
+- `return_1d`
+- `ma20`, `ma60`, `ma250`
+- `close_above_ma20`, `close_above_ma60`, `close_above_ma250`
+- `rsi14`
+- `macd_line`, `macd_signal`, `macd_hist`, `macd_positive`
+- `volatility20`
+
+The refresh command is:
+
+```bash
+python scripts/refresh_research_data.py \
+  --source json \
+  --input bars.json \
+  --universe universe.csv \
+  --daily-output data/processed/akshare_research_daily.csv \
+  --feature-output data/processed/akshare_research_features.csv
+```
+
+Provider mode supports `--source auto`, `--source akshare`, or `--source tushare` with `--start` and `--end`. Tests use fixture mode only, so the suite does not depend on AkShare network availability.
+
+Verification added:
+
+```bash
+PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/.worktrees/phase3-data-pipeline/src \
+  /Users/yakou/Desktop/Vibe-Trading/.venv/bin/python -m unittest discover -s tests
+```
+
+Result:
+
+```text
+Ran 55 tests
+OK
+```
+
+## Remaining Gaps After Phase 3
+
+1. Add A-share execution constraints to the backtest runner:
    - T+1
    - lot size
    - fees
    - slippage
    - price limits
    - suspension handling
-4. Extend the backtest runner from one symbol to a selected-universe portfolio.
-5. Add DQN-vs-baseline comparison metrics:
+2. Extend the backtest runner from one symbol to a selected-universe portfolio.
+3. Convert generated features into `ScoreInput` and RL state datasets.
+4. Add DQN-vs-baseline comparison metrics:
    - annualized return
    - max drawdown
    - Sharpe
    - turnover
    - win rate
    - risk-triggered exits
-6. Add richer A-share information sources:
+5. Add richer A-share information sources:
    - exchange announcements
    - company financial reports
    - fund flow
    - margin financing
    - dragon-tiger board
    - sector-level policy events
-7. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
+6. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
