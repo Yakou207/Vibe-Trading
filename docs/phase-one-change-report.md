@@ -154,6 +154,45 @@ Final independent review status:
 - The information repository is intentionally simple JSONL first. A database can be introduced after the schema stabilizes.
 - The AkShare notice fetcher is page-bounded and filters locally by date; it should not be treated as a complete historical archive yet.
 
+## Phase 2 Baseline Runner Update
+
+Phase 2 adds `run_scored_baseline_backtest`, a deterministic one-symbol daily backtest runner for the scored baseline strategy.
+
+The runner:
+
+- consumes normalized daily bars and precomputed `StockScore` values
+- accepts optional per-date `RiskInput` records
+- delegates decisions to `ScoredBaselineStrategy`
+- delegates risk evaluation to `evaluate_risk`
+- delegates drawdown calculation to `calculate_drawdown`
+- outputs trades, daily equity, dated risk warnings, drawdown, and summary metrics
+
+Current simplifications:
+
+- one symbol only
+- all-in/all-out accounting
+- no fees
+- no slippage
+- no T+1
+- no lot-size rule
+- no price-limit or suspension handling
+
+These simplifications keep the first DQN benchmark transparent. They should be tightened before interpreting performance as tradable A-share performance.
+
+Verification added:
+
+```bash
+PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/.worktrees/phase2-baseline-runner/src \
+  /Users/yakou/Desktop/Vibe-Trading/.venv/bin/python -m unittest tests.test_research_backtest_runner
+```
+
+Result:
+
+```text
+Ran 5 tests
+OK
+```
+
 ## Remaining Gaps For Phase 2
 
 1. Build a real local data refresh job for the selected stock universe.
@@ -162,19 +201,26 @@ Final independent review status:
    - RSI
    - MACD
    - return and volatility features
-3. Add a backtest runner that consumes the scored baseline and risk gate end to end.
-4. Add DQN-vs-baseline comparison metrics:
+3. Add A-share execution constraints to the backtest runner:
+   - T+1
+   - lot size
+   - fees
+   - slippage
+   - price limits
+   - suspension handling
+4. Extend the backtest runner from one symbol to a selected-universe portfolio.
+5. Add DQN-vs-baseline comparison metrics:
    - annualized return
    - max drawdown
    - Sharpe
    - turnover
    - win rate
    - risk-triggered exits
-5. Add richer A-share information sources:
+6. Add richer A-share information sources:
    - exchange announcements
    - company financial reports
    - fund flow
    - margin financing
    - dragon-tiger board
    - sector-level policy events
-6. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
+7. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
