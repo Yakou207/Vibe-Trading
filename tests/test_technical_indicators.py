@@ -52,6 +52,20 @@ class TechnicalIndicatorsTest(unittest.TestCase):
         self.assertAlmostEqual(by_symbol_date[("000001.SZ", "2026-01-02")]["ma2"], 11.0)
         self.assertAlmostEqual(by_symbol_date[("600000.SH", "2026-01-02")]["ma2"], 19.0)
 
+    def test_enrich_daily_bars_treats_flat_rsi_window_as_neutral(self) -> None:
+        from fintech_quant.features import enrich_daily_bars
+
+        rows = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 10.0),
+            _bar("000001.SZ", "2026-01-03", 10.0),
+            _bar("000001.SZ", "2026-01-04", 10.0),
+        ]
+
+        enriched = enrich_daily_bars(rows, rsi_period=3)
+
+        self.assertAlmostEqual(enriched[-1]["rsi3"], 50.0)
+
 
 def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:
     return {

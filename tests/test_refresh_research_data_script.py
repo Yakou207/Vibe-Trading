@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
 import subprocess
@@ -58,15 +59,38 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
             )
 
             daily_text = daily_output.read_text(encoding="utf-8")
-            feature_text = feature_output.read_text(encoding="utf-8")
+            with feature_output.open("r", encoding="utf-8", newline="") as handle:
+                feature_rows = list(csv.DictReader(handle))
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertIn("daily_rows=3", result.stdout)
             self.assertIn("feature_rows=3", result.stdout)
             self.assertIn("000001.SZ", daily_text)
             self.assertLess(daily_text.index("2026-01-01"), daily_text.index("2026-01-03"))
-            self.assertIn("return_1d", feature_text)
-            self.assertIn("macd_positive", feature_text)
+            self.assertEqual(list(feature_rows[0]), [
+                "symbol",
+                "trade_date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "amount",
+                "source",
+                "return_1d",
+                "ma20",
+                "ma60",
+                "ma250",
+                "close_above_ma20",
+                "close_above_ma60",
+                "close_above_ma250",
+                "rsi14",
+                "macd_line",
+                "macd_signal",
+                "macd_hist",
+                "macd_positive",
+                "volatility20",
+            ])
 
 
 def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:

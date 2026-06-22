@@ -93,6 +93,8 @@ def _rolling_rsi(returns: list[float], period: int) -> float | None:
     losses = [abs(min(value, 0.0)) for value in recent]
     average_gain = mean(gains)
     average_loss = mean(losses)
+    if average_gain == 0 and average_loss == 0:
+        return 50.0
     if average_loss == 0:
         return 100.0
     relative_strength = average_gain / average_loss
