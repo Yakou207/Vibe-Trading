@@ -25,9 +25,9 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
             input_path.write_text(
                 json.dumps(
                     [
-                        _bar("000001.SZ", "2026-01-01", 10.0),
-                        _bar("000001.SZ", "2026-01-02", 11.0),
-                        _bar("000001.SZ", "2026-01-03", 12.0),
+                        _bar("000001", "2026-01-01", 10.0),
+                        _bar("000001", "2026-01-02", 11.0),
+                        _bar("000001", "2026-01-03", 12.0),
                     ],
                     ensure_ascii=False,
                     sort_keys=True,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections import defaultdict, deque
+from collections import defaultdict
 from math import sqrt
 from statistics import mean
 from typing import Mapping, Sequence

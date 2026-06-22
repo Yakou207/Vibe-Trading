@@ -89,6 +89,22 @@ class ResearchDatasetTest(unittest.TestCase):
         self.assertIn("return_1d", features[0])
         self.assertIn("macd_positive", features[0])
 
+    def test_write_feature_csv_keeps_standard_headers_when_empty(self) -> None:
+        from fintech_quant.data import write_feature_rows_csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            feature_path = Path(tmp) / "features.csv"
+
+            write_feature_rows_csv(feature_path, [])
+
+            header = feature_path.read_text(encoding="utf-8").splitlines()[0].split(",")
+
+        self.assertIn("return_1d", header)
+        self.assertIn("ma20", header)
+        self.assertIn("rsi14", header)
+        self.assertIn("macd_line", header)
+        self.assertIn("volatility20", header)
+
 
 if __name__ == "__main__":
     unittest.main()

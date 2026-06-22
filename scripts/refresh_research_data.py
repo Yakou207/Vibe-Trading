@@ -17,6 +17,7 @@ from fintech_quant.data import (  # noqa: E402
     TushareProvider,
     collect_universe_history,
     load_universe_csv,
+    normalize_daily_bar,
     write_daily_bars_csv,
     write_feature_rows_csv,
 )
@@ -65,7 +66,10 @@ def _load_json_rows(path: Path) -> list[dict[str, object]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
         raise ValueError("JSON input must be a list of daily-bar objects")
-    return [dict(item) for item in payload]
+    return [
+        normalize_daily_bar(str(item["symbol"]), dict(item), str(item.get("source", "json")))
+        for item in payload
+    ]
 
 
 def _build_registry() -> ProviderRegistry:

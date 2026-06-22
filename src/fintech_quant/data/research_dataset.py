@@ -10,6 +10,22 @@ from fintech_quant.data.symbols import normalize_a_share_symbol
 
 
 DAILY_BAR_FIELDS = ("symbol", "trade_date", "open", "high", "low", "close", "volume", "amount", "source")
+DEFAULT_FEATURE_FIELDS = (
+    *DAILY_BAR_FIELDS,
+    "return_1d",
+    "ma20",
+    "ma60",
+    "ma250",
+    "close_above_ma20",
+    "close_above_ma60",
+    "close_above_ma250",
+    "rsi14",
+    "macd_line",
+    "macd_signal",
+    "macd_hist",
+    "macd_positive",
+    "volatility20",
+)
 
 
 @dataclass(frozen=True)
@@ -75,6 +91,8 @@ def _write_csv(path: Path, rows: Sequence[Mapping[str, object]], fieldnames: Seq
 
 
 def _feature_fieldnames(rows: Sequence[Mapping[str, object]]) -> list[str]:
+    if not rows:
+        return list(DEFAULT_FEATURE_FIELDS)
     seen = set(DAILY_BAR_FIELDS)
     extra: list[str] = []
     for row in rows:
