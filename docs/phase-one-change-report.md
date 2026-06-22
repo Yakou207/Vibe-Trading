@@ -189,7 +189,7 @@ PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/.worktrees/phase2-baseline-runner/s
 Result:
 
 ```text
-Ran 2 tests
+Ran 5 tests
 OK
 ```
 
