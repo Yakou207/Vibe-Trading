@@ -342,6 +342,7 @@ class InformationRepositoryTest(unittest.TestCase):
                     "公告日期": "20260603",
                     "公告标题": "Annual report released",
                     "公告类型": "年度报告",
+                    "公告链接": "https://example.test/notice",
                 }
             ]
 
@@ -356,6 +357,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertEqual(records[0].normalized_symbol, "000001.SZ")
         self.assertEqual(records[0].published_at, date(2026, 6, 3))
         self.assertEqual(records[0].category, InformationCategory.FINANCIAL_REPORT)
+        self.assertEqual(records[0].url, "https://example.test/notice")
 
     def test_akshare_notice_fetcher_wraps_fetch_failures(self) -> None:
         from fintech_quant.data.errors import ProviderFetchError

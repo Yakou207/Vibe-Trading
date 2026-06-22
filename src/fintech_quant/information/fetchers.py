@@ -155,10 +155,18 @@ def _record_from_notice_row(row: dict[str, object], report_type: str) -> Informa
         source="akshare_notice",
         category=category,
         title=str(row["公告标题"]).strip(),
-        url="",
+        url=str(_first_notice_url(row)),
         summary=str(row.get("公告类型", "")).strip(),
         risk_tags=risk_tags,
     )
+
+
+def _first_notice_url(row: dict[str, object]) -> str:
+    for key in ("公告链接", "网址", "url"):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    return ""
 
 
 def _parse_date(value: object) -> date:
