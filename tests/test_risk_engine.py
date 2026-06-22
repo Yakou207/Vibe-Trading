@@ -17,6 +17,7 @@ class RiskEngineTest(unittest.TestCase):
 
         result = evaluate_risk(
             RiskInput(
+                position_weight=0.081,
                 single_position_drawdown=0.081,
                 st_warning=True,
                 goodwill_ratio=0.31,
@@ -29,6 +30,7 @@ class RiskEngineTest(unittest.TestCase):
         self.assertEqual(
             {warning.rule for warning in result.warnings},
             {
+                "position_weight",
                 "single_position_drawdown",
                 "st_warning",
                 "goodwill_ratio",

@@ -23,7 +23,12 @@ def main() -> int:
     parser.add_argument("--end", required=True)
     parser.add_argument("--output", default="data/raw/information/information.jsonl")
     parser.add_argument("--report-type", default="重大事项")
-    parser.add_argument("--recent-page", type=int, default=1)
+    parser.add_argument(
+        "--recent-page",
+        type=int,
+        default=1,
+        help="AkShare notice page to fetch. Date filtering is page-bounded to this page.",
+    )
     args = parser.parse_args()
 
     repository = InformationRepository(Path(args.output))

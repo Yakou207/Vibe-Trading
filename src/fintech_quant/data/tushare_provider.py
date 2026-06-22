@@ -27,7 +27,12 @@ class TushareProvider(MarketDataProvider):
             raise MissingProviderCredential("TUSHARE_TOKEN is required for TushareProvider")
         normalized_symbol = normalize_a_share_symbol(symbol)
         rows = self._fetch(normalized_symbol, start, end)
-        return [normalize_daily_bar(normalized_symbol, row, self.name) for row in rows]
+        try:
+            return [normalize_daily_bar(normalized_symbol, row, self.name) for row in rows]
+        except Exception as exc:
+            raise ProviderFetchError(
+                f"tushare history fetch failed for {normalized_symbol} between {start.isoformat()} and {end.isoformat()}"
+            ) from exc
 
     def _fetch(self, symbol: str, start: date, end: date) -> list[dict[str, Any]]:
         if self._fetcher is not None:

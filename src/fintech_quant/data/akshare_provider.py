@@ -19,7 +19,12 @@ class AkShareProvider(MarketDataProvider):
     def history(self, symbol: str, start: date, end: date) -> list[dict[str, Any]]:
         normalized_symbol = normalize_a_share_symbol(symbol)
         rows = self._fetch(normalized_symbol, start, end)
-        return [normalize_daily_bar(normalized_symbol, row, self.name) for row in rows]
+        try:
+            return [normalize_daily_bar(normalized_symbol, row, self.name) for row in rows]
+        except Exception as exc:
+            raise ProviderFetchError(
+                f"akshare history fetch failed for {normalized_symbol} between {start.isoformat()} and {end.isoformat()}"
+            ) from exc
 
     def _fetch(self, symbol: str, start: date, end: date) -> list[dict[str, Any]]:
         if self._fetcher is not None:

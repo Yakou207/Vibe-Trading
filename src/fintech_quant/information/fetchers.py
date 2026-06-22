@@ -61,6 +61,8 @@ class JsonlInformationFetcher(InformationFetcher):
 
 
 class AkShareNoticeFetcher(InformationFetcher):
+    """Fetch AkShare notice rows from one recent page and filter them locally by date."""
+
     def __init__(
         self,
         report_type: str = "重大事项",
@@ -79,7 +81,12 @@ class AkShareNoticeFetcher(InformationFetcher):
         end: date,
     ) -> list[InformationRecord]:
         rows = self._fetch_rows()
-        records = [_record_from_notice_row(row, self._report_type) for row in rows]
+        try:
+            records = [_record_from_notice_row(row, self._report_type) for row in rows]
+        except Exception as exc:
+            raise ProviderFetchError(
+                f"akshare notice fetch failed for report_type={self._report_type!r}, recent_page={self._recent_page!r}"
+            ) from exc
         return _filter_records(records, symbol, sector, start, end)
 
     def _fetch_rows(self) -> list[dict[str, object]]:

@@ -273,6 +273,40 @@ class InformationRepositoryTest(unittest.TestCase):
                 date(2026, 6, 30),
             )
 
+    def test_akshare_notice_fetcher_wraps_malformed_notice_rows(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.information import AkShareNoticeFetcher
+
+        def fetcher() -> list[dict[str, object]]:
+            return [{"代码": "000001", "公告日期": "bad-date", "公告标题": "Broken row"}]
+
+        with self.assertRaisesRegex(ProviderFetchError, "akshare notice"):
+            AkShareNoticeFetcher(fetcher=fetcher).fetch(
+                None,
+                None,
+                date(2026, 6, 1),
+                date(2026, 6, 30),
+            )
+
+    def test_fetch_information_help_describes_recent_page_as_page_bounded(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+
+        result = subprocess.run(
+            [sys.executable, "scripts/fetch_information.py", "--help"],
+            cwd=worktree,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("Date filtering is page-", result.stdout)
+        self.assertIn("bounded to this page.", result.stdout)
+        self.assertIn("--recent-page", result.stdout)
+
     def test_static_fetcher_normalizes_non_empty_symbol_filter(self) -> None:
         from fintech_quant.information import InformationCategory, InformationRecord, StaticInformationFetcher
 

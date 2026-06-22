@@ -21,7 +21,7 @@ _ACTION_RANK = {
 
 @dataclass(frozen=True)
 class RiskLimits:
-    max_position_weight: float = 0.1
+    max_position_weight: float = 0.08
     max_portfolio_drawdown: float = 0.15
     max_single_position_drawdown: float = 0.08
     max_goodwill_ratio: float = 0.30
@@ -32,6 +32,7 @@ class RiskLimits:
 
 @dataclass(frozen=True)
 class RiskInput:
+    position_weight: float = 0.0
     portfolio_drawdown: float = 0.0
     single_position_drawdown: float = 0.0
     st_warning: bool = False
@@ -61,6 +62,16 @@ def evaluate_risk(
     limits: RiskLimits = RiskLimits(),
 ) -> RiskEvaluation:
     warnings: list[RiskWarning] = []
+
+    if risk_input.position_weight > limits.max_position_weight:
+        warnings.append(
+            RiskWarning(
+                layer="single_stock_negative",
+                rule="position_weight",
+                action=RiskAction.REDUCE,
+                message="Single position weight exceeded concentration threshold.",
+            )
+        )
 
     if risk_input.portfolio_drawdown >= limits.max_portfolio_drawdown:
         warnings.append(

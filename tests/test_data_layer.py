@@ -152,6 +152,30 @@ class DataLayerTest(unittest.TestCase):
         with self.assertRaisesRegex(ProviderFetchError, "tushare"):
             provider.history("000001", date(2026, 6, 1), date(2026, 6, 3))
 
+    def test_akshare_provider_wraps_normalization_failures(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.data.akshare_provider import AkShareProvider
+
+        def fetcher(**_: object) -> list[dict[str, object]]:
+            return [{"日期": "bad-date"}]
+
+        provider = AkShareProvider(fetcher=fetcher)
+
+        with self.assertRaisesRegex(ProviderFetchError, "akshare"):
+            provider.history("000001", date(2026, 6, 1), date(2026, 6, 3))
+
+    def test_tushare_provider_wraps_normalization_failures(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.data.tushare_provider import TushareProvider
+
+        def fetcher(**_: object) -> list[dict[str, object]]:
+            return [{"trade_date": "bad-date"}]
+
+        provider = TushareProvider(token="token", fetcher=fetcher)
+
+        with self.assertRaisesRegex(ProviderFetchError, "tushare"):
+            provider.history("000001", date(2026, 6, 1), date(2026, 6, 3))
+
 
 if __name__ == "__main__":
     unittest.main()
