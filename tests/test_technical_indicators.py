@@ -23,12 +23,16 @@ class TechnicalIndicatorsTest(unittest.TestCase):
         self.assertAlmostEqual(enriched[2]["ma3"], 11.0)
         self.assertTrue(enriched[2]["close_above_ma2"])
         self.assertTrue(enriched[2]["close_above_ma3"])
-        self.assertIsNotNone(enriched[-1]["rsi3"])
-        self.assertIsNotNone(enriched[-1]["macd_line"])
-        self.assertIsNotNone(enriched[-1]["macd_signal"])
-        self.assertIsNotNone(enriched[-1]["macd_hist"])
-        self.assertIsInstance(enriched[-1]["macd_positive"], bool)
-        self.assertIsNotNone(enriched[-1]["volatility3"])
+        self.assertIsNone(enriched[2]["rsi3"])
+        self.assertIsNone(enriched[2]["volatility3"])
+        self.assertAlmostEqual(enriched[3]["rsi3"], 69.61326)
+        self.assertAlmostEqual(enriched[3]["volatility3"], 0.084363)
+        self.assertAlmostEqual(enriched[-1]["rsi3"], 76.595745)
+        self.assertAlmostEqual(enriched[-1]["macd_line"], 0.428596)
+        self.assertAlmostEqual(enriched[-1]["macd_signal"], 0.162128)
+        self.assertAlmostEqual(enriched[-1]["macd_hist"], 0.266467)
+        self.assertTrue(enriched[-1]["macd_positive"])
+        self.assertAlmostEqual(enriched[-1]["volatility3"], 0.110015)
 
     def test_enrich_daily_bars_computes_each_symbol_independently(self) -> None:
         from fintech_quant.features import enrich_daily_bars

@@ -68,7 +68,9 @@ def collect_universe_history(
     rows: list[dict[str, object]] = []
     for member in universe:
         for row in provider.history(member.symbol, start, end):
-            rows.append(dict(row))
+            normalized_row = dict(row)
+            normalized_row["symbol"] = member.symbol
+            rows.append(normalized_row)
     return sorted(rows, key=lambda row: (str(row["symbol"]), str(row["trade_date"])))
 
 
@@ -77,8 +79,7 @@ def write_daily_bars_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> No
 
 
 def write_feature_rows_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
-    fieldnames = _feature_fieldnames(rows)
-    _write_csv(path, rows, fieldnames)
+    _write_csv(path, rows, DEFAULT_FEATURE_FIELDS)
 
 
 def _write_csv(path: Path, rows: Sequence[Mapping[str, object]], fieldnames: Sequence[str]) -> None:
@@ -86,19 +87,8 @@ def _write_csv(path: Path, rows: Sequence[Mapping[str, object]], fieldnames: Seq
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
-        for row in rows:
+        for row in sorted(rows, key=lambda item: (str(item["symbol"]), str(item["trade_date"]))):
             writer.writerow({field: _csv_value(row.get(field)) for field in fieldnames})
-
-
-def _feature_fieldnames(rows: Sequence[Mapping[str, object]]) -> list[str]:
-    seen = set(DEFAULT_FEATURE_FIELDS)
-    extra: list[str] = []
-    for row in rows:
-        for key in row:
-            if key not in seen:
-                seen.add(key)
-                extra.append(str(key))
-    return [*DEFAULT_FEATURE_FIELDS, *extra]
 
 
 def _optional_text(value: object | None) -> str | None:
