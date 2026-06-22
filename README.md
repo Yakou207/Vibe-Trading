@@ -22,6 +22,8 @@ data providers -> information repository -> scoring -> risk warnings -> drawdown
 
 AkShare is the default A-share provider. Tushare has a token-aware adapter for future account setup. The information repository has two retention classes: text financial/report records keep the most recent 3 years, while selected-universe stock data is retained for RL training material.
 
+Phase 1 implementation notes and system assessment are documented in `docs/phase-one-change-report.md`.
+
 ## Local Setup
 
 ```bash
