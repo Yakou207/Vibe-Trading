@@ -6,11 +6,21 @@
 
 ## Current Scope
 
-- 市场：A 股优先，保留 Yahoo Finance、Finnhub、AkShare 数据接口。
+- 市场：A 股优先，Phase 1 默认数据源为 AkShare，并保留 Tushare token-ready 适配器用于后续接入。
 - 频率：日频为主，不做高频交易。
 - 策略：第一版支持 RL buy/sell/hold 策略接口，同时保留多因子基线对照。
 - 交易约束：后续回测必须建模 T+1、涨跌停、停牌、手续费、印花税、滑点。
 - 执行：先做 paper trading，不接实盘券商。
+
+## Phase 1 Research Loop
+
+The first working slice is a daily A-share research loop:
+
+```text
+data providers -> information repository -> scoring -> risk warnings -> drawdown -> scored baseline strategy
+```
+
+AkShare is the default A-share provider. Tushare has a token-aware adapter for future account setup. The information repository has two retention classes: text financial/report records keep the most recent 3 years, while selected-universe stock data is retained for RL training material.
 
 ## Local Setup
 
@@ -26,7 +36,7 @@ Python 版本：当前工作区 `.venv` 使用本机 Python 3.14。
 ```text
 src/fintech_quant/
   config/        项目配置和默认研究范围
-  data/          数据源接口与 Yahoo/Finnhub/AkShare 适配器
+  data/          数据源接口与 AkShare/Tushare Phase 1 适配器
   features/      因子工程与特征生成
   strategies/    策略接口、多因子基线、RL buy/sell/hold 策略
   backtesting/   回测引擎、撮合、绩效指标
