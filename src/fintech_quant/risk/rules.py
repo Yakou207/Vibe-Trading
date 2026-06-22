@@ -40,7 +40,7 @@ class RiskInput:
     pledge_ratio: float = 0.0
     main_outflow_days: int = 0
     index_below_annual_ma: bool = False
-    broad_market_drop_count: int = 0
+    broad_market_drop_gt_3pct_count: int = 0
 
 
 @dataclass(frozen=True)
@@ -143,11 +143,11 @@ def evaluate_risk(
             )
         )
 
-    if risk_input.broad_market_drop_count > limits.broad_market_drop_threshold:
+    if risk_input.broad_market_drop_gt_3pct_count > limits.broad_market_drop_threshold:
         warnings.append(
             RiskWarning(
                 layer="systemic_risk",
-                rule="broad_market_drop_count",
+                rule="broad_market_drop_gt_3pct_count",
                 action=RiskAction.REDUCE,
                 message="More than 15 tracked names fell over 3% in one day.",
             )

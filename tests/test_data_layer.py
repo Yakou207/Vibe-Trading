@@ -53,6 +53,14 @@ class DataLayerTest(unittest.TestCase):
 
         from fintech_quant.data.base import normalize_daily_bar
 
+        base_row = {
+            "open": "10.2",
+            "high": "10.6",
+            "low": "10.0",
+            "close": "10.4",
+            "volume": "54321",
+            "amount": "76543.2",
+        }
         cases = [
             ("20260603", "2026-06-03"),
             ("2026-06-03", "2026-06-03"),
@@ -62,11 +70,42 @@ class DataLayerTest(unittest.TestCase):
 
         for raw_trade_date, expected in cases:
             with self.subTest(raw_trade_date=raw_trade_date):
-                row = {"trade_date": raw_trade_date}
+                row = {"trade_date": raw_trade_date, **base_row}
                 self.assertEqual(
                     normalize_daily_bar("000001", row, "akshare")["trade_date"],
                     expected,
                 )
+
+    def test_normalize_daily_bar_rejects_missing_required_fields(self) -> None:
+        from fintech_quant.data.base import normalize_daily_bar
+
+        row = {
+            "trade_date": "2026-06-03",
+            "open": "10.2",
+            "high": "10.6",
+            "low": "10.0",
+            "close": "10.4",
+            "volume": "54321",
+        }
+
+        with self.assertRaisesRegex(ValueError, "amount"):
+            normalize_daily_bar("000001", row, "akshare")
+
+    def test_normalize_daily_bar_rejects_non_numeric_required_fields(self) -> None:
+        from fintech_quant.data.base import normalize_daily_bar
+
+        row = {
+            "trade_date": "2026-06-03",
+            "open": "10.2",
+            "high": "10.6",
+            "low": "10.0",
+            "close": "10.4",
+            "volume": "not-a-number",
+            "amount": "76543.2",
+        }
+
+        with self.assertRaisesRegex(ValueError, "volume"):
+            normalize_daily_bar("000001", row, "akshare")
 
     def test_provider_registry_auto_routes_a_share_to_akshare(self) -> None:
         from fintech_quant.data.base import MarketDataProvider
@@ -157,7 +196,17 @@ class DataLayerTest(unittest.TestCase):
         from fintech_quant.data.akshare_provider import AkShareProvider
 
         def fetcher(**_: object) -> list[dict[str, object]]:
-            return [{"日期": "bad-date"}]
+            return [
+                {
+                    "日期": "bad-date",
+                    "开盘": "10.1",
+                    "最高": "10.8",
+                    "最低": "9.9",
+                    "收盘": "10.5",
+                    "成交量": "12345",
+                    "成交额": "67890.5",
+                }
+            ]
 
         provider = AkShareProvider(fetcher=fetcher)
 
@@ -169,7 +218,17 @@ class DataLayerTest(unittest.TestCase):
         from fintech_quant.data.tushare_provider import TushareProvider
 
         def fetcher(**_: object) -> list[dict[str, object]]:
-            return [{"trade_date": "bad-date"}]
+            return [
+                {
+                    "trade_date": "bad-date",
+                    "open": "10.2",
+                    "high": "10.6",
+                    "low": "10.0",
+                    "close": "10.4",
+                    "vol": "54321",
+                    "amount": "76543.2",
+                }
+            ]
 
         provider = TushareProvider(token="token", fetcher=fetcher)
 

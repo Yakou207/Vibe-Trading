@@ -45,14 +45,14 @@ class RiskEngineTest(unittest.TestCase):
         result = evaluate_risk(
             RiskInput(
                 index_below_annual_ma=True,
-                broad_market_drop_count=16,
+                broad_market_drop_gt_3pct_count=16,
             )
         )
 
         self.assertEqual(result.action, RiskAction.REDUCE)
         self.assertEqual(
             {warning.rule for warning in result.warnings},
-            {"index_below_annual_ma", "broad_market_drop_count"},
+            {"index_below_annual_ma", "broad_market_drop_gt_3pct_count"},
         )
 
 

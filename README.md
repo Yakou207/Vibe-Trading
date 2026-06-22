@@ -36,7 +36,7 @@ Python 版本：当前工作区 `.venv` 使用本机 Python 3.14。
 ```text
 src/fintech_quant/
   config/        项目配置和默认研究范围
-  data/          数据源接口与 Yahoo/Finnhub/AkShare 适配器
+  data/          数据源接口与 AkShare/Tushare Phase 1 适配器
   features/      因子工程与特征生成
   strategies/    策略接口、多因子基线、RL buy/sell/hold 策略
   backtesting/   回测引擎、撮合、绩效指标

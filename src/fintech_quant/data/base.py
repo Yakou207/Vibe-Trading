@@ -17,18 +17,16 @@ class MarketDataProvider(ABC):
 
 
 def normalize_daily_bar(symbol: str, row: Mapping[str, object], source: str) -> dict[str, object]:
-    trade_date = _first_present(row, ("trade_date", "date", "日期"))
-    if trade_date is None:
-        raise ValueError("Daily bar is missing trade_date/date/日期")
+    trade_date = _require_value(row, "trade_date", ("trade_date", "date", "日期"))
     return {
         "symbol": normalize_a_share_symbol(symbol),
         "trade_date": _normalize_trade_date(trade_date),
-        "open": _float_value(_first_present(row, ("open", "开盘"))),
-        "high": _float_value(_first_present(row, ("high", "最高"))),
-        "low": _float_value(_first_present(row, ("low", "最低"))),
-        "close": _float_value(_first_present(row, ("close", "收盘"))),
-        "volume": _float_value(_first_present(row, ("volume", "vol", "成交量"))),
-        "amount": _float_value(_first_present(row, ("amount", "成交额"))),
+        "open": _require_float(row, "open", ("open", "开盘")),
+        "high": _require_float(row, "high", ("high", "最高")),
+        "low": _require_float(row, "low", ("low", "最低")),
+        "close": _require_float(row, "close", ("close", "收盘")),
+        "volume": _require_float(row, "volume", ("volume", "vol", "成交量")),
+        "amount": _require_float(row, "amount", ("amount", "成交额")),
         "source": source,
     }
 
@@ -40,10 +38,19 @@ def _first_present(row: Mapping[str, object], keys: tuple[str, ...]) -> object |
     return None
 
 
-def _float_value(value: object | None) -> float | None:
+def _require_value(row: Mapping[str, object], field_name: str, keys: tuple[str, ...]) -> object:
+    value = _first_present(row, keys)
     if value is None:
-        return None
-    return float(value)
+        raise ValueError(f"Daily bar is missing required field: {field_name}")
+    return value
+
+
+def _require_float(row: Mapping[str, object], field_name: str, keys: tuple[str, ...]) -> float:
+    value = _require_value(row, field_name, keys)
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Daily bar field {field_name} must be numeric: {value!r}") from exc
 
 
 def _normalize_trade_date(value: object) -> str:

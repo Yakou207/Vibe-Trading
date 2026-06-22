@@ -195,9 +195,108 @@ class InformationRepositoryTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            self.assertEqual(result.stdout.strip(), "stored_records=1")
+            self.assertEqual(result.stdout.strip(), "stored_records=1\npruned_text_records=0")
             self.assertEqual(result.stderr, "")
             self.assertIn("Fixture announcement", output_path.read_text(encoding="utf-8"))
+
+    def test_fetch_information_script_prunes_old_text_records_after_append(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture_path = Path(tmp) / "fixture.jsonl"
+            output_path = Path(tmp) / "output.jsonl"
+            fixture_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001.SZ",
+                        "sector": "banking",
+                        "published_at": "2026-01-15",
+                        "source": "fixture",
+                        "category": "company_announcement",
+                        "title": "Fixture announcement",
+                        "url": "https://example.test/fixture-announcement",
+                        "summary": "Fixture-backed announcement.",
+                        "risk_tags": [],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            output_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "symbol": "000001.SZ",
+                                "sector": "banking",
+                                "published_at": "2022-01-15",
+                                "source": "fixture",
+                                "category": "company_announcement",
+                                "title": "Old announcement",
+                                "url": "https://example.test/old-announcement",
+                                "summary": "Should be pruned.",
+                                "risk_tags": [],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": "000001.SZ",
+                                "sector": "banking",
+                                "published_at": "2019-01-01",
+                                "source": "local",
+                                "category": "stock_data",
+                                "title": "Selected universe training row",
+                                "url": "",
+                                "summary": "Retained for RL.",
+                                "risk_tags": ["selected_universe"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/fetch_information.py",
+                    "--source",
+                    "jsonl",
+                    "--input",
+                    str(fixture_path),
+                    "--symbol",
+                    "000001",
+                    "--start",
+                    "2026-01-01",
+                    "--end",
+                    "2026-01-31",
+                    "--output",
+                    str(output_path),
+                    "--retention-as-of",
+                    "2026-06-18",
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertEqual(result.stdout.strip(), "stored_records=1\npruned_text_records=1")
+            self.assertEqual(result.stderr, "")
+            stored_text = output_path.read_text(encoding="utf-8")
+            self.assertIn("Fixture announcement", stored_text)
+            self.assertIn("Selected universe training row", stored_text)
+            self.assertNotIn("Old announcement", stored_text)
 
     def test_jsonl_fetcher_reads_source_backed_records(self) -> None:
         from fintech_quant.information import JsonlInformationFetcher
@@ -306,6 +405,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("Date filtering is page-", result.stdout)
         self.assertIn("bounded to this page.", result.stdout)
         self.assertIn("--recent-page", result.stdout)
+        self.assertIn("--retention-as-of", result.stdout)
 
     def test_static_fetcher_normalizes_non_empty_symbol_filter(self) -> None:
         from fintech_quant.information import InformationCategory, InformationRecord, StaticInformationFetcher

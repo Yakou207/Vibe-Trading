@@ -24,6 +24,11 @@ def main() -> int:
     parser.add_argument("--output", default="data/raw/information/information.jsonl")
     parser.add_argument("--report-type", default="重大事项")
     parser.add_argument(
+        "--retention-as-of",
+        default=None,
+        help="Override the retention cutoff date for text records (YYYY-MM-DD).",
+    )
+    parser.add_argument(
         "--recent-page",
         type=int,
         default=1,
@@ -35,7 +40,10 @@ def main() -> int:
     fetcher = _build_fetcher(args)
     records = fetcher.fetch(args.symbol, args.sector, date.fromisoformat(args.start), date.fromisoformat(args.end))
     added = sum(1 for record in records if repository.append(record))
+    retention_as_of = date.fromisoformat(args.retention_as_of) if args.retention_as_of else date.today()
+    pruned = repository.prune_text_records(retention_as_of)
     print(f"stored_records={added}")
+    print(f"pruned_text_records={pruned}")
     return 0
 
 
