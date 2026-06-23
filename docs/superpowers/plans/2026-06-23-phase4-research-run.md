@@ -536,4 +536,3 @@ PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/.worktrees/phase4-research-run/src 
 - [ ] Merge to `main`.
 - [ ] Re-run full tests on `main`.
 - [ ] Push `main` to GitHub.
-

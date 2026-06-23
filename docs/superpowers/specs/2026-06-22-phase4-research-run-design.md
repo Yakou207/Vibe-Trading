@@ -319,4 +319,3 @@ Phase 4 is complete when:
 - Risk exits can be triggered by the 15% portfolio drawdown rule.
 - Full test suite passes.
 - The implementation is merged to `main` and pushed to GitHub.
-
