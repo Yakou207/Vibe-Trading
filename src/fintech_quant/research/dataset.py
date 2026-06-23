@@ -162,8 +162,10 @@ def _load_market_state(path: Path | None) -> dict[date, MarketStateRow]:
 
 
 def _load_information(path: Path | None, universe_symbols: set[str]) -> list[InformationRecord]:
-    if path is None or not path.exists():
+    if path is None:
         return []
+    if not path.exists():
+        raise FileNotFoundError(path)
     records: list[InformationRecord] = []
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:

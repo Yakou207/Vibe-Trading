@@ -6,7 +6,7 @@ from typing import Mapping, Sequence
 
 from fintech_quant.backtesting.drawdown import DrawdownResult, EquityPoint, calculate_drawdown
 from fintech_quant.features import StockScore
-from fintech_quant.risk import RiskAction, RiskInput, RiskWarning, evaluate_risk
+from fintech_quant.risk import RiskAction, RiskInput, RiskLimits, RiskWarning, evaluate_risk
 from fintech_quant.strategies.scored_baseline import ScoredBaselineStrategy
 from fintech_quant.trading import TradeAction
 
@@ -80,6 +80,7 @@ def run_portfolio_scored_baseline_backtest(
 
     active_strategy = strategy or ScoredBaselineStrategy()
     risk_by_key = risk_inputs or {}
+    risk_limits = RiskLimits(max_position_weight=max_position_weight)
     cash = float(initial_cash)
     positions: dict[str, _Position] = {}
     trades: list[PortfolioBacktestTrade] = []
@@ -88,11 +89,13 @@ def run_portfolio_scored_baseline_backtest(
     total_turnover = 0.0
     closed_wins = 0
     closed_count = 0
+    rolling_peak = float(initial_cash)
 
     for trade_date, daily_bars in _group_by_date(ordered):
         close_by_symbol = {str(bar["symbol"]): _bar_close(bar) for bar in daily_bars}
         bought_today: set[str] = set()
         starting_equity = _equity(cash, positions, close_by_symbol)
+        rolling_peak = max(rolling_peak, starting_equity)
 
         for bar in daily_bars:
             symbol = str(bar["symbol"])
@@ -100,10 +103,14 @@ def run_portfolio_scored_baseline_backtest(
             score = scores.get((trade_date, symbol))
             if score is None:
                 continue
-            risk = evaluate_risk(risk_by_key.get((trade_date, symbol), RiskInput()))
+            position = positions.get(symbol, _Position())
+            risk_input = _merge_risk_inputs(
+                risk_by_key.get((trade_date, symbol), RiskInput()),
+                _dynamic_risk_input(close, position, starting_equity, rolling_peak),
+            )
+            risk = evaluate_risk(risk_input, risk_limits)
             warnings.extend(_dated_warnings(trade_date, symbol, risk.warnings))
             decision = active_strategy.decide({"score": score, "risk_action": risk.action})
-            position = positions.get(symbol, _Position())
 
             if decision.action is TradeAction.SELL and position.shares > 0 and symbol not in bought_today:
                 sell_price = round(close * (1.0 - slippage_rate), 6)
@@ -139,7 +146,11 @@ def run_portfolio_scored_baseline_backtest(
                     continue
                 notional = round(shares * buy_price, 6)
                 commission = round(notional * commission_rate, 6)
-                if notional + commission > cash:
+                while shares > 0 and notional + commission > cash:
+                    shares -= lot_size
+                    notional = round(shares * buy_price, 6)
+                    commission = round(notional * commission_rate, 6)
+                if shares <= 0:
                     continue
                 cash -= notional + commission
                 total_turnover += notional
@@ -203,6 +214,41 @@ def _equity(cash: float, positions: Mapping[str, _Position], close_by_symbol: Ma
 
 def _positions_value(positions: Mapping[str, _Position], close_by_symbol: Mapping[str, float]) -> float:
     return sum(position.shares * close_by_symbol.get(symbol, position.cost_basis) for symbol, position in positions.items())
+
+
+def _dynamic_risk_input(
+    close: float,
+    position: _Position,
+    equity: float,
+    rolling_peak: float,
+) -> RiskInput:
+    market_value = position.shares * close
+    return RiskInput(
+        position_weight=round(market_value / equity, 6) if equity > 0 else 0.0,
+        portfolio_drawdown=round(max(0.0, (rolling_peak - equity) / rolling_peak), 6) if rolling_peak > 0 else 0.0,
+        single_position_drawdown=(
+            round(max(0.0, (position.cost_basis - close) / position.cost_basis), 6)
+            if position.shares > 0 and position.cost_basis > 0
+            else 0.0
+        ),
+    )
+
+
+def _merge_risk_inputs(left: RiskInput, right: RiskInput) -> RiskInput:
+    return RiskInput(
+        position_weight=max(left.position_weight, right.position_weight),
+        portfolio_drawdown=max(left.portfolio_drawdown, right.portfolio_drawdown),
+        single_position_drawdown=max(left.single_position_drawdown, right.single_position_drawdown),
+        st_warning=left.st_warning or right.st_warning,
+        goodwill_ratio=max(left.goodwill_ratio, right.goodwill_ratio),
+        pledge_ratio=max(left.pledge_ratio, right.pledge_ratio),
+        main_outflow_days=max(left.main_outflow_days, right.main_outflow_days),
+        index_below_annual_ma=left.index_below_annual_ma or right.index_below_annual_ma,
+        broad_market_drop_gt_3pct_count=max(
+            left.broad_market_drop_gt_3pct_count,
+            right.broad_market_drop_gt_3pct_count,
+        ),
+    )
 
 
 def _round_lot(shares: int, lot_size: int) -> int:

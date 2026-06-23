@@ -278,6 +278,7 @@ The portfolio baseline adds practical A-share constraints:
 - no same-day sell after buy for the same symbol
 - commission and slippage parameters
 - risk-triggered exits through the existing risk engine
+- actual portfolio and single-position drawdown checks from daily marked equity
 
 DQN remains frozen in this phase. It should be compared against these run reports after the baseline artifacts are stable.
 
@@ -291,7 +292,7 @@ PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/.worktrees/phase4-research-run/src 
 Result:
 
 ```text
-Ran 68 tests
+Ran 72 tests
 OK
 ```
 

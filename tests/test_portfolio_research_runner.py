@@ -55,8 +55,74 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
 
         self.assertEqual(result.trades[-1].action, TradeAction.SELL)
         self.assertEqual(result.trades[-1].shares, 800)
-        self.assertEqual(result.risk_warnings[-1].rule, "portfolio_drawdown")
-        self.assertEqual(result.summary["risk_warning_count"], 1)
+        self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
+        self.assertGreaterEqual(result.summary["risk_warning_count"], 1)
+
+    def test_portfolio_runner_liquidates_when_actual_portfolio_drawdown_crosses_threshold(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 8.0),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+        )
+
+        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL])
+        self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
+
+    def test_portfolio_runner_reduces_when_actual_single_position_drawdown_crosses_threshold(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 9.0),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+        )
+
+        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL])
+        self.assertEqual(result.risk_warnings[-1].rule, "single_position_drawdown")
+
+    def test_portfolio_runner_uses_configured_position_weight_limit_for_dynamic_risk(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 10.0),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+        )
+
+        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
+        self.assertNotIn("position_weight", [warning.rule for warning in result.risk_warnings])
 
 
 def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:

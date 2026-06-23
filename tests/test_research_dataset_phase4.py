@@ -118,6 +118,19 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
         self.assertEqual(dataset.information_records[0].title, "Risk notice")
         self.assertEqual(dataset.information_records[0].normalized_symbol, "000001.SZ")
 
+    def test_load_research_dataset_rejects_missing_explicit_information_path(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            universe_path.write_text("symbol\n000001\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-01-01", 10.0)])
+
+            with self.assertRaises(FileNotFoundError):
+                load_research_dataset(features_path, universe_path, information_path=root / "missing.jsonl")
+
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
     fieldnames = list(rows[0])

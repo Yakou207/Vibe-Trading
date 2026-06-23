@@ -6,7 +6,6 @@ from typing import Mapping, Sequence
 
 from fintech_quant.information import InformationRecord
 from fintech_quant.risk import RiskInput
-from fintech_quant.research.scoring import NEGATIVE_RISK_TAGS
 
 
 @dataclass(frozen=True)
@@ -48,15 +47,6 @@ def build_risk_input(
         main_outflow_days=_int(capital_values.get("main_outflow_days")),
         index_below_annual_ma=_bool(market_values.get("index_below_annual_ma")),
         broad_market_drop_gt_3pct_count=_int(market_values.get("broad_market_drop_gt_3pct_count")),
-    )
-
-
-def has_negative_information(symbol: str, trade_date: date, records: Sequence[InformationRecord]) -> bool:
-    return any(
-        record.normalized_symbol == symbol
-        and record.published_at <= trade_date
-        and any(tag in NEGATIVE_RISK_TAGS for tag in record.risk_tags)
-        for record in records
     )
 
 
