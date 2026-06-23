@@ -47,6 +47,20 @@ Provider mode supports `--source auto`, `--source akshare`, or `--source tushare
 
 Generated features include moving averages, RSI, MACD, daily returns, and rolling volatility for baseline and future DQN research.
 
+## Phase 4 Research Run
+
+Phase 4 connects local features, optional fundamentals, capital-flow rows, and information records into a reproducible baseline run:
+
+```bash
+python scripts/run_research_baseline.py \
+  --run-id fixture-run \
+  --features data/processed/akshare_research_features.csv \
+  --universe universe.csv \
+  --output-root outputs/research_runs
+```
+
+The command writes `outputs/research_runs/<run_id>/run_report.json` with scores, missing fields, risk warnings, trades, portfolio equity, drawdown, and summary metrics. DQN remains frozen until these baseline artifacts are stable enough for comparison.
+
 ## Local Setup
 
 ```bash
