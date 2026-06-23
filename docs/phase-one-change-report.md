@@ -366,22 +366,58 @@ Ran 85 tests
 OK
 ```
 
-## Remaining Gaps After Phase 6
+## Phase 7 Strategy Comparison Update
 
-1. Add DQN-vs-baseline comparison metrics:
-   - annualized return
-   - Sharpe
-   - benchmark excess return
-   - walk-forward stability
-2. Add richer A-share information sources:
+Phase 7 adds a report-level comparison tool for baseline-vs-candidate evaluation.
+
+The comparison command is:
+
+```bash
+python scripts/compare_strategy_reports.py \
+  --baseline outputs/research_runs/baseline/run_report.json \
+  --candidate outputs/research_runs/dqn/run_report.json \
+  --output outputs/research_runs/comparison.json
+```
+
+The comparison report includes:
+
+- total return
+- annualized return
+- Sharpe
+- max drawdown
+- trade count
+- win rate
+- candidate excess return over baseline
+- walk-forward segment returns
+
+The candidate report can later be produced by DQN, but the comparison tool only requires the same `run_report.json` shape used by the baseline runner.
+Reports with missing trade statistics are rejected instead of silently treating missing values as zero.
+
+Verification added:
+
+```bash
+PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/src \
+  /Users/yakou/Desktop/Vibe-Trading/.venv/bin/python -m unittest discover -s tests
+```
+
+Result:
+
+```text
+Ran 90 tests
+OK
+```
+
+## Remaining Gaps After Phase 7
+
+1. Add richer A-share information sources:
    - exchange announcements
    - company financial reports
    - fund flow
    - margin financing
    - dragon-tiger board
    - sector-level policy events
-3. Add more realistic execution details:
+2. Add more realistic execution details:
    - sell-side stamp duty
    - partial fills
    - real high/low limit-price fields when available
-4. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
+3. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.

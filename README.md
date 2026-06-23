@@ -86,6 +86,19 @@ python scripts/build_rl_dataset.py \
 
 Each row contains a stable `state_fields` list, numeric `state_vector`, and one-day forward return target. This is a data contract for RL training, not a trained DQN policy.
 
+## Phase 7 Strategy Comparison
+
+Phase 7 compares a baseline `run_report.json` against a candidate report, such as a future DQN run:
+
+```bash
+python scripts/compare_strategy_reports.py \
+  --baseline outputs/research_runs/baseline/run_report.json \
+  --candidate outputs/research_runs/dqn/run_report.json \
+  --output outputs/research_runs/comparison.json
+```
+
+The comparison includes total return, annualized return, Sharpe, max drawdown, trade count, win rate, excess return, and walk-forward segment returns.
+
 ## Local Setup
 
 ```bash
