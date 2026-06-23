@@ -101,40 +101,52 @@ def run_portfolio_scored_baseline_backtest(
             symbol = str(bar["symbol"])
             close = _bar_close(bar)
             score = scores.get((trade_date, symbol))
-            if score is None:
-                continue
             position = positions.get(symbol, _Position())
             risk_input = _merge_risk_inputs(
                 risk_by_key.get((trade_date, symbol), RiskInput()),
-                _dynamic_risk_input(close, position, starting_equity, rolling_peak),
+                _dynamic_risk_input(close, position, starting_equity, rolling_peak, commission_rate),
             )
             risk = evaluate_risk(risk_input, risk_limits)
             warnings.extend(_dated_warnings(trade_date, symbol, risk.warnings))
+
+            if score is None:
+                if position.shares > 0 and symbol not in bought_today and risk.action in {RiskAction.REDUCE, RiskAction.LIQUIDATE}:
+                    trade, cash, notional, closed_win = _sell_position(
+                        trade_date=trade_date,
+                        symbol=symbol,
+                        close=close,
+                        position=position,
+                        cash=cash,
+                        commission_rate=commission_rate,
+                        slippage_rate=slippage_rate,
+                        reason=f"Risk action {risk.action.value} overrides missing score.",
+                    )
+                    total_turnover += notional
+                    closed_count += 1
+                    if closed_win:
+                        closed_wins += 1
+                    trades.append(trade)
+                    positions.pop(symbol, None)
+                continue
+
             decision = active_strategy.decide({"score": score, "risk_action": risk.action})
 
             if decision.action is TradeAction.SELL and position.shares > 0 and symbol not in bought_today:
-                sell_price = round(close * (1.0 - slippage_rate), 6)
-                notional = round(position.shares * sell_price, 6)
-                commission = round(notional * commission_rate, 6)
-                cash += notional - commission
+                trade, cash, notional, closed_win = _sell_position(
+                    trade_date=trade_date,
+                    symbol=symbol,
+                    close=close,
+                    position=position,
+                    cash=cash,
+                    commission_rate=commission_rate,
+                    slippage_rate=slippage_rate,
+                    reason=decision.reason,
+                )
                 total_turnover += notional
                 closed_count += 1
-                if sell_price > position.cost_basis:
+                if closed_win:
                     closed_wins += 1
-                trades.append(
-                    PortfolioBacktestTrade(
-                        trade_date=trade_date,
-                        symbol=symbol,
-                        action=TradeAction.SELL,
-                        price=sell_price,
-                        shares=position.shares,
-                        notional=notional,
-                        commission=commission,
-                        cash=round(cash, 6),
-                        position=0,
-                        reason=decision.reason,
-                    )
-                )
+                trades.append(trade)
                 positions.pop(symbol, None)
                 continue
 
@@ -221,10 +233,12 @@ def _dynamic_risk_input(
     position: _Position,
     equity: float,
     rolling_peak: float,
+    commission_rate: float,
 ) -> RiskInput:
     market_value = position.shares * close
+    position_weight_equity = equity + (market_value * commission_rate)
     return RiskInput(
-        position_weight=round(market_value / equity, 6) if equity > 0 else 0.0,
+        position_weight=round(market_value / position_weight_equity, 6) if position_weight_equity > 0 else 0.0,
         portfolio_drawdown=round(max(0.0, (rolling_peak - equity) / rolling_peak), 6) if rolling_peak > 0 else 0.0,
         single_position_drawdown=(
             round(max(0.0, (position.cost_basis - close) / position.cost_basis), 6)
@@ -232,6 +246,36 @@ def _dynamic_risk_input(
             else 0.0
         ),
     )
+
+
+def _sell_position(
+    *,
+    trade_date: date,
+    symbol: str,
+    close: float,
+    position: _Position,
+    cash: float,
+    commission_rate: float,
+    slippage_rate: float,
+    reason: str,
+) -> tuple[PortfolioBacktestTrade, float, float, bool]:
+    sell_price = round(close * (1.0 - slippage_rate), 6)
+    notional = round(position.shares * sell_price, 6)
+    commission = round(notional * commission_rate, 6)
+    next_cash = cash + notional - commission
+    trade = PortfolioBacktestTrade(
+        trade_date=trade_date,
+        symbol=symbol,
+        action=TradeAction.SELL,
+        price=sell_price,
+        shares=position.shares,
+        notional=notional,
+        commission=commission,
+        cash=round(next_cash, 6),
+        position=0,
+        reason=reason,
+    )
+    return trade, next_cash, notional, sell_price > position.cost_basis
 
 
 def _merge_risk_inputs(left: RiskInput, right: RiskInput) -> RiskInput:
