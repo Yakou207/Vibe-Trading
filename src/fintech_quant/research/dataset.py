@@ -20,6 +20,12 @@ _BOOLEAN_FIELDS = {
     "margin_financing_positive",
     "st_warning",
     "index_below_annual_ma",
+    "is_suspended",
+    "suspended",
+    "limit_up",
+    "is_limit_up",
+    "limit_down",
+    "is_limit_down",
 }
 _INT_FIELDS = {
     "main_outflow_days",

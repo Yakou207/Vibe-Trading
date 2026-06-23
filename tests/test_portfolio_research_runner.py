@@ -38,6 +38,57 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             [(trade.trade_date, trade.action) for trade in result.trades],
         )
 
+    def test_portfolio_runner_does_not_buy_suspended_stock(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [_bar("000001.SZ", "2026-01-01", 10.0, is_suspended=True)]
+        scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
+
+        result = run_portfolio_scored_baseline_backtest(bars, scores, initial_cash=100000.0)
+
+        self.assertEqual(result.trades, [])
+
+    def test_portfolio_runner_does_not_buy_limit_up_stock(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [_bar("000001.SZ", "2026-01-01", 10.0, limit_up=True)]
+        scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
+
+        result = run_portfolio_scored_baseline_backtest(bars, scores, initial_cash=100000.0)
+
+        self.assertEqual(result.trades, [])
+
+    def test_portfolio_runner_can_disable_price_limit_and_suspension_filters(self) -> None:
+        from fintech_quant.backtesting import AShareTradingConstraints, run_portfolio_scored_baseline_backtest
+
+        bars = [_bar("000001.SZ", "2026-01-01", 10.0, is_suspended=True, limit_up=True)]
+        scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=100000.0,
+            constraints=AShareTradingConstraints(price_limit_required=False, suspension_filter_required=False),
+        )
+
+        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
+
+    def test_portfolio_runner_keeps_function_lot_size_when_constraints_are_passed(self) -> None:
+        from fintech_quant.backtesting import AShareTradingConstraints, run_portfolio_scored_baseline_backtest
+
+        bars = [_bar("000001.SZ", "2026-01-01", 10.0, limit_up=True)]
+        scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=100000.0,
+            lot_size=300,
+            constraints=AShareTradingConstraints(price_limit_required=False),
+        )
+
+        self.assertEqual(result.trades[0].shares, 600)
+
     def test_portfolio_runner_liquidates_on_portfolio_drawdown_risk(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 
@@ -57,6 +108,42 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual(result.trades[-1].shares, 800)
         self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
         self.assertGreaterEqual(result.summary["risk_warning_count"], 1)
+
+    def test_portfolio_runner_does_not_sell_limit_down_stock(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 8.0, limit_down=True),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+        risk_inputs = {(date(2026, 1, 2), "000001.SZ"): RiskInput(portfolio_drawdown=0.15)}
+
+        result = run_portfolio_scored_baseline_backtest(bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0)
+
+        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
+        self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
+
+    def test_portfolio_runner_does_not_sell_suspended_stock(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 8.0, is_suspended=True),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+        risk_inputs = {(date(2026, 1, 2), "000001.SZ"): RiskInput(portfolio_drawdown=0.15)}
+
+        result = run_portfolio_scored_baseline_backtest(bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0)
+
+        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
+        self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
 
     def test_portfolio_runner_liquidates_when_actual_portfolio_drawdown_crosses_threshold(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
@@ -196,8 +283,8 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
 
 
-def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:
-    return {
+def _bar(symbol: str, trade_date: str, close: float, **overrides: object) -> dict[str, object]:
+    row = {
         "symbol": symbol,
         "trade_date": trade_date,
         "open": close,
@@ -208,6 +295,8 @@ def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:
         "amount": close * 1000.0,
         "source": "fixture",
     }
+    row.update(overrides)
+    return row
 
 
 def _score(symbol: str, total: float) -> StockScore:

@@ -296,23 +296,52 @@ Ran 75 tests
 OK
 ```
 
-## Remaining Gaps After Phase 4
+## Phase 5 A-share Execution Constraints Update
 
-1. Add A-share execution constraints to the backtest runner:
-   - price limits
-   - suspension handling
-   - stricter T+1 portfolio accounting across partial fills
-2. Convert generated features into RL state datasets.
-3. Add DQN-vs-baseline comparison metrics:
+Phase 5 connects A-share execution constraints to the multi-symbol portfolio runner.
+
+The portfolio runner now blocks:
+
+- buys when a stock is suspended
+- sells when a stock is suspended
+- buys when a stock is limit-up
+- sells when a stock is limit-down
+- same-day sells after a buy under T+1
+
+The constraints are enabled by default and can be disabled through `AShareTradingConstraints` for controlled research comparisons.
+`run_research_baseline` passes suspension and price-limit flags from feature rows into the portfolio runner when those fields are present.
+
+Verification added:
+
+```bash
+PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/src \
+  /Users/yakou/Desktop/Vibe-Trading/.venv/bin/python -m unittest discover -s tests
+```
+
+Result:
+
+```text
+Ran 82 tests
+OK
+```
+
+## Remaining Gaps After Phase 5
+
+1. Convert generated features into RL state datasets.
+2. Add DQN-vs-baseline comparison metrics:
    - annualized return
    - Sharpe
    - benchmark excess return
    - walk-forward stability
-4. Add richer A-share information sources:
+3. Add richer A-share information sources:
    - exchange announcements
    - company financial reports
    - fund flow
    - margin financing
    - dragon-tiger board
    - sector-level policy events
+4. Add more realistic execution details:
+   - sell-side stamp duty
+   - partial fills
+   - real high/low limit-price fields when available
 5. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Mapping, Sequence
 
+from fintech_quant.backtesting.constraints import AShareTradingConstraints
 from fintech_quant.backtesting.drawdown import DrawdownResult, EquityPoint, calculate_drawdown
 from fintech_quant.features import StockScore
 from fintech_quant.risk import RiskAction, RiskInput, RiskLimits, RiskWarning, evaluate_risk
@@ -68,12 +69,14 @@ def run_portfolio_scored_baseline_backtest(
     lot_size: int = 100,
     commission_rate: float = 0.0003,
     slippage_rate: float = 0.0,
+    constraints: AShareTradingConstraints | None = None,
     strategy: ScoredBaselineStrategy | None = None,
 ) -> PortfolioBacktestResult:
     if initial_cash <= 0:
         raise ValueError("initial_cash must be positive")
     if lot_size <= 0:
         raise ValueError("lot_size must be positive")
+    active_constraints = replace(constraints, lot_size=lot_size) if constraints else AShareTradingConstraints(lot_size=lot_size)
     ordered = sorted(bars, key=lambda item: (_bar_date(item), str(item["symbol"])))
     if not ordered:
         raise ValueError("bars must contain at least one daily bar")
@@ -110,7 +113,11 @@ def run_portfolio_scored_baseline_backtest(
             warnings.extend(_dated_warnings(trade_date, symbol, risk.warnings))
 
             if score is None:
-                if position.shares > 0 and symbol not in bought_today and risk.action in {RiskAction.REDUCE, RiskAction.LIQUIDATE}:
+                if (
+                    position.shares > 0
+                    and _can_sell(bar, active_constraints, symbol in bought_today)
+                    and risk.action in {RiskAction.REDUCE, RiskAction.LIQUIDATE}
+                ):
                     trade, cash, notional, closed_win = _sell_position(
                         trade_date=trade_date,
                         symbol=symbol,
@@ -131,7 +138,7 @@ def run_portfolio_scored_baseline_backtest(
 
             decision = active_strategy.decide({"score": score, "risk_action": risk.action})
 
-            if decision.action is TradeAction.SELL and position.shares > 0 and symbol not in bought_today:
+            if decision.action is TradeAction.SELL and position.shares > 0 and _can_sell(bar, active_constraints, symbol in bought_today):
                 trade, cash, notional, closed_win = _sell_position(
                     trade_date=trade_date,
                     symbol=symbol,
@@ -150,16 +157,21 @@ def run_portfolio_scored_baseline_backtest(
                 positions.pop(symbol, None)
                 continue
 
-            if decision.action is TradeAction.BUY and position.shares == 0 and risk.action not in {RiskAction.REDUCE, RiskAction.LIQUIDATE}:
+            if (
+                decision.action is TradeAction.BUY
+                and position.shares == 0
+                and _can_buy(bar, active_constraints)
+                and risk.action not in {RiskAction.REDUCE, RiskAction.LIQUIDATE}
+            ):
                 buy_price = round(close * (1.0 + slippage_rate), 6)
                 max_notional = min(cash, starting_equity * max_position_weight)
-                shares = _round_lot(int(max_notional // buy_price), lot_size)
+                shares = _round_lot(int(max_notional // buy_price), active_constraints.lot_size)
                 if shares <= 0:
                     continue
                 notional = round(shares * buy_price, 6)
                 commission = round(notional * commission_rate, 6)
                 while shares > 0 and notional + commission > cash:
-                    shares -= lot_size
+                    shares -= active_constraints.lot_size
                     notional = round(shares * buy_price, 6)
                     commission = round(notional * commission_rate, 6)
                 if shares <= 0:
@@ -226,6 +238,28 @@ def _equity(cash: float, positions: Mapping[str, _Position], close_by_symbol: Ma
 
 def _positions_value(positions: Mapping[str, _Position], close_by_symbol: Mapping[str, float]) -> float:
     return sum(position.shares * close_by_symbol.get(symbol, position.cost_basis) for symbol, position in positions.items())
+
+
+def _can_buy(bar: Mapping[str, object], constraints: AShareTradingConstraints) -> bool:
+    if constraints.suspension_filter_required and _truthy_bar_flag(bar, "is_suspended", "suspended"):
+        return False
+    if constraints.price_limit_required and _truthy_bar_flag(bar, "limit_up", "is_limit_up"):
+        return False
+    return True
+
+
+def _can_sell(bar: Mapping[str, object], constraints: AShareTradingConstraints, bought_today: bool) -> bool:
+    if constraints.t_plus_one and bought_today:
+        return False
+    if constraints.suspension_filter_required and _truthy_bar_flag(bar, "is_suspended", "suspended"):
+        return False
+    if constraints.price_limit_required and _truthy_bar_flag(bar, "limit_down", "is_limit_down"):
+        return False
+    return True
+
+
+def _truthy_bar_flag(bar: Mapping[str, object], *keys: str) -> bool:
+    return any(bool(bar.get(key)) for key in keys)
 
 
 def _dynamic_risk_input(

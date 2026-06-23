@@ -1,5 +1,6 @@
 """Backtesting engine, market constraints, and performance metrics."""
 
+from fintech_quant.backtesting.constraints import AShareTradingConstraints
 from fintech_quant.backtesting.drawdown import (
     DrawdownPoint,
     DrawdownResult,
@@ -22,6 +23,7 @@ from fintech_quant.backtesting.research_runner import (
 )
 
 __all__ = [
+    "AShareTradingConstraints",
     "BacktestTrade",
     "DailyEquity",
     "DatedRiskWarning",

@@ -57,8 +57,27 @@ class ResearchRunTest(unittest.TestCase):
         self.assertIn("summary", payload)
         self.assertEqual(payload["scores"][0]["symbol"], "000001.SZ")
 
+    def test_run_research_baseline_passes_price_limit_flags_to_portfolio_runner(self) -> None:
+        from fintech_quant.research.run import ResearchRunConfig, run_research_baseline
 
-def _write_fixture_inputs(root: Path) -> dict[str, Path]:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _write_fixture_inputs(Path(tmp), limit_up=True)
+            report = run_research_baseline(
+                ResearchRunConfig(
+                    run_id="limit-up-run",
+                    features_path=paths["features"],
+                    universe_path=paths["universe"],
+                    fundamentals_path=paths["fundamentals"],
+                    capital_flow_path=paths["capital_flow"],
+                    initial_cash=100000.0,
+                )
+            )
+
+        self.assertEqual(report.trades, [])
+        self.assertEqual(report.summary["trade_count"], 0)
+
+
+def _write_fixture_inputs(root: Path, *, limit_up: bool = False) -> dict[str, Path]:
     universe = root / "universe.csv"
     features = root / "features.csv"
     fundamentals = root / "fundamentals.csv"
@@ -67,8 +86,8 @@ def _write_fixture_inputs(root: Path) -> dict[str, Path]:
     features.write_text(
         "symbol,trade_date,open,high,low,close,volume,amount,source,return_1d,ma20,ma60,ma250,"
         "close_above_ma20,close_above_ma60,close_above_ma250,rsi14,macd_line,macd_signal,macd_hist,"
-        "macd_positive,volatility20\n"
-        "000001,2026-01-01,10,10,10,10,1000,10000,fixture,0.01,9,8,7,true,true,true,55,0.1,0.05,0.05,true,0.02\n",
+        "macd_positive,volatility20,limit_up\n"
+        f"000001,2026-01-01,10,10,10,10,1000,10000,fixture,0.01,9,8,7,true,true,true,55,0.1,0.05,0.05,true,0.02,{str(limit_up).lower()}\n",
         encoding="utf-8",
     )
     fundamentals.write_text("symbol,pe,pb,roe,growth\n000001,18,1.5,0.16,0.12\n", encoding="utf-8")

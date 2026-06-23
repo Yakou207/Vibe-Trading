@@ -9,7 +9,7 @@
 - 市场：A 股优先，Phase 1 默认数据源为 AkShare，并保留 Tushare token-ready 适配器用于后续接入。
 - 频率：日频为主，不做高频交易。
 - 策略：第一版支持 RL buy/sell/hold 策略接口，同时保留多因子基线对照。
-- 交易约束：后续回测必须建模 T+1、涨跌停、停牌、手续费、印花税、滑点。
+- 交易约束：多标的研究回测已建模 T+1、涨跌停、停牌、手续费、滑点；印花税和更细的部分成交仍是后续项。
 - 执行：先做 paper trading，不接实盘券商。
 
 ## Phase 1 Research Loop
@@ -60,6 +60,16 @@ python scripts/run_research_baseline.py \
 ```
 
 The command writes `outputs/research_runs/<run_id>/run_report.json` with scores, missing fields, risk warnings, trades, portfolio equity, drawdown, and summary metrics. DQN remains frozen until these baseline artifacts are stable enough for comparison.
+
+## Phase 5 A-share Execution Constraints
+
+Phase 5 wires practical A-share constraints into the multi-symbol portfolio runner:
+
+- suspended stocks cannot be bought or sold
+- limit-up stocks cannot be bought
+- limit-down stocks cannot be sold
+- T+1 blocks same-day sells after a buy
+- constraints can be disabled explicitly for research comparison
 
 ## Local Setup
 

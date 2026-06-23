@@ -109,7 +109,7 @@ def _supplement_values(
 
 
 def _bar_from_feature(row: FeatureRow) -> dict[str, object]:
-    return {
+    bar = {
         "symbol": row.symbol,
         "trade_date": row.trade_date,
         "open": row.values.get("open"),
@@ -120,6 +120,10 @@ def _bar_from_feature(row: FeatureRow) -> dict[str, object]:
         "amount": row.values.get("amount"),
         "source": row.values.get("source", "features"),
     }
+    for flag in ("is_suspended", "suspended", "limit_up", "is_limit_up", "limit_down", "is_limit_down"):
+        if flag in row.values:
+            bar[flag] = row.values[flag]
+    return bar
 
 
 def _report_from_result(
