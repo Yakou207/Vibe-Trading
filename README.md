@@ -71,6 +71,21 @@ Phase 5 wires practical A-share constraints into the multi-symbol portfolio runn
 - T+1 blocks same-day sells after a buy
 - constraints can be disabled explicitly for research comparison
 
+## Phase 6 RL State Dataset
+
+Phase 6 builds a deterministic JSONL state dataset for future DQN experiments:
+
+```bash
+python scripts/build_rl_dataset.py \
+  --features data/processed/akshare_research_features.csv \
+  --universe universe.csv \
+  --fundamentals fundamentals.csv \
+  --capital-flow capital_flow.csv \
+  --output data/processed/rl_state_dataset.jsonl
+```
+
+Each row contains a stable `state_fields` list, numeric `state_vector`, and one-day forward return target. This is a data contract for RL training, not a trained DQN policy.
+
 ## Local Setup
 
 ```bash

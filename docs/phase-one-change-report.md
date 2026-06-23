@@ -325,23 +325,63 @@ Ran 82 tests
 OK
 ```
 
-## Remaining Gaps After Phase 5
+## Phase 6 RL State Dataset Update
 
-1. Convert generated features into RL state datasets.
-2. Add DQN-vs-baseline comparison metrics:
+Phase 6 adds a deterministic RL state dataset builder for future DQN work.
+
+The build command is:
+
+```bash
+python scripts/build_rl_dataset.py \
+  --features data/processed/akshare_research_features.csv \
+  --universe universe.csv \
+  --fundamentals fundamentals.csv \
+  --capital-flow capital_flow.csv \
+  --output data/processed/rl_state_dataset.jsonl
+```
+
+Each JSONL row includes:
+
+- `symbol`
+- `trade_date`
+- `next_trade_date`
+- stable `state_fields`
+- numeric `state_vector`
+- `forward_return_1d`
+- `terminal`
+
+The state vector combines technical features, optional fundamentals, optional capital-flow fields, information-derived negative event count, and the 35/25/25/15 score outputs. This keeps DQN input data aligned with the baseline research loop.
+
+Verification added:
+
+```bash
+PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/src \
+  /Users/yakou/Desktop/Vibe-Trading/.venv/bin/python -m unittest discover -s tests
+```
+
+Result:
+
+```text
+Ran 85 tests
+OK
+```
+
+## Remaining Gaps After Phase 6
+
+1. Add DQN-vs-baseline comparison metrics:
    - annualized return
    - Sharpe
    - benchmark excess return
    - walk-forward stability
-3. Add richer A-share information sources:
+2. Add richer A-share information sources:
    - exchange announcements
    - company financial reports
    - fund flow
    - margin financing
    - dragon-tiger board
    - sector-level policy events
-4. Add more realistic execution details:
+3. Add more realistic execution details:
    - sell-side stamp duty
    - partial fills
    - real high/low limit-price fields when available
-5. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
+4. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
