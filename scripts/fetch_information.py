@@ -10,12 +10,20 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from fintech_quant.information import AkShareNoticeFetcher, InformationRepository, JsonlInformationFetcher
+from fintech_quant.information import (
+    AkShareDragonTigerFetcher,
+    AkShareFundFlowFetcher,
+    AkShareMarginFetcher,
+    AkShareNoticeFetcher,
+    CombinedInformationFetcher,
+    InformationRepository,
+    JsonlInformationFetcher,
+)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch and store A-share information records.")
-    parser.add_argument("--source", choices=("akshare_notice", "jsonl"), default="akshare_notice")
+    parser.add_argument("--source", choices=("akshare_notice", "akshare_multi", "jsonl"), default="akshare_notice")
     parser.add_argument("--input", default=None)
     parser.add_argument("--symbol", default=None)
     parser.add_argument("--sector", default=None)
@@ -52,6 +60,15 @@ def _build_fetcher(args: argparse.Namespace):
         if not args.input:
             raise SystemExit("--input is required when --source jsonl")
         return JsonlInformationFetcher(Path(args.input))
+    if args.source == "akshare_multi":
+        return CombinedInformationFetcher(
+            [
+                AkShareNoticeFetcher(report_type=args.report_type, recent_page=args.recent_page),
+                AkShareFundFlowFetcher(),
+                AkShareMarginFetcher(),
+                AkShareDragonTigerFetcher(),
+            ]
+        )
     return AkShareNoticeFetcher(report_type=args.report_type, recent_page=args.recent_page)
 
 

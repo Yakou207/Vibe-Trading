@@ -99,6 +99,21 @@ python scripts/compare_strategy_reports.py \
 
 The comparison includes total return, annualized return, Sharpe, max drawdown, trade count, win rate, excess return, and walk-forward segment returns.
 
+## Phase 8 Multi-source Information Fetch
+
+Phase 8 expands the information repository fetcher:
+
+```bash
+python scripts/fetch_information.py \
+  --source akshare_multi \
+  --symbol 000001 \
+  --start 2026-01-01 \
+  --end 2026-06-30 \
+  --output data/raw/information/information.jsonl
+```
+
+`akshare_multi` combines AkShare notices, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
+
 ## Local Setup
 
 ```bash

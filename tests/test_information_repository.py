@@ -389,6 +389,206 @@ class InformationRepositoryTest(unittest.TestCase):
                 date(2026, 6, 30),
             )
 
+    def test_akshare_fund_flow_fetcher_maps_selected_stock_data(self) -> None:
+        from fintech_quant.information import AkShareFundFlowFetcher, InformationCategory
+
+        def fetcher(symbol: str, market: str) -> list[dict[str, object]]:
+            self.assertEqual(symbol, "000001")
+            self.assertEqual(market, "sz")
+            return [
+                {
+                    "日期": "2026-06-03",
+                    "主力净流入": "1200",
+                    "收盘价": "10.5",
+                    "涨跌幅": "1.2",
+                }
+            ]
+
+        records = AkShareFundFlowFetcher(fetcher=fetcher).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].category, InformationCategory.STOCK_DATA)
+        self.assertEqual(records[0].normalized_symbol, "000001.SZ")
+        self.assertEqual(records[0].published_at, date(2026, 6, 3))
+        self.assertIn("selected_universe", records[0].risk_tags)
+        self.assertIn("capital_flow", records[0].risk_tags)
+        self.assertIn("main_inflow", records[0].risk_tags)
+
+    def test_akshare_margin_fetcher_maps_margin_financing_rows(self) -> None:
+        from fintech_quant.information import AkShareMarginFetcher, InformationCategory
+
+        def fetcher(trade_date: date, market: str) -> list[dict[str, object]]:
+            self.assertEqual(market, "sh")
+            return [
+                {
+                    "信用交易日期": trade_date.isoformat(),
+                    "标的证券代码": "600000",
+                    "融资余额": "1000",
+                    "融券余量": "20",
+                }
+            ]
+
+        records = AkShareMarginFetcher(fetcher=fetcher).fetch(
+            "600000",
+            None,
+            date(2026, 6, 3),
+            date(2026, 6, 3),
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].category, InformationCategory.STOCK_DATA)
+        self.assertEqual(records[0].normalized_symbol, "600000.SH")
+        self.assertIn("selected_universe", records[0].risk_tags)
+        self.assertIn("margin_financing", records[0].risk_tags)
+
+    def test_akshare_dragon_tiger_fetcher_maps_sentiment_rows(self) -> None:
+        from fintech_quant.information import AkShareDragonTigerFetcher, InformationCategory
+
+        def fetcher(window: str) -> list[dict[str, object]]:
+            self.assertEqual(window, "5")
+            return [
+                {
+                    "代码": "000001",
+                    "名称": "平安银行",
+                    "上榜次数": "2",
+                    "累积购买额": "2000",
+                    "累积卖出额": "1500",
+                    "净额": "500",
+                }
+            ]
+
+        records = AkShareDragonTigerFetcher(as_of=date(2026, 6, 23), fetcher=fetcher).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].category, InformationCategory.MARKET_SENTIMENT)
+        self.assertEqual(records[0].normalized_symbol, "000001.SZ")
+        self.assertEqual(records[0].published_at, date(2026, 6, 23))
+        self.assertIn("dragon_tiger", records[0].risk_tags)
+        self.assertIn("dragon_tiger_positive", records[0].risk_tags)
+
+    def test_akshare_dragon_tiger_fetcher_uses_current_api_name(self) -> None:
+        from fintech_quant.information import AkShareDragonTigerFetcher
+
+        calls: list[str] = []
+
+        class FakeAkShare:
+            @staticmethod
+            def stock_lhb_ggtj_sina(symbol: str):
+                calls.append(symbol)
+                return [
+                    {
+                        "代码": "000001",
+                        "名称": "平安银行",
+                        "上榜次数": "1",
+                        "净额": "100",
+                    }
+                ]
+
+        original_akshare = sys.modules.get("akshare")
+        sys.modules["akshare"] = FakeAkShare()
+        try:
+            records = AkShareDragonTigerFetcher(as_of=date(2026, 6, 23)).fetch(
+                "000001",
+                None,
+                date(2026, 6, 23),
+                date(2026, 6, 23),
+            )
+        finally:
+            if original_akshare is None:
+                sys.modules.pop("akshare", None)
+            else:
+                sys.modules["akshare"] = original_akshare
+
+        self.assertEqual(calls, ["5"])
+        self.assertEqual(len(records), 1)
+
+    def test_akshare_dragon_tiger_fetcher_does_not_backfill_historical_ranges(self) -> None:
+        from fintech_quant.information import AkShareDragonTigerFetcher
+
+        def fetcher(window: str) -> list[dict[str, object]]:
+            return [
+                {
+                    "代码": "000001",
+                    "名称": "平安银行",
+                    "上榜次数": "1",
+                    "净额": "100",
+                }
+            ]
+
+        records = AkShareDragonTigerFetcher(as_of=date(2026, 6, 23), fetcher=fetcher).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 10),
+        )
+
+        self.assertEqual(records, [])
+
+    def test_combined_information_fetcher_merges_multiple_sources(self) -> None:
+        from fintech_quant.information import CombinedInformationFetcher, InformationCategory, InformationRecord, StaticInformationFetcher
+
+        first = StaticInformationFetcher(
+            [
+                InformationRecord(
+                    symbol="000001",
+                    sector=None,
+                    published_at=date(2026, 6, 1),
+                    source="fixture_one",
+                    category=InformationCategory.COMPANY_ANNOUNCEMENT,
+                    title="Announcement",
+                    url="",
+                    summary="Announcement row.",
+                    risk_tags=(),
+                )
+            ]
+        )
+        second = StaticInformationFetcher(
+            [
+                InformationRecord(
+                    symbol="000001",
+                    sector=None,
+                    published_at=date(2026, 6, 2),
+                    source="fixture_two",
+                    category=InformationCategory.MARKET_SENTIMENT,
+                    title="Sentiment",
+                    url="",
+                    summary="Sentiment row.",
+                    risk_tags=(),
+                )
+            ]
+        )
+
+        records = CombinedInformationFetcher([second, first]).fetch("000001", None, date(2026, 6, 1), date(2026, 6, 30))
+
+        self.assertEqual([record.title for record in records], ["Announcement", "Sentiment"])
+
+    def test_fetch_information_help_includes_akshare_multi_source(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+
+        result = subprocess.run(
+            [sys.executable, "scripts/fetch_information.py", "--help"],
+            cwd=worktree,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("akshare_multi", result.stdout)
+
     def test_fetch_information_help_describes_recent_page_as_page_bounded(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
         env = dict(os.environ)

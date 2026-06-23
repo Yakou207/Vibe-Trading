@@ -407,14 +407,49 @@ Ran 90 tests
 OK
 ```
 
-## Remaining Gaps After Phase 7
+## Phase 8 Multi-source Information Fetch Update
 
-1. Add richer A-share information sources:
+Phase 8 expands the information fetch layer beyond company notices.
+
+The new `akshare_multi` source combines:
+
+- AkShare notice rows for announcements and financial-report metadata
+- individual fund-flow rows as selected-universe stock data
+- margin financing rows as selected-universe stock data
+- dragon-tiger board rows as market sentiment records
+
+The command is:
+
+```bash
+python scripts/fetch_information.py \
+  --source akshare_multi \
+  --symbol 000001 \
+  --start 2026-01-01 \
+  --end 2026-06-30 \
+  --output data/raw/information/information.jsonl
+```
+
+The multi-source fetcher still writes the same classified JSONL repository format, so downstream scoring and RL dataset generation do not need a separate data contract.
+Dragon-tiger board rows are treated as current-window sentiment at the fetch date, not backfilled into arbitrary historical ranges.
+
+Verification added:
+
+```bash
+PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/src \
+  /Users/yakou/Desktop/Vibe-Trading/.venv/bin/python -m unittest discover -s tests
+```
+
+Result:
+
+```text
+Ran 97 tests
+OK
+```
+
+## Remaining Gaps After Phase 8
+
+1. Add richer A-share policy/report sources:
    - exchange announcements
-   - company financial reports
-   - fund flow
-   - margin financing
-   - dragon-tiger board
    - sector-level policy events
 2. Add more realistic execution details:
    - sell-side stamp duty
