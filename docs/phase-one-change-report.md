@@ -241,29 +241,78 @@ Ran 55 tests
 OK
 ```
 
-## Remaining Gaps After Phase 3
+## Phase 4 Research Run Update
+
+Phase 4 adds a reproducible research-run layer that connects the Phase 1-3 pieces into one offline baseline artifact.
+
+The run command is:
+
+```bash
+python scripts/run_research_baseline.py \
+  --run-id fixture-run \
+  --features data/processed/akshare_research_features.csv \
+  --universe universe.csv \
+  --output-root outputs/research_runs
+```
+
+The report path is:
+
+```text
+outputs/research_runs/<run_id>/run_report.json
+```
+
+The report includes:
+
+- daily 35/25/25/15 scores
+- missing score fields
+- risk warnings
+- multi-symbol baseline trades
+- daily portfolio equity
+- drawdown summary
+- performance summary
+
+The portfolio baseline adds practical A-share constraints:
+
+- 100-share lots
+- default max position weight of 8%
+- no same-day sell after buy for the same symbol
+- commission and slippage parameters
+- risk-triggered exits through the existing risk engine
+- actual portfolio and single-position drawdown checks from daily marked equity
+
+DQN remains frozen in this phase. It should be compared against these run reports after the baseline artifacts are stable.
+
+Verification added:
+
+```bash
+PYTHONPATH=/Users/yakou/Desktop/Vibe-Trading/.worktrees/phase4-research-run/src \
+  /Users/yakou/Desktop/Vibe-Trading/.venv/bin/python -m unittest discover -s tests
+```
+
+Result:
+
+```text
+Ran 75 tests
+OK
+```
+
+## Remaining Gaps After Phase 4
 
 1. Add A-share execution constraints to the backtest runner:
-   - T+1
-   - lot size
-   - fees
-   - slippage
    - price limits
    - suspension handling
-2. Extend the backtest runner from one symbol to a selected-universe portfolio.
-3. Convert generated features into `ScoreInput` and RL state datasets.
-4. Add DQN-vs-baseline comparison metrics:
+   - stricter T+1 portfolio accounting across partial fills
+2. Convert generated features into RL state datasets.
+3. Add DQN-vs-baseline comparison metrics:
    - annualized return
-   - max drawdown
    - Sharpe
-   - turnover
-   - win rate
-   - risk-triggered exits
-5. Add richer A-share information sources:
+   - benchmark excess return
+   - walk-forward stability
+4. Add richer A-share information sources:
    - exchange announcements
    - company financial reports
    - fund flow
    - margin financing
    - dragon-tiger board
    - sector-level policy events
-6. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
+5. Decide whether Hermes is needed after the fetcher interfaces are stable. For now, scripts are more transparent and safer for daily research operations.
