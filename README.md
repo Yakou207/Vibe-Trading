@@ -112,7 +112,18 @@ python scripts/fetch_information.py \
   --output data/raw/information/information.jsonl
 ```
 
-`akshare_multi` combines AkShare notices, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
+Use `akshare_policy` when you only want policy/regulatory text for a stock code or sector keyword:
+
+```bash
+python scripts/fetch_information.py \
+  --source akshare_policy \
+  --sector 新能源 \
+  --start 2026-01-01 \
+  --end 2026-06-30 \
+  --output data/raw/information/information.jsonl
+```
+
+`akshare_multi` combines AkShare notices, policy/regulatory news, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
 
 ## Local Setup
 

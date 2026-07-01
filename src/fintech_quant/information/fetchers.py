@@ -61,8 +61,9 @@ class JsonlInformationFetcher(InformationFetcher):
 
 
 class CombinedInformationFetcher(InformationFetcher):
-    def __init__(self, fetchers: list[InformationFetcher]) -> None:
+    def __init__(self, fetchers: list[InformationFetcher], *, ignore_fetch_errors: bool = False) -> None:
         self._fetchers = fetchers
+        self._ignore_fetch_errors = ignore_fetch_errors
 
     def fetch(
         self,
@@ -73,7 +74,11 @@ class CombinedInformationFetcher(InformationFetcher):
     ) -> list[InformationRecord]:
         records: list[InformationRecord] = []
         for fetcher in self._fetchers:
-            records.extend(fetcher.fetch(symbol, sector, start, end))
+            try:
+                records.extend(fetcher.fetch(symbol, sector, start, end))
+            except ProviderFetchError:
+                if not self._ignore_fetch_errors:
+                    raise
         return sorted(records, key=lambda record: (record.published_at, record.normalized_symbol or "", record.title))
 
 
@@ -129,6 +134,45 @@ class AkShareNoticeFetcher(InformationFetcher):
             raise ProviderFetchError(
                 f"akshare notice fetch failed for report_type={self._report_type!r}, recent_page={self._recent_page!r}"
             ) from exc
+
+
+class AkSharePolicyNewsFetcher(InformationFetcher):
+    """Fetch policy-like CLS news rows and keep only rows relevant to the requested scope."""
+
+    def __init__(
+        self,
+        news_symbol: str = "全部",
+        fetcher: Callable[[], object] | None = None,
+    ) -> None:
+        self._news_symbol = news_symbol
+        self._fetcher = fetcher
+
+    def fetch(
+        self,
+        symbol: str | None,
+        sector: str | None,
+        start: date,
+        end: date,
+    ) -> list[InformationRecord]:
+        normalized_symbol = normalize_a_share_symbol(symbol) if symbol else None
+        try:
+            records = [
+                _record_from_policy_news_row(row, normalized_symbol, sector)
+                for row in self._fetch_rows()
+                if _is_policy_news_row(row) and _matches_policy_scope(row, normalized_symbol, sector)
+            ]
+        except Exception as exc:
+            raise ProviderFetchError(f"akshare policy news fetch failed for symbol={self._news_symbol!r}") from exc
+        return _filter_records(records, normalized_symbol, sector, start, end)
+
+    def _fetch_rows(self) -> list[dict[str, object]]:
+        if self._fetcher is not None:
+            return _rows_from_fetch_result(self._fetcher())
+        try:
+            ak = importlib.import_module("akshare")
+        except ImportError as exc:
+            raise MissingProviderDependency("akshare is required for AkSharePolicyNewsFetcher") from exc
+        return _rows_from_fetch_result(ak.stock_info_global_cls(symbol=self._news_symbol))
 
 
 class AkShareFundFlowFetcher(InformationFetcher):
@@ -288,6 +332,30 @@ def _record_from_notice_row(row: dict[str, object], report_type: str) -> Informa
     )
 
 
+def _record_from_policy_news_row(
+    row: dict[str, object],
+    normalized_symbol: str | None,
+    sector: str | None,
+) -> InformationRecord:
+    title = str(_first_value(row, "标题", "title")).strip()
+    summary = str(_first_value(row, "内容", "摘要", "summary", "content", default="")).strip()
+    text = f"{title} {summary}"
+    tags = ["regulatory_policy"]
+    if _contains_any(text, _POLICY_PRESSURE_KEYWORDS):
+        tags.extend(["policy_pressure", "regulatory_risk"])
+    return InformationRecord(
+        symbol=normalized_symbol,
+        sector=sector,
+        published_at=_parse_date(_first_value(row, "发布时间", "时间", "日期", "publish_time", "date")),
+        source="akshare_policy_news",
+        category=InformationCategory.REGULATORY_POLICY,
+        title=title,
+        url=str(_first_value(row, "链接", "网址", "url", default="")).strip(),
+        summary=summary,
+        risk_tags=tuple(tags),
+    )
+
+
 def _record_from_fund_flow_row(row: dict[str, object], normalized_symbol: str) -> InformationRecord:
     trade_date = _parse_date(_first_value(row, "日期", "trade_date", "date"))
     main_net_inflow = _float_value(_first_value(row, "主力净流入", "主力净流入-净额", "main_net_inflow", default=0.0))
@@ -351,6 +419,57 @@ def _first_notice_url(row: dict[str, object]) -> str:
         if value not in (None, ""):
             return str(value).strip()
     return ""
+
+
+_POLICY_KEYWORDS = (
+    "政策",
+    "监管",
+    "证监会",
+    "交易所",
+    "发改委",
+    "工信部",
+    "财政部",
+    "央行",
+    "银保监",
+    "金融监管",
+    "规范",
+    "信息披露",
+)
+
+_POLICY_PRESSURE_KEYWORDS = (
+    "处罚",
+    "问询",
+    "整改",
+    "限制",
+    "禁止",
+    "退市",
+    "严查",
+    "整顿",
+    "风险",
+    "加强",
+)
+
+
+def _is_policy_news_row(row: dict[str, object]) -> bool:
+    return _contains_any(_row_text(row), _POLICY_KEYWORDS)
+
+
+def _matches_policy_scope(row: dict[str, object], normalized_symbol: str | None, sector: str | None) -> bool:
+    text = _row_text(row)
+    matches_symbol = True
+    if normalized_symbol is not None:
+        plain_symbol = _plain_symbol(normalized_symbol)
+        matches_symbol = plain_symbol in text or normalized_symbol in text
+    matches_sector = sector in text if sector else True
+    return matches_symbol and matches_sector
+
+
+def _row_text(row: dict[str, object]) -> str:
+    return " ".join(str(value) for value in row.values() if value not in (None, ""))
+
+
+def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
+    return any(keyword in text for keyword in keywords)
 
 
 def _rows_from_fetch_result(result: object) -> list[dict[str, object]]:

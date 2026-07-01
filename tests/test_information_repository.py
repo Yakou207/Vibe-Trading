@@ -389,6 +389,122 @@ class InformationRepositoryTest(unittest.TestCase):
                 date(2026, 6, 30),
             )
 
+    def test_akshare_policy_news_fetcher_maps_sector_policy_rows(self) -> None:
+        from fintech_quant.information import AkSharePolicyNewsFetcher, InformationCategory
+
+        def fetcher() -> list[dict[str, object]]:
+            return [
+                {
+                    "标题": "证监会加强新能源行业信息披露监管",
+                    "发布时间": "2026-06-20 09:30:00",
+                    "内容": "监管部门要求新能源上市公司提高财报透明度。",
+                    "链接": "https://example.test/policy",
+                },
+                {
+                    "标题": "消费行业景气修复",
+                    "发布时间": "2026-06-20 10:00:00",
+                    "内容": "消费行业新闻。",
+                    "链接": "https://example.test/other",
+                },
+            ]
+
+        records = AkSharePolicyNewsFetcher(fetcher=fetcher).fetch(
+            None,
+            "新能源",
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].category, InformationCategory.REGULATORY_POLICY)
+        self.assertEqual(records[0].sector, "新能源")
+        self.assertEqual(records[0].published_at, date(2026, 6, 20))
+        self.assertEqual(records[0].url, "https://example.test/policy")
+        self.assertIn("policy_pressure", records[0].risk_tags)
+        self.assertIn("regulatory_risk", records[0].risk_tags)
+
+    def test_akshare_policy_news_fetcher_uses_current_api_name(self) -> None:
+        from fintech_quant.information import AkSharePolicyNewsFetcher
+
+        calls: list[str] = []
+
+        class FakeAkShare:
+            @staticmethod
+            def stock_info_global_cls(symbol: str):
+                calls.append(symbol)
+                return [
+                    {
+                        "标题": "监管部门完善资本市场制度",
+                        "发布时间": "2026-06-23 12:00:00",
+                        "内容": "政策监管新闻。",
+                        "链接": "https://example.test/global",
+                    }
+                ]
+
+        original_akshare = sys.modules.get("akshare")
+        sys.modules["akshare"] = FakeAkShare()
+        try:
+            records = AkSharePolicyNewsFetcher().fetch(
+                None,
+                None,
+                date(2026, 6, 23),
+                date(2026, 6, 23),
+            )
+        finally:
+            if original_akshare is None:
+                sys.modules.pop("akshare", None)
+            else:
+                sys.modules["akshare"] = original_akshare
+
+        self.assertEqual(calls, ["全部"])
+        self.assertEqual(len(records), 1)
+
+    def test_akshare_policy_news_fetcher_requires_symbol_and_sector_scope(self) -> None:
+        from fintech_quant.information import AkSharePolicyNewsFetcher
+
+        def fetcher() -> list[dict[str, object]]:
+            return [
+                {
+                    "标题": "监管部门关注000001信息披露",
+                    "发布时间": "2026-06-20 09:30:00",
+                    "内容": "银行上市公司公告监管新闻。",
+                    "链接": "https://example.test/bank",
+                }
+            ]
+
+        records = AkSharePolicyNewsFetcher(fetcher=fetcher).fetch(
+            "000001",
+            "新能源",
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(records, [])
+
+    def test_akshare_policy_news_fetcher_does_not_mark_neutral_regulation_negative(self) -> None:
+        from fintech_quant.information import AkSharePolicyNewsFetcher
+
+        def fetcher() -> list[dict[str, object]]:
+            return [
+                {
+                    "标题": "监管部门完善新能源行业信息披露制度",
+                    "发布时间": "2026-06-20 09:30:00",
+                    "内容": "政策支持上市公司提高透明度。",
+                    "链接": "https://example.test/neutral",
+                }
+            ]
+
+        records = AkSharePolicyNewsFetcher(fetcher=fetcher).fetch(
+            None,
+            "新能源",
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertIn("regulatory_policy", records[0].risk_tags)
+        self.assertNotIn("regulatory_risk", records[0].risk_tags)
+
     def test_akshare_fund_flow_fetcher_maps_selected_stock_data(self) -> None:
         from fintech_quant.information import AkShareFundFlowFetcher, InformationCategory
 
@@ -572,6 +688,39 @@ class InformationRepositoryTest(unittest.TestCase):
 
         self.assertEqual([record.title for record in records], ["Announcement", "Sentiment"])
 
+    def test_combined_information_fetcher_can_ignore_optional_source_failures(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.information import CombinedInformationFetcher, InformationCategory, InformationRecord, StaticInformationFetcher
+
+        class FailingFetcher:
+            def fetch(self, symbol, sector, start, end):
+                raise ProviderFetchError("optional source failed")
+
+        stable = StaticInformationFetcher(
+            [
+                InformationRecord(
+                    symbol="000001",
+                    sector=None,
+                    published_at=date(2026, 6, 1),
+                    source="fixture",
+                    category=InformationCategory.COMPANY_ANNOUNCEMENT,
+                    title="Stable",
+                    url="",
+                    summary="Stable source.",
+                    risk_tags=(),
+                )
+            ]
+        )
+
+        records = CombinedInformationFetcher([FailingFetcher(), stable], ignore_fetch_errors=True).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual([record.title for record in records], ["Stable"])
+
     def test_fetch_information_help_includes_akshare_multi_source(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
         env = dict(os.environ)
@@ -588,6 +737,7 @@ class InformationRepositoryTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("akshare_multi", result.stdout)
+        self.assertIn("akshare_policy", result.stdout)
 
     def test_fetch_information_help_describes_recent_page_as_page_bounded(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
