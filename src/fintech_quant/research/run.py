@@ -164,6 +164,7 @@ def _report_from_result(
         drawdown={
             "max_drawdown": round(result.drawdown.max_drawdown, 6),
             "liquidation_date": result.drawdown.liquidation_date.isoformat() if result.drawdown.liquidation_date else None,
+            "points": [_drawdown_point_to_json(point) for point in result.drawdown.points],
         },
         summary=result.summary,
     )
@@ -227,6 +228,15 @@ def _equity_to_json(point: object) -> dict[str, object]:
         "cash": point.cash,
         "positions_value": point.positions_value,
         "equity": point.equity,
+    }
+
+
+def _drawdown_point_to_json(point: object) -> dict[str, object]:
+    return {
+        "trade_date": point.trade_date.isoformat(),
+        "equity": point.equity,
+        "rolling_peak": point.rolling_peak,
+        "drawdown": round(point.drawdown, 6),
     }
 
 

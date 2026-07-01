@@ -56,6 +56,9 @@ class ResearchRunTest(unittest.TestCase):
         self.assertIn("risk_warnings", payload)
         self.assertIn("summary", payload)
         self.assertEqual(payload["scores"][0]["symbol"], "000001.SZ")
+        self.assertIn("points", payload["drawdown"])
+        self.assertEqual(payload["drawdown"]["points"][0]["trade_date"], "2026-01-01")
+        self.assertIn("rolling_peak", payload["drawdown"]["points"][0])
 
     def test_run_research_baseline_passes_price_limit_flags_to_portfolio_runner(self) -> None:
         from fintech_quant.research.run import ResearchRunConfig, run_research_baseline
@@ -106,6 +109,23 @@ class ResearchRunTest(unittest.TestCase):
         self.assertGreater(len(report.equity_curve), 0)
         self.assertGreater(report.drawdown["max_drawdown"], 0.0)
         self.assertEqual(report.drawdown["max_drawdown"], report.summary["max_drawdown"])
+        self.assertEqual(
+            report.drawdown["points"],
+            [
+                {
+                    "trade_date": "2026-01-01",
+                    "equity": 99997.6,
+                    "rolling_peak": 99997.6,
+                    "drawdown": 0.0,
+                },
+                {
+                    "trade_date": "2026-01-02",
+                    "equity": 99195.44,
+                    "rolling_peak": 99997.6,
+                    "drawdown": 0.008022,
+                },
+            ],
+        )
 
 
 def _write_fixture_inputs(root: Path, *, limit_up: bool = False) -> dict[str, Path]:

@@ -54,6 +54,9 @@ class RunResearchBaselineScriptTest(unittest.TestCase):
         self.assertEqual(payload["run_id"], "fixture-run")
         self.assertIn("summary", payload)
         self.assertGreater(payload["summary"]["trade_count"], 0)
+        self.assertIn("points", payload["drawdown"])
+        self.assertEqual(payload["drawdown"]["points"][0]["trade_date"], "2026-01-01")
+        self.assertIn("rolling_peak", payload["drawdown"]["points"][0])
 
 
 def _write_fixture_inputs(root: Path) -> dict[str, Path]:
