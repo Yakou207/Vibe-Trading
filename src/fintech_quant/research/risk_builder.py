@@ -31,6 +31,7 @@ def build_risk_input(
     fundamentals: Mapping[str, object] | None = None,
     capital_flow: Mapping[str, object] | None = None,
     market_state: Mapping[str, object] | None = None,
+    sector: str | None = None,
     information_records: Sequence[InformationRecord] = (),
 ) -> RiskInput:
     fundamental_values = fundamentals or {}
@@ -41,7 +42,8 @@ def build_risk_input(
         position_weight=_position_weight(position.market_value, portfolio_state.equity),
         portfolio_drawdown=_portfolio_drawdown(portfolio_state.equity, portfolio_state.rolling_peak),
         single_position_drawdown=_single_position_drawdown(position, close),
-        st_warning=_bool(fundamental_values.get("st_warning")) or _has_symbol_tag(symbol, trade_date, information_records, "st_warning"),
+        st_warning=_bool(fundamental_values.get("st_warning"))
+        or _has_symbol_tag(symbol, trade_date, information_records, "st_warning", sector),
         goodwill_ratio=_float(fundamental_values.get("goodwill_ratio")),
         pledge_ratio=_float(fundamental_values.get("pledge_ratio")),
         main_outflow_days=_int(capital_values.get("main_outflow_days")),
@@ -55,9 +57,10 @@ def _has_symbol_tag(
     trade_date: date,
     records: Sequence[InformationRecord],
     tag: str,
+    sector: str | None = None,
 ) -> bool:
     return any(
-        record.normalized_symbol == symbol
+        (record.normalized_symbol == symbol or (sector is not None and record.symbol is None and record.sector == sector))
         and record.published_at <= trade_date
         and tag in record.risk_tags
         for record in records

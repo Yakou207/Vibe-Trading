@@ -57,7 +57,12 @@ def build_score_input(
         margin_financing_positive=_bool_or_none(capital_values.get("margin_financing_positive")),
         limit_up_streak=_int_or_none(feature_values.get("limit_up_streak")),
         dragon_tiger_positive=_bool_or_none(feature_values.get("dragon_tiger_positive")),
-        negative_event_count=_negative_event_count(feature_row.symbol, feature_row.trade_date, information_records),
+        negative_event_count=_negative_event_count(
+            feature_row.symbol,
+            feature_row.trade_date,
+            information_records,
+            _text_or_none(feature_values.get("sector")),
+        ),
     )
 
 
@@ -81,11 +86,12 @@ def _negative_event_count(
     symbol: str,
     trade_date: date,
     records: Sequence[InformationRecord],
+    sector: str | None = None,
 ) -> int:
     return sum(
         1
         for record in records
-        if record.normalized_symbol == symbol
+        if (record.normalized_symbol == symbol or (sector is not None and record.symbol is None and record.sector == sector))
         and record.published_at <= trade_date
         and any(tag in NEGATIVE_RISK_TAGS for tag in record.risk_tags)
     )
@@ -115,3 +121,9 @@ def _bool_or_none(value: object) -> bool | None:
     if value is None:
         return None
     return bool(value)
+
+
+def _text_or_none(value: object) -> str | None:
+    if value in (None, ""):
+        return None
+    return str(value)

@@ -157,6 +157,38 @@ class ResearchDatasetTest(unittest.TestCase):
         self.assertIn("macd_line", header)
         self.assertIn("volatility20", header)
 
+    def test_load_research_dataset_keeps_sector_information_for_universe_members(self) -> None:
+        from fintech_quant.research import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe = root / "universe.csv"
+            features = root / "features.csv"
+            information = root / "information.jsonl"
+            universe.write_text("symbol,name,sector\n000001,Ping An,新能源\n600000,SPDB,银行\n", encoding="utf-8")
+            features.write_text(
+                "symbol,trade_date,open,high,low,close,volume,amount,source,return_1d,ma20,ma60,ma250,"
+                "close_above_ma20,close_above_ma60,close_above_ma250,rsi14,macd_line,macd_signal,macd_hist,"
+                "macd_positive,volatility20\n"
+                "000001,2026-01-02,10,10,10,10,1000,10000,fixture,0.01,9,8,7,true,true,true,55,0.1,0.05,0.05,true,0.02\n",
+                encoding="utf-8",
+            )
+            information.write_text(
+                '{"symbol": null, "sector": "新能源", "published_at": "2026-01-01", '
+                '"source": "fixture", "category": "regulatory_policy", "title": "Sector policy", '
+                '"url": "https://example.test/policy", "summary": "Policy fixture.", '
+                '"risk_tags": ["policy_pressure", "regulatory_risk"]}\n'
+                '{"symbol": null, "sector": "消费", "published_at": "2026-01-01", '
+                '"source": "fixture", "category": "regulatory_policy", "title": "Other sector", '
+                '"url": "https://example.test/other", "summary": "Other fixture.", '
+                '"risk_tags": ["policy_pressure", "regulatory_risk"]}\n',
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features, universe, information_path=information)
+
+        self.assertEqual([record.title for record in dataset.information_records], ["Sector policy"])
+
 
 if __name__ == "__main__":
     unittest.main()

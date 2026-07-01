@@ -56,6 +56,38 @@ class ResearchScoringTest(unittest.TestCase):
         self.assertEqual(score_input.negative_event_count, 1)
         self.assertEqual(score_input.volume_confirmed, True)
 
+    def test_build_score_input_counts_sector_negative_information(self) -> None:
+        from fintech_quant.information import InformationCategory, InformationRecord
+        from fintech_quant.research.dataset import FeatureRow
+        from fintech_quant.research.scoring import build_score_input
+
+        feature_row = FeatureRow(
+            symbol="000001.SZ",
+            trade_date=date(2026, 1, 2),
+            values={
+                "symbol": "000001.SZ",
+                "sector": "新能源",
+                "trade_date": date(2026, 1, 2),
+                "volume": 1000.0,
+                "return_1d": 0.01,
+            },
+        )
+        sector_record = InformationRecord(
+            symbol=None,
+            sector="新能源",
+            published_at=date(2026, 1, 1),
+            source="fixture",
+            category=InformationCategory.REGULATORY_POLICY,
+            title="Sector regulatory pressure",
+            url="https://example.test/policy",
+            summary="Sector policy fixture.",
+            risk_tags=("regulatory_risk",),
+        )
+
+        score_input = build_score_input(feature_row, information_records=[sector_record])
+
+        self.assertEqual(score_input.negative_event_count, 1)
+
     def test_build_stock_scores_preserves_required_components(self) -> None:
         from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow
         from fintech_quant.research.scoring import build_stock_scores

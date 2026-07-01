@@ -57,6 +57,33 @@ class ResearchRiskBuilderTest(unittest.TestCase):
         self.assertTrue(risk_input.index_below_annual_ma)
         self.assertEqual(risk_input.broad_market_drop_gt_3pct_count, 16)
 
+    def test_build_risk_input_maps_sector_st_warning(self) -> None:
+        from fintech_quant.information import InformationCategory, InformationRecord
+        from fintech_quant.research.risk_builder import PortfolioRiskState, build_risk_input
+
+        sector_record = InformationRecord(
+            symbol=None,
+            sector="新能源",
+            published_at=date(2026, 1, 1),
+            source="fixture",
+            category=InformationCategory.REGULATORY_POLICY,
+            title="Sector ST pressure",
+            url="https://example.test/policy",
+            summary="Sector policy fixture.",
+            risk_tags=("st_warning",),
+        )
+
+        risk_input = build_risk_input(
+            "000001.SZ",
+            date(2026, 1, 2),
+            10.0,
+            PortfolioRiskState(equity=100000.0, rolling_peak=100000.0, positions={}),
+            sector="新能源",
+            information_records=[sector_record],
+        )
+
+        self.assertTrue(risk_input.st_warning)
+
 
 if __name__ == "__main__":
     unittest.main()

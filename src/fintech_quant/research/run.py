@@ -94,6 +94,7 @@ def _build_static_risk_inputs(
             fundamentals=fundamentals,
             capital_flow=capital_flow,
             market_state=market_state.values if market_state else None,
+            sector=_text_or_none(row.values.get("sector")),
             information_records=dataset.information_records,
         )
     return risk_inputs
@@ -124,6 +125,12 @@ def _bar_from_feature(row: FeatureRow) -> dict[str, object]:
         if flag in row.values:
             bar[flag] = row.values[flag]
     return bar
+
+
+def _text_or_none(value: object) -> str | None:
+    if value in (None, ""):
+        return None
+    return str(value)
 
 
 def _report_from_result(

@@ -96,19 +96,26 @@ def load_research_dataset(
     market_state_path: Path | None = None,
     information_path: Path | None = None,
 ) -> ResearchDataset:
-    universe_symbols = tuple(member.symbol for member in load_universe_csv(universe_path))
+    universe = load_universe_csv(universe_path)
+    universe_symbols = tuple(member.symbol for member in universe)
     universe_set = set(universe_symbols)
+    universe_sectors = {member.sector for member in universe if member.sector}
+    sector_by_symbol = {member.symbol: member.sector for member in universe}
     return ResearchDataset(
-        features=_load_features(features_path, universe_set),
+        features=_load_features(features_path, universe_set, sector_by_symbol),
         fundamentals=_load_supplemental(fundamentals_path, universe_set, allow_missing_trade_date=True),
         capital_flow=_load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False),
         market_state=_load_market_state(market_state_path),
-        information_records=_load_information(information_path, universe_set),
+        information_records=_load_information(information_path, universe_set, universe_sectors),
         universe_symbols=universe_symbols,
     )
 
 
-def _load_features(path: Path, universe_symbols: set[str]) -> list[FeatureRow]:
+def _load_features(
+    path: Path,
+    universe_symbols: set[str],
+    sector_by_symbol: Mapping[str, str | None],
+) -> list[FeatureRow]:
     rows = _read_csv(path)
     _require_columns(path, rows.fieldnames, DEFAULT_FEATURE_FIELDS)
     features: list[FeatureRow] = []
@@ -125,6 +132,7 @@ def _load_features(path: Path, universe_symbols: set[str]) -> list[FeatureRow]:
         values = _coerce_row(row, path)
         values["symbol"] = symbol
         values["trade_date"] = trade_date
+        values["sector"] = sector_by_symbol.get(symbol)
         features.append(FeatureRow(symbol=symbol, trade_date=trade_date, values=values))
     return sorted(features, key=lambda item: (item.trade_date, item.symbol))
 
@@ -167,7 +175,11 @@ def _load_market_state(path: Path | None) -> dict[date, MarketStateRow]:
     return result
 
 
-def _load_information(path: Path | None, universe_symbols: set[str]) -> list[InformationRecord]:
+def _load_information(
+    path: Path | None,
+    universe_symbols: set[str],
+    universe_sectors: set[str],
+) -> list[InformationRecord]:
     if path is None:
         return []
     if not path.exists():
@@ -178,7 +190,7 @@ def _load_information(path: Path | None, universe_symbols: set[str]) -> list[Inf
             if not line.strip():
                 continue
             record = _information_from_json(json.loads(line))
-            if record.normalized_symbol in universe_symbols:
+            if record.normalized_symbol in universe_symbols or (record.symbol is None and record.sector in universe_sectors):
                 records.append(record)
     return sorted(records, key=lambda item: (item.published_at, item.normalized_symbol or "", item.title))
 
