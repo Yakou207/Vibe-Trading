@@ -415,6 +415,7 @@ The new `akshare_multi` source combines:
 
 - AkShare notice rows for announcements and financial-report metadata
 - policy/regulatory news rows for stock or sector text analysis
+- fundamental valuation and financial-ratio rows as selected-universe stock data
 - individual fund-flow rows as selected-universe stock data
 - margin financing rows as selected-universe stock data
 - dragon-tiger board rows as market sentiment records
@@ -433,6 +434,7 @@ python scripts/fetch_information.py \
 The multi-source fetcher still writes the same classified JSONL repository format, so downstream scoring and RL dataset generation do not need a separate data contract.
 Dragon-tiger board rows are treated as current-window sentiment at the fetch date, not backfilled into arbitrary historical ranges.
 Use `--source akshare_policy` when the daily task is only to refresh regulatory policy text for a stock or sector keyword.
+Use `--source akshare_fundamental` when the daily task is only to refresh PE/PB/ROE/growth-like fundamental snapshots for one selected stock.
 
 Verification added:
 

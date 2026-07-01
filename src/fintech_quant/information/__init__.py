@@ -1,6 +1,7 @@
 from fintech_quant.information.fetchers import (
     AkShareDragonTigerFetcher,
     AkShareFundFlowFetcher,
+    AkShareFundamentalFetcher,
     AkShareMarginFetcher,
     AkShareNoticeFetcher,
     AkSharePolicyNewsFetcher,
@@ -16,6 +17,7 @@ __all__ = [
     "AkShareNoticeFetcher",
     "AkShareDragonTigerFetcher",
     "AkShareFundFlowFetcher",
+    "AkShareFundamentalFetcher",
     "AkShareMarginFetcher",
     "AkSharePolicyNewsFetcher",
     "CombinedInformationFetcher",

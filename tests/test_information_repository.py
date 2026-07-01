@@ -535,6 +535,175 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("capital_flow", records[0].risk_tags)
         self.assertIn("main_inflow", records[0].risk_tags)
 
+    def test_akshare_fundamental_fetcher_maps_selected_stock_data(self) -> None:
+        from fintech_quant.information import AkShareFundamentalFetcher, InformationCategory
+
+        calls: list[str] = []
+
+        def valuation_fetcher(symbol: str) -> list[dict[str, object]]:
+            calls.append(f"valuation:{symbol}")
+            return [
+                {
+                    "日期": "2026-06-03",
+                    "市盈率": "18",
+                    "市净率": "1.5",
+                }
+            ]
+
+        def financial_fetcher(symbol: str) -> list[dict[str, object]]:
+            calls.append(f"financial:{symbol}")
+            return [
+                {
+                    "日期": "2026-06-03",
+                    "净资产收益率": "16",
+                    "主营业务收入增长率": "12",
+                }
+            ]
+
+        records = AkShareFundamentalFetcher(
+            valuation_fetcher=valuation_fetcher,
+            financial_fetcher=financial_fetcher,
+        ).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(calls, ["valuation:000001", "financial:000001"])
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].category, InformationCategory.STOCK_DATA)
+        self.assertEqual(records[0].normalized_symbol, "000001.SZ")
+        self.assertEqual(records[0].published_at, date(2026, 6, 3))
+        self.assertIn("selected_universe", records[0].risk_tags)
+        self.assertIn("fundamental", records[0].risk_tags)
+        self.assertIn("pe=18.0", records[0].summary)
+        self.assertIn("pb=1.5", records[0].summary)
+        self.assertIn("roe=0.16", records[0].summary)
+        self.assertIn("growth=0.12", records[0].summary)
+
+    def test_akshare_fundamental_fetcher_uses_current_api_names(self) -> None:
+        from fintech_quant.information import AkShareFundamentalFetcher
+
+        calls: list[str] = []
+
+        class FakeAkShare:
+            @staticmethod
+            def stock_zh_a_spot_em():
+                calls.append("valuation:spot")
+                return [{"代码": "000001", "市盈率-动态": "18", "市净率": "1.5"}]
+
+            @staticmethod
+            def stock_financial_analysis_indicator(symbol: str):
+                calls.append(f"financial:{symbol}")
+                return [{"日期": "2026-06-03", "净资产收益率": "16", "主营业务收入增长率": "12"}]
+
+        original_akshare = sys.modules.get("akshare")
+        sys.modules["akshare"] = FakeAkShare()
+        try:
+            records = AkShareFundamentalFetcher().fetch(
+                "000001",
+                None,
+                date(2026, 6, 1),
+                date(2026, 6, 30),
+            )
+        finally:
+            if original_akshare is None:
+                sys.modules.pop("akshare", None)
+            else:
+                sys.modules["akshare"] = original_akshare
+
+        self.assertEqual(calls, ["valuation:spot", "financial:000001"])
+        self.assertGreaterEqual(len(records), 1)
+
+    def test_akshare_fundamental_fetcher_keeps_partial_valuation_rows(self) -> None:
+        from fintech_quant.information import AkShareFundamentalFetcher
+
+        def valuation_fetcher(symbol: str) -> list[dict[str, object]]:
+            return [{"日期": "2026-06-03", "市盈率": "18", "市净率": "1.5"}]
+
+        def financial_fetcher(symbol: str) -> list[dict[str, object]]:
+            raise RuntimeError("financial endpoint timeout")
+
+        records = AkShareFundamentalFetcher(
+            valuation_fetcher=valuation_fetcher,
+            financial_fetcher=financial_fetcher,
+        ).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertIn("pe=18.0", records[0].summary)
+        self.assertIn("pb=1.5", records[0].summary)
+        self.assertNotIn("roe=", records[0].summary)
+
+    def test_akshare_fundamental_fetcher_dates_realtime_valuation_at_request_end(self) -> None:
+        from fintech_quant.information import AkShareFundamentalFetcher
+
+        def valuation_fetcher(symbol: str) -> list[dict[str, object]]:
+            return [{"代码": "000001", "市盈率-动态": "18", "市净率": "1.5"}]
+
+        def financial_fetcher(symbol: str) -> list[dict[str, object]]:
+            raise RuntimeError("financial endpoint timeout")
+
+        records = AkShareFundamentalFetcher(
+            valuation_fetcher=valuation_fetcher,
+            financial_fetcher=financial_fetcher,
+        ).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].published_at, date(2026, 6, 30))
+
+    def test_akshare_fundamental_fetcher_skips_empty_metric_rows(self) -> None:
+        from fintech_quant.information import AkShareFundamentalFetcher
+
+        def valuation_fetcher(symbol: str) -> list[dict[str, object]]:
+            return [{"日期": "2026-06-03", "市盈率": "", "市净率": "nan"}]
+
+        def financial_fetcher(symbol: str) -> list[dict[str, object]]:
+            return [{"日期": "2026-06-03", "净资产收益率": "", "主营业务收入增长率": ""}]
+
+        records = AkShareFundamentalFetcher(
+            valuation_fetcher=valuation_fetcher,
+            financial_fetcher=financial_fetcher,
+        ).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(records, [])
+
+    def test_akshare_fundamental_fetcher_reports_both_endpoint_failures(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.information import AkShareFundamentalFetcher
+
+        def valuation_fetcher(symbol: str) -> list[dict[str, object]]:
+            raise RuntimeError("valuation endpoint timeout")
+
+        def financial_fetcher(symbol: str) -> list[dict[str, object]]:
+            raise RuntimeError("financial endpoint timeout")
+
+        with self.assertRaisesRegex(ProviderFetchError, "valuation endpoint timeout"):
+            AkShareFundamentalFetcher(
+                valuation_fetcher=valuation_fetcher,
+                financial_fetcher=financial_fetcher,
+            ).fetch(
+                "000001",
+                None,
+                date(2026, 6, 1),
+                date(2026, 6, 30),
+            )
+
     def test_akshare_margin_fetcher_maps_margin_financing_rows(self) -> None:
         from fintech_quant.information import AkShareMarginFetcher, InformationCategory
 
@@ -738,6 +907,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("akshare_multi", result.stdout)
         self.assertIn("akshare_policy", result.stdout)
+        self.assertIn("akshare_fundamental", result.stdout)
 
     def test_fetch_information_help_describes_recent_page_as_page_bounded(self) -> None:
         worktree = Path(__file__).resolve().parents[1]

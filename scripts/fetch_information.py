@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 from fintech_quant.information import (
     AkShareDragonTigerFetcher,
     AkShareFundFlowFetcher,
+    AkShareFundamentalFetcher,
     AkShareMarginFetcher,
     AkShareNoticeFetcher,
     AkSharePolicyNewsFetcher,
@@ -26,7 +27,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch and store A-share information records.")
     parser.add_argument(
         "--source",
-        choices=("akshare_notice", "akshare_policy", "akshare_multi", "jsonl"),
+        choices=("akshare_notice", "akshare_policy", "akshare_fundamental", "akshare_multi", "jsonl"),
         default="akshare_notice",
     )
     parser.add_argument("--input", default=None)
@@ -70,6 +71,7 @@ def _build_fetcher(args: argparse.Namespace):
             [
                 AkShareNoticeFetcher(report_type=args.report_type, recent_page=args.recent_page),
                 AkSharePolicyNewsFetcher(),
+                AkShareFundamentalFetcher(),
                 AkShareFundFlowFetcher(),
                 AkShareMarginFetcher(),
                 AkShareDragonTigerFetcher(),
@@ -78,6 +80,8 @@ def _build_fetcher(args: argparse.Namespace):
         )
     if args.source == "akshare_policy":
         return AkSharePolicyNewsFetcher()
+    if args.source == "akshare_fundamental":
+        return AkShareFundamentalFetcher()
     return AkShareNoticeFetcher(report_type=args.report_type, recent_page=args.recent_page)
 
 

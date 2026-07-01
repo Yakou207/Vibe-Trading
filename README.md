@@ -123,7 +123,18 @@ python scripts/fetch_information.py \
   --output data/raw/information/information.jsonl
 ```
 
-`akshare_multi` combines AkShare notices, policy/regulatory news, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
+Use `akshare_fundamental` when you only want selected-universe valuation and financial-ratio snapshots:
+
+```bash
+python scripts/fetch_information.py \
+  --source akshare_fundamental \
+  --symbol 000001 \
+  --start 2026-01-01 \
+  --end 2026-06-30 \
+  --output data/raw/information/information.jsonl
+```
+
+`akshare_multi` combines AkShare notices, policy/regulatory news, fundamental snapshots, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
 
 ## Local Setup
 

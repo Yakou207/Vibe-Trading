@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
@@ -10,6 +11,9 @@ from pathlib import Path
 from fintech_quant.data.errors import MissingProviderDependency, ProviderFetchError
 from fintech_quant.data.symbols import normalize_a_share_symbol
 from fintech_quant.information.models import InformationCategory, InformationRecord
+
+
+_MISSING = object()
 
 
 class InformationFetcher(ABC):
@@ -209,6 +213,61 @@ class AkShareFundFlowFetcher(InformationFetcher):
         return _rows_from_fetch_result(ak.stock_individual_fund_flow(stock=symbol, market=market))
 
 
+class AkShareFundamentalFetcher(InformationFetcher):
+    def __init__(
+        self,
+        valuation_fetcher: Callable[[str], object] | None = None,
+        financial_fetcher: Callable[[str], object] | None = None,
+    ) -> None:
+        self._valuation_fetcher = valuation_fetcher
+        self._financial_fetcher = financial_fetcher
+
+    def fetch(
+        self,
+        symbol: str | None,
+        sector: str | None,
+        start: date,
+        end: date,
+    ) -> list[InformationRecord]:
+        del sector
+        if symbol is None:
+            return []
+        normalized_symbol = normalize_a_share_symbol(symbol)
+        plain_symbol = _plain_symbol(normalized_symbol)
+        valuation_rows, valuation_error = self._fetch_optional_rows(self._fetch_valuation_rows, plain_symbol)
+        financial_rows, financial_error = self._fetch_optional_rows(self._fetch_financial_rows, plain_symbol)
+        if not valuation_rows and not financial_rows and (valuation_error or financial_error):
+            details = "; ".join(error for error in (valuation_error, financial_error) if error)
+            raise ProviderFetchError(f"akshare fundamental fetch failed for symbol={normalized_symbol!r}: {details}")
+        records = _records_from_fundamental_rows(normalized_symbol, valuation_rows, financial_rows, end)
+        return _filter_records(records, normalized_symbol, None, start, end)
+
+    def _fetch_optional_rows(
+        self,
+        fetcher: Callable[[str], list[dict[str, object]]],
+        symbol: str,
+    ) -> tuple[list[dict[str, object]], str | None]:
+        try:
+            return fetcher(symbol), None
+        except Exception as exc:
+            return [], str(exc)
+
+    def _fetch_valuation_rows(self, symbol: str) -> list[dict[str, object]]:
+        if self._valuation_fetcher is not None:
+            return _rows_from_fetch_result(self._valuation_fetcher(symbol))
+        ak = _import_akshare("AkShareFundamentalFetcher")
+        if hasattr(ak, "stock_a_indicator_lg"):
+            return _rows_from_fetch_result(ak.stock_a_indicator_lg(symbol=symbol))
+        rows = _rows_from_fetch_result(ak.stock_zh_a_spot_em())
+        return [row for row in rows if str(row.get("代码", "")).strip() == symbol]
+
+    def _fetch_financial_rows(self, symbol: str) -> list[dict[str, object]]:
+        if self._financial_fetcher is not None:
+            return _rows_from_fetch_result(self._financial_fetcher(symbol))
+        ak = _import_akshare("AkShareFundamentalFetcher")
+        return _rows_from_fetch_result(ak.stock_financial_analysis_indicator(symbol=symbol))
+
+
 class AkShareMarginFetcher(InformationFetcher):
     def __init__(self, fetcher: Callable[[date, str], object] | None = None) -> None:
         self._fetcher = fetcher
@@ -374,6 +433,49 @@ def _record_from_fund_flow_row(row: dict[str, object], normalized_symbol: str) -
     )
 
 
+def _records_from_fundamental_rows(
+    normalized_symbol: str,
+    valuation_rows: list[dict[str, object]],
+    financial_rows: list[dict[str, object]],
+    fallback_date: date,
+) -> list[InformationRecord]:
+    valuation_by_date = {
+        _parse_date(_first_value(row, "日期", "date", "trade_date", default=fallback_date)): row for row in valuation_rows
+    }
+    financial_by_date = {
+        _parse_date(_first_value(row, "日期", "截止日期", "date", "report_date", default=fallback_date)): row for row in financial_rows
+    }
+    records: list[InformationRecord] = []
+    for record_date in sorted(set(valuation_by_date) | set(financial_by_date)):
+        valuation = valuation_by_date.get(record_date, {})
+        financial = financial_by_date.get(record_date, {})
+        pe = _float_or_none(_first_value(valuation, "市盈率", "市盈率-动态", "市盈率-TTM", "pe", "PE", default=None))
+        pb = _float_or_none(_first_value(valuation, "市净率", "pb", "PB", default=None))
+        roe_raw = _float_or_none(_first_value(financial, "净资产收益率", "净资产收益率(%)", "roe", "ROE", default=None))
+        growth_raw = _float_or_none(
+            _first_value(financial, "主营业务收入增长率", "主营业务收入增长率(%)", "营业收入同比增长率", "growth", default=None)
+        )
+        roe = _ratio_from_percent(roe_raw)
+        growth = _ratio_from_percent(growth_raw)
+        summary = _fundamental_summary(pe, pb, roe, growth)
+        if not summary:
+            continue
+        records.append(
+            InformationRecord(
+                symbol=normalized_symbol,
+                sector=None,
+                published_at=record_date,
+                source="akshare_fundamental",
+                category=InformationCategory.STOCK_DATA,
+                title=f"{normalized_symbol} fundamental snapshot",
+                url="",
+                summary=summary,
+                risk_tags=("selected_universe", "fundamental"),
+            )
+        )
+    return records
+
+
 def _record_from_margin_row(row: dict[str, object], normalized_symbol: str, fallback_date: date) -> InformationRecord:
     row_symbol = _first_value(row, "标的证券代码", "证券代码", "代码", "symbol", default=_plain_symbol(normalized_symbol))
     row_normalized = normalize_a_share_symbol(str(row_symbol).strip())
@@ -472,18 +574,25 @@ def _contains_any(text: str, keywords: tuple[str, ...]) -> bool:
     return any(keyword in text for keyword in keywords)
 
 
+def _import_akshare(consumer: str) -> object:
+    try:
+        return importlib.import_module("akshare")
+    except ImportError as exc:
+        raise MissingProviderDependency(f"akshare is required for {consumer}") from exc
+
+
 def _rows_from_fetch_result(result: object) -> list[dict[str, object]]:
     if hasattr(result, "to_dict"):
         return list(result.to_dict(orient="records"))
     return [dict(row) for row in result]  # type: ignore[arg-type]
 
 
-def _first_value(row: dict[str, object], *keys: str, default: object | None = None) -> object:
+def _first_value(row: dict[str, object], *keys: str, default: object = _MISSING) -> object:
     for key in keys:
         value = row.get(key)
         if value not in (None, ""):
             return value
-    if default is not None:
+    if default is not _MISSING:
         return default
     raise KeyError(keys[0])
 
@@ -523,6 +632,36 @@ def _float_value(value: object) -> float:
         unit_multiplier = 100000000.0
         text = text[:-1]
     return float(text) * unit_multiplier
+
+
+def _float_or_none(value: object) -> float | None:
+    if value is None:
+        return None
+    parsed = _float_value(value)
+    if not math.isfinite(parsed):
+        return None
+    return parsed
+
+
+def _ratio_from_percent(value: float | None) -> float | None:
+    if value is None:
+        return None
+    if abs(value) > 1:
+        return round(value / 100.0, 6)
+    return value
+
+
+def _fundamental_summary(
+    pe: float | None,
+    pb: float | None,
+    roe: float | None,
+    growth: float | None,
+) -> str:
+    parts = []
+    for key, value in (("pe", pe), ("pb", pb), ("roe", roe), ("growth", growth)):
+        if value is not None:
+            parts.append(f"{key}={value}")
+    return "; ".join(parts)
 
 
 def _parse_date(value: object) -> date:
