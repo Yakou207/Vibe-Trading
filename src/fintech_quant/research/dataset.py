@@ -101,12 +101,15 @@ def load_research_dataset(
     universe_set = set(universe_symbols)
     universe_sectors = {member.sector for member in universe if member.sector}
     sector_by_symbol = {member.symbol: member.sector for member in universe}
+    information_records = _load_information(information_path, universe_set, universe_sectors)
+    fundamentals = _load_supplemental(fundamentals_path, universe_set, allow_missing_trade_date=True)
+    _merge_information_fundamentals(fundamentals, information_records, universe_set)
     return ResearchDataset(
         features=_load_features(features_path, universe_set, sector_by_symbol),
-        fundamentals=_load_supplemental(fundamentals_path, universe_set, allow_missing_trade_date=True),
+        fundamentals=fundamentals,
         capital_flow=_load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False),
         market_state=_load_market_state(market_state_path),
-        information_records=_load_information(information_path, universe_set, universe_sectors),
+        information_records=information_records,
         universe_symbols=universe_symbols,
     )
 
@@ -193,6 +196,47 @@ def _load_information(
             if record.normalized_symbol in universe_symbols or (record.symbol is None and record.sector in universe_sectors):
                 records.append(record)
     return sorted(records, key=lambda item: (item.published_at, item.normalized_symbol or "", item.title))
+
+
+def _merge_information_fundamentals(
+    fundamentals: dict[tuple[str, date | None], SupplementalRow],
+    records: list[InformationRecord],
+    universe_symbols: set[str],
+) -> None:
+    for record in records:
+        if (
+            record.source != "akshare_fundamental"
+            or record.category is not InformationCategory.STOCK_DATA
+            or "fundamental" not in record.risk_tags
+        ):
+            continue
+        symbol = record.normalized_symbol
+        if symbol is None or symbol not in universe_symbols:
+            continue
+        if (symbol, None) in fundamentals:
+            continue
+        values = _parse_fundamental_summary(record.summary)
+        if not values:
+            continue
+        values["symbol"] = symbol
+        values["trade_date"] = record.published_at
+        key = (symbol, record.published_at)
+        fundamentals.setdefault(key, SupplementalRow(symbol=symbol, trade_date=record.published_at, values=values))
+
+
+def _parse_fundamental_summary(summary: str) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for part in summary.split(";"):
+        if "=" not in part:
+            continue
+        key, raw_value = (item.strip() for item in part.split("=", 1))
+        if key not in {"pe", "pb", "roe", "growth"}:
+            continue
+        try:
+            values[key] = float(raw_value)
+        except ValueError:
+            continue
+    return values
 
 
 @dataclass(frozen=True)

@@ -118,6 +118,161 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
         self.assertEqual(dataset.information_records[0].title, "Risk notice")
         self.assertEqual(dataset.information_records[0].normalized_symbol, "000001.SZ")
 
+    def test_load_research_dataset_builds_fundamentals_from_information_records(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-03", 10.0)])
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-06-03",
+                        "source": "akshare_fundamental",
+                        "category": "stock_data",
+                        "title": "000001.SZ fundamental snapshot",
+                        "url": "",
+                        "summary": "pe=18.0; pb=1.5; roe=0.16; growth=0.12",
+                        "risk_tags": ["selected_universe", "fundamental"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, information_path=information_path)
+
+        row = dataset.fundamentals[("000001.SZ", date(2026, 6, 3))]
+        self.assertEqual(row.values["pe"], 18.0)
+        self.assertEqual(row.values["pb"], 1.5)
+        self.assertEqual(row.values["roe"], 0.16)
+        self.assertEqual(row.values["growth"], 0.12)
+
+    def test_explicit_fundamentals_csv_overrides_information_fundamentals(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            fundamentals_path = root / "fundamentals.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-03", 10.0)])
+            fundamentals_path.write_text("symbol,trade_date,pe,pb,roe,growth\n000001,2026-06-03,10,1.0,0.10,0.05\n", encoding="utf-8")
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-06-03",
+                        "source": "akshare_fundamental",
+                        "category": "stock_data",
+                        "title": "000001.SZ fundamental snapshot",
+                        "url": "",
+                        "summary": "pe=18.0; pb=1.5; roe=0.16; growth=0.12",
+                        "risk_tags": ["selected_universe", "fundamental"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(
+                features_path,
+                universe_path,
+                fundamentals_path=fundamentals_path,
+                information_path=information_path,
+            )
+
+        self.assertEqual(dataset.fundamentals[("000001.SZ", date(2026, 6, 3))].values["pe"], 10.0)
+
+    def test_static_fundamentals_csv_overrides_dated_information_fundamentals(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            fundamentals_path = root / "fundamentals.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-03", 10.0)])
+            fundamentals_path.write_text("symbol,pe,pb,roe,growth\n000001,10,1.0,0.10,0.05\n", encoding="utf-8")
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-06-03",
+                        "source": "akshare_fundamental",
+                        "category": "stock_data",
+                        "title": "000001.SZ fundamental snapshot",
+                        "url": "",
+                        "summary": "pe=18.0; pb=1.5; roe=0.16; growth=0.12",
+                        "risk_tags": ["selected_universe", "fundamental"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(
+                features_path,
+                universe_path,
+                fundamentals_path=fundamentals_path,
+                information_path=information_path,
+            )
+
+        self.assertNotIn(("000001.SZ", date(2026, 6, 3)), dataset.fundamentals)
+        self.assertEqual(dataset.fundamentals[("000001.SZ", None)].values["pe"], 10.0)
+
+    def test_information_fundamentals_require_stock_data_category(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-03", 10.0)])
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-06-03",
+                        "source": "akshare_fundamental",
+                        "category": "company_announcement",
+                        "title": "Malformed fundamental-like announcement",
+                        "url": "",
+                        "summary": "pe=18.0; pb=1.5; roe=0.16; growth=0.12",
+                        "risk_tags": ["fundamental"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, information_path=information_path)
+
+        self.assertEqual(dataset.fundamentals, {})
+
     def test_load_research_dataset_rejects_missing_explicit_information_path(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
 
