@@ -447,6 +447,106 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
 
         self.assertEqual(dataset.capital_flow, {})
 
+    def test_information_margin_records_build_financing_direction_from_balance_delta(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(
+                features_path,
+                [
+                    _feature_row("000001", "2026-06-01", 10.0),
+                    _feature_row("000001", "2026-06-02", 10.5),
+                    _feature_row("000001", "2026-06-03", 10.2),
+                ],
+            )
+            information_path.write_text(
+                "\n".join(
+                    [
+                        _information_json(
+                            "000001",
+                            "2026-06-01",
+                            "akshare_margin",
+                            "stock_data",
+                            "margin financing",
+                            "financing_balance=900.0; short_balance=20.0",
+                            ["selected_universe", "margin_financing"],
+                        ),
+                        _information_json(
+                            "000001",
+                            "2026-06-02",
+                            "akshare_margin",
+                            "stock_data",
+                            "margin financing",
+                            "financing_balance=1000.0; short_balance=20.0",
+                            ["selected_universe", "margin_financing"],
+                        ),
+                        _information_json(
+                            "000001",
+                            "2026-06-03",
+                            "akshare_margin",
+                            "stock_data",
+                            "margin financing",
+                            "financing_balance=950.0; short_balance=20.0",
+                            ["selected_universe", "margin_financing"],
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, information_path=information_path)
+
+        self.assertNotIn(("000001.SZ", date(2026, 6, 1)), dataset.capital_flow)
+        self.assertEqual(dataset.capital_flow[("000001.SZ", date(2026, 6, 2))].values["margin_financing_positive"], True)
+        self.assertEqual(dataset.capital_flow[("000001.SZ", date(2026, 6, 3))].values["margin_financing_positive"], False)
+
+    def test_information_margin_records_skip_financing_direction_after_missing_dates(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-05", 10.0)])
+            information_path.write_text(
+                "\n".join(
+                    [
+                        _information_json(
+                            "000001",
+                            "2026-06-01",
+                            "akshare_margin",
+                            "stock_data",
+                            "margin financing",
+                            "financing_balance=900.0",
+                            ["selected_universe", "margin_financing"],
+                        ),
+                        _information_json(
+                            "000001",
+                            "2026-06-05",
+                            "akshare_margin",
+                            "stock_data",
+                            "margin financing",
+                            "financing_balance=1000.0",
+                            ["selected_universe", "margin_financing"],
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, information_path=information_path)
+
+        self.assertEqual(dataset.capital_flow, {})
+
     def test_explicit_capital_flow_csv_overrides_information_capital_flow(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
 
@@ -638,6 +738,32 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
 
             with self.assertRaises(FileNotFoundError):
                 load_research_dataset(features_path, universe_path, information_path=root / "missing.jsonl")
+
+
+def _information_json(
+    symbol: str | None,
+    published_at: str,
+    source: str,
+    category: str,
+    title: str,
+    summary: str,
+    risk_tags: list[str],
+) -> str:
+    return json.dumps(
+        {
+            "symbol": symbol,
+            "sector": None,
+            "published_at": published_at,
+            "source": source,
+            "category": category,
+            "title": title,
+            "url": "",
+            "summary": summary,
+            "risk_tags": risk_tags,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
 
 
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:

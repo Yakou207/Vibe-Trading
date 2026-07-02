@@ -277,21 +277,24 @@ def _merge_information_capital_flow(
         values.update(summary_values)
         values["main_outflow_days"] = outflow_days_by_key.get(key, 0)
 
-    for record in records:
-        if (
-            record.source != "akshare_margin"
-            or record.category is not InformationCategory.STOCK_DATA
-            or "margin_financing" not in record.risk_tags
-        ):
-            continue
+    margin_records = [
+        record
+        for record in records
+        if record.source == "akshare_margin"
+        and record.category is InformationCategory.STOCK_DATA
+        and "margin_financing" in record.risk_tags
+        and record.normalized_symbol in universe_symbols
+    ]
+    margin_direction_by_key = _margin_financing_positive_by_key(margin_records)
+    for record in margin_records:
         symbol = record.normalized_symbol
-        if symbol is None or symbol not in universe_symbols:
+        if symbol is None:
             continue
         key = (symbol, record.published_at)
         if key in explicit_keys:
             continue
         summary_values = _parse_summary_numbers(record.summary, {"margin_financing_positive"})
-        margin_financing_positive = summary_values.get("margin_financing_positive")
+        margin_financing_positive = summary_values.get("margin_financing_positive", margin_direction_by_key.get(key))
         if margin_financing_positive is None:
             continue
         values = _ensure_capital_flow_values(capital_flow, symbol, record.published_at)
@@ -341,6 +344,35 @@ def _main_outflow_days_by_key(
                 streak = streak + 1 if main_net_inflow is not None and float(main_net_inflow) < 0 else 0
                 result[(symbol, event_date)] = streak
             previous_date = event_date
+    return result
+
+
+def _margin_financing_positive_by_key(records: list[InformationRecord]) -> dict[tuple[str, date], bool]:
+    grouped: dict[str, list[InformationRecord]] = {}
+    for record in records:
+        if record.normalized_symbol is not None:
+            grouped.setdefault(record.normalized_symbol, []).append(record)
+
+    result: dict[tuple[str, date], bool] = {}
+    for symbol, symbol_records in grouped.items():
+        previous_balance: float | None = None
+        previous_date: date | None = None
+        for record in sorted(symbol_records, key=lambda item: item.published_at):
+            values = _parse_summary_numbers(record.summary, {"financing_balance"})
+            financing_balance = values.get("financing_balance")
+            if financing_balance is None:
+                previous_balance = None
+                previous_date = None
+                continue
+            current_balance = float(financing_balance)
+            if (
+                previous_balance is not None
+                and previous_date is not None
+                and (record.published_at - previous_date).days <= _MAX_CONTINUOUS_OUTFLOW_GAP_DAYS
+            ):
+                result[(symbol, record.published_at)] = current_balance > previous_balance
+            previous_balance = current_balance
+            previous_date = record.published_at
     return result
 
 
