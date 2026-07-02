@@ -109,6 +109,7 @@ def load_research_dataset(
     information_records = _load_information(information_path, universe_set, universe_sectors)
     fundamentals = _load_supplemental(fundamentals_path, universe_set, allow_missing_trade_date=True)
     _merge_information_fundamentals(fundamentals, information_records, universe_set)
+    _merge_information_financial_statements(fundamentals, information_records, universe_set)
     capital_flow = _load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False)
     _merge_information_capital_flow(capital_flow, information_records, universe_set)
     features = _load_features(features_path, universe_set, sector_by_symbol)
@@ -284,6 +285,53 @@ def _parse_fundamental_summary(summary: str) -> dict[str, object]:
         except ValueError:
             continue
     return values
+
+
+def _merge_information_financial_statements(
+    fundamentals: dict[tuple[str, date | None], SupplementalRow],
+    records: list[InformationRecord],
+    universe_symbols: set[str],
+) -> None:
+    for record in records:
+        if (
+            record.source != "akshare_financial_statement"
+            or record.category is not InformationCategory.STOCK_DATA
+            or "balance_sheet" not in record.risk_tags
+        ):
+            continue
+        symbol = record.normalized_symbol
+        if symbol is None or symbol not in universe_symbols:
+            continue
+        if (symbol, None) in fundamentals:
+            continue
+        values = _parse_financial_statement_summary(record.summary)
+        if not values:
+            continue
+        target_values = _ensure_fundamental_values(fundamentals, symbol, record.published_at)
+        target_values.update({key: value for key, value in values.items() if key not in target_values})
+
+
+def _ensure_fundamental_values(
+    fundamentals: dict[tuple[str, date | None], SupplementalRow],
+    symbol: str,
+    trade_date: date,
+) -> dict[str, object]:
+    key = (symbol, trade_date)
+    row = fundamentals.get(key)
+    if row is None:
+        values: dict[str, object] = {"symbol": symbol, "trade_date": trade_date}
+        fundamentals[key] = SupplementalRow(symbol=symbol, trade_date=trade_date, values=values)
+        return values
+    return row.values
+
+
+def _parse_financial_statement_summary(summary: str) -> dict[str, object]:
+    values = _parse_summary_numbers(summary, {"goodwill", "total_assets"})
+    goodwill = values.get("goodwill")
+    total_assets = values.get("total_assets")
+    if goodwill is None or total_assets is None or float(total_assets) <= 0:
+        return {}
+    return {"goodwill_ratio": round(float(goodwill) / float(total_assets), 6)}
 
 
 def _merge_information_capital_flow(

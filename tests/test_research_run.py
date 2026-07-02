@@ -131,6 +131,46 @@ class ResearchRunTest(unittest.TestCase):
             ],
         )
 
+    def test_run_research_baseline_warns_on_financial_statement_goodwill_ratio(self) -> None:
+        from fintech_quant.research.run import ResearchRunConfig, run_research_baseline
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = _write_fixture_inputs(root)
+            information_path = root / "information.jsonl"
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-01-01",
+                        "source": "akshare_financial_statement",
+                        "category": "stock_data",
+                        "title": "000001.SZ 资产负债表 2026-01-01",
+                        "url": "",
+                        "summary": "goodwill=4000; total_assets=10000",
+                        "risk_tags": ["selected_universe", "financial_statement", "balance_sheet"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            report = run_research_baseline(
+                ResearchRunConfig(
+                    run_id="goodwill-risk",
+                    features_path=paths["features"],
+                    universe_path=paths["universe"],
+                    information_path=information_path,
+                    capital_flow_path=paths["capital_flow"],
+                    initial_cash=100000.0,
+                )
+            )
+
+        self.assertIn("goodwill_ratio", {warning["rule"] for warning in report.risk_warnings})
+
 
 def _write_fixture_inputs(root: Path, *, limit_up: bool = False) -> dict[str, Path]:
     universe = root / "universe.csv"

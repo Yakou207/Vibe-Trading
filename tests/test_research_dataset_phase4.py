@@ -340,6 +340,42 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
 
         self.assertEqual(dataset.fundamentals, {})
 
+    def test_financial_statement_records_build_goodwill_ratio_for_risk(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2025-12-31", 10.0)])
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2025-12-31",
+                        "source": "akshare_financial_statement",
+                        "category": "stock_data",
+                        "title": "000001.SZ 资产负债表 2025-12-31",
+                        "url": "",
+                        "summary": "goodwill=3000; total_assets=10000",
+                        "risk_tags": ["selected_universe", "financial_statement", "balance_sheet"],
+                        "metadata": {"statement_type": "资产负债表"},
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, information_path=information_path)
+
+        row = dataset.fundamentals[("000001.SZ", date(2025, 12, 31))]
+        self.assertEqual(row.values["goodwill_ratio"], 0.3)
+
     def test_load_research_dataset_builds_capital_flow_from_information_records(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
 
