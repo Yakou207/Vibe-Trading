@@ -145,6 +145,17 @@ python scripts/fetch_information.py \
   --output data/raw/information/information.jsonl
 ```
 
+Archive the source documents behind financial-report URLs after fetching the notice index:
+
+```bash
+python scripts/archive_financial_reports.py \
+  --input data/raw/information/information.jsonl \
+  --output data/raw/information/information.jsonl \
+  --document-root data/raw/information/financial_reports
+```
+
+The archiver downloads the original report document and writes `raw_document_path` metadata. HTML and plain-text reports also get extracted into `raw_text_path`; PDF text extraction is used when `pypdf` is available, otherwise the PDF original is still retained.
+
 `akshare_multi` combines AkShare notices, financial-report announcements, policy/regulatory news, fundamental snapshots, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
 
 ## Market Risk State

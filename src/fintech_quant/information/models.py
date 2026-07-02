@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
 
@@ -33,6 +33,7 @@ class InformationRecord:
     url: str
     summary: str
     risk_tags: tuple[str, ...] = ()
+    metadata: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.category is InformationCategory.STOCK_DATA and "selected_universe" not in self.risk_tags:

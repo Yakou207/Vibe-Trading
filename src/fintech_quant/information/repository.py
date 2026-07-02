@@ -23,6 +23,12 @@ class InformationRepository:
             handle.write(json.dumps(self._to_json(record), ensure_ascii=False, sort_keys=True) + "\n")
         return True
 
+    def all_records(self) -> list[InformationRecord]:
+        return self._read_all()
+
+    def replace_all(self, records: list[InformationRecord]) -> None:
+        self._write_all(records)
+
     def query(
         self,
         symbol: str | None = None,
@@ -89,4 +95,5 @@ class InformationRepository:
             url=str(data.get("url", "")),
             summary=str(data.get("summary", "")),
             risk_tags=tuple(data.get("risk_tags", ())),
+            metadata=dict(data.get("metadata", {})),
         )
