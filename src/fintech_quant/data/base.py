@@ -29,9 +29,15 @@ def normalize_daily_bar(symbol: str, row: Mapping[str, object], source: str) -> 
         "amount": _require_float(row, "amount", ("amount", "成交额")),
         "source": source,
     }
-    limit_up = _optional_bool(row, ("limit_up", "is_limit_up", "涨停"))
-    if limit_up is not None:
-        normalized["limit_up"] = limit_up
+    optional_flags = {
+        "is_suspended": ("is_suspended", "suspended", "停牌"),
+        "limit_up": ("limit_up", "is_limit_up", "涨停"),
+        "limit_down": ("limit_down", "is_limit_down", "跌停"),
+    }
+    for field, keys in optional_flags.items():
+        value = _optional_bool(row, keys)
+        if value is not None:
+            normalized[field] = value
     return normalized
 
 

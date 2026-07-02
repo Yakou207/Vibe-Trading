@@ -26,9 +26,9 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
             input_path.write_text(
                 json.dumps(
                     [
-                        _bar("000001", "2026-01-03", 12.0, limit_up=False),
+                        _bar("000001", "2026-01-03", 12.0, limit_up=False, limit_down=True),
                         _bar("000001", "2026-01-01", 10.0, limit_up=True),
-                        _bar("000001", "2026-01-02", 11.0, limit_up=True),
+                        _bar("000001", "2026-01-02", 11.0, limit_up=True, is_suspended=True),
                     ],
                     ensure_ascii=False,
                     sort_keys=True,
@@ -90,8 +90,14 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
                 "macd_hist",
                 "macd_positive",
                 "volatility20",
+                "is_suspended",
+                "limit_up",
+                "limit_down",
                 "limit_up_streak",
             ])
+            self.assertEqual(feature_rows[0]["limit_up"], "True")
+            self.assertEqual(feature_rows[1]["is_suspended"], "True")
+            self.assertEqual(feature_rows[2]["limit_down"], "True")
             self.assertEqual(feature_rows[0]["limit_up_streak"], "1")
             self.assertEqual(feature_rows[1]["limit_up_streak"], "2")
             self.assertEqual(feature_rows[2]["limit_up_streak"], "0")
@@ -141,7 +147,15 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
         self.assertEqual(feature_rows[1]["limit_up_streak"], "")
 
 
-def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:
+def _bar(
+    symbol: str,
+    trade_date: str,
+    close: float,
+    *,
+    limit_up: bool | None = None,
+    limit_down: bool | None = None,
+    is_suspended: bool | None = None,
+) -> dict[str, object]:
     row: dict[str, object] = {
         "symbol": symbol,
         "trade_date": trade_date,
@@ -155,6 +169,10 @@ def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = 
     }
     if limit_up is not None:
         row["limit_up"] = limit_up
+    if limit_down is not None:
+        row["limit_down"] = limit_down
+    if is_suspended is not None:
+        row["is_suspended"] = is_suspended
     return row
 
 

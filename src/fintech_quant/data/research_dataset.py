@@ -28,6 +28,9 @@ DEFAULT_FEATURE_FIELDS = (
 )
 OUTPUT_FEATURE_FIELDS = (
     *DEFAULT_FEATURE_FIELDS,
+    "is_suspended",
+    "limit_up",
+    "limit_down",
     "limit_up_streak",
 )
 

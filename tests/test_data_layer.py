@@ -76,7 +76,7 @@ class DataLayerTest(unittest.TestCase):
                     expected,
                 )
 
-    def test_normalize_daily_bar_preserves_optional_limit_up_flag(self) -> None:
+    def test_normalize_daily_bar_preserves_optional_a_share_constraint_flags(self) -> None:
         from fintech_quant.data.base import normalize_daily_bar
 
         row = {
@@ -88,9 +88,15 @@ class DataLayerTest(unittest.TestCase):
             "volume": "54321",
             "amount": "76543.2",
             "limit_up": "false",
+            "is_limit_down": "true",
+            "停牌": "1",
         }
 
-        self.assertEqual(normalize_daily_bar("000001", row, "json")["limit_up"], False)
+        normalized = normalize_daily_bar("000001", row, "json")
+
+        self.assertEqual(normalized["limit_up"], False)
+        self.assertEqual(normalized["limit_down"], True)
+        self.assertEqual(normalized["is_suspended"], True)
 
     def test_normalize_daily_bar_rejects_missing_required_fields(self) -> None:
         from fintech_quant.data.base import normalize_daily_bar
