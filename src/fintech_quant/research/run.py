@@ -163,6 +163,13 @@ def _report_from_result(
         equity_curve=[_equity_to_json(point) for point in result.equity_curve],
         drawdown={
             "max_drawdown": round(result.drawdown.max_drawdown, 6),
+            "max_drawdown_start": (
+                result.drawdown.max_drawdown_start.isoformat() if result.drawdown.max_drawdown_start else None
+            ),
+            "max_drawdown_end": (
+                result.drawdown.max_drawdown_end.isoformat() if result.drawdown.max_drawdown_end else None
+            ),
+            "recovery_date": result.drawdown.recovery_date.isoformat() if result.drawdown.recovery_date else None,
             "liquidation_date": result.drawdown.liquidation_date.isoformat() if result.drawdown.liquidation_date else None,
             "points": [_drawdown_point_to_json(point) for point in result.drawdown.points],
         },

@@ -110,6 +110,9 @@ class ResearchRunTest(unittest.TestCase):
         self.assertGreater(len(report.equity_curve), 0)
         self.assertGreater(report.drawdown["max_drawdown"], 0.0)
         self.assertEqual(report.drawdown["max_drawdown"], report.summary["max_drawdown"])
+        self.assertEqual(report.drawdown["max_drawdown_start"], "2026-01-01")
+        self.assertEqual(report.drawdown["max_drawdown_end"], "2026-01-02")
+        self.assertIsNone(report.drawdown["recovery_date"])
         self.assertEqual(
             report.drawdown["points"],
             [
