@@ -38,6 +38,33 @@ class RlDatasetTest(unittest.TestCase):
         self.assertGreater(state["score_total"], 0.0)
         self.assertGreater(state["technical_score"], 0.0)
 
+    def test_build_rl_state_samples_uses_information_capital_flow(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+        from fintech_quant.training import build_rl_state_samples
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = _write_fixture_inputs(root)
+            information = root / "information.jsonl"
+            information.write_text(
+                '{"symbol": "000001", "sector": null, "published_at": "2026-01-01", '
+                '"source": "akshare_fund_flow", "category": "stock_data", "title": "fund flow", '
+                '"url": "", "summary": "main_net_inflow=1000.0", '
+                '"risk_tags": ["selected_universe", "capital_flow", "main_inflow"]}\n',
+                encoding="utf-8",
+            )
+            dataset = load_research_dataset(
+                paths["features"],
+                paths["universe"],
+                fundamentals_path=paths["fundamentals"],
+                information_path=information,
+            )
+
+        sample = build_rl_state_samples(dataset)[0]
+        state = dict(zip(sample.state_fields, sample.state_vector, strict=True))
+
+        self.assertEqual(state["main_net_inflow"], 1000.0)
+
     def test_write_rl_state_jsonl_serializes_stable_rows(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
         from fintech_quant.training import build_rl_state_samples, write_rl_state_jsonl

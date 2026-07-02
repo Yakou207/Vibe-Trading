@@ -55,6 +55,7 @@ _FLOAT_FIELDS = {
     "pledge_ratio",
     "main_net_inflow",
 }
+_MAX_CONTINUOUS_OUTFLOW_GAP_DAYS = 3
 
 
 @dataclass(frozen=True)
@@ -104,10 +105,12 @@ def load_research_dataset(
     information_records = _load_information(information_path, universe_set, universe_sectors)
     fundamentals = _load_supplemental(fundamentals_path, universe_set, allow_missing_trade_date=True)
     _merge_information_fundamentals(fundamentals, information_records, universe_set)
+    capital_flow = _load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False)
+    _merge_information_capital_flow(capital_flow, information_records, universe_set)
     return ResearchDataset(
         features=_load_features(features_path, universe_set, sector_by_symbol),
         fundamentals=fundamentals,
-        capital_flow=_load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False),
+        capital_flow=capital_flow,
         market_state=_load_market_state(market_state_path),
         information_records=information_records,
         universe_symbols=universe_symbols,
@@ -231,6 +234,133 @@ def _parse_fundamental_summary(summary: str) -> dict[str, object]:
             continue
         key, raw_value = (item.strip() for item in part.split("=", 1))
         if key not in {"pe", "pb", "roe", "growth"}:
+            continue
+        try:
+            values[key] = float(raw_value)
+        except ValueError:
+            continue
+    return values
+
+
+def _merge_information_capital_flow(
+    capital_flow: dict[tuple[str, date], SupplementalRow],
+    records: list[InformationRecord],
+    universe_symbols: set[str],
+) -> None:
+    explicit_keys = set(capital_flow)
+    fund_flow_records = [
+        record
+        for record in records
+        if record.source == "akshare_fund_flow"
+        and record.category is InformationCategory.STOCK_DATA
+        and "capital_flow" in record.risk_tags
+        and record.normalized_symbol in universe_symbols
+    ]
+    derived_fund_flow_records = [
+        record
+        for record in fund_flow_records
+        if record.normalized_symbol is not None and (record.normalized_symbol, record.published_at) not in explicit_keys
+    ]
+    outflow_days_by_key = _main_outflow_days_by_key(derived_fund_flow_records, capital_flow)
+    for record in fund_flow_records:
+        symbol = record.normalized_symbol
+        if symbol is None:
+            continue
+        key = (symbol, record.published_at)
+        if key in explicit_keys:
+            continue
+        summary_values = _parse_summary_numbers(record.summary, {"main_net_inflow"})
+        if "main_net_inflow" not in summary_values:
+            continue
+        values = _ensure_capital_flow_values(capital_flow, symbol, record.published_at)
+        values.update(summary_values)
+        values["main_outflow_days"] = outflow_days_by_key.get(key, 0)
+
+    for record in records:
+        if (
+            record.source != "akshare_margin"
+            or record.category is not InformationCategory.STOCK_DATA
+            or "margin_financing" not in record.risk_tags
+        ):
+            continue
+        symbol = record.normalized_symbol
+        if symbol is None or symbol not in universe_symbols:
+            continue
+        key = (symbol, record.published_at)
+        if key in explicit_keys:
+            continue
+        summary_values = _parse_summary_numbers(record.summary, {"margin_financing_positive"})
+        margin_financing_positive = summary_values.get("margin_financing_positive")
+        if margin_financing_positive is None:
+            continue
+        values = _ensure_capital_flow_values(capital_flow, symbol, record.published_at)
+        values["margin_financing_positive"] = bool(margin_financing_positive)
+
+
+def _ensure_capital_flow_values(
+    capital_flow: dict[tuple[str, date], SupplementalRow],
+    symbol: str,
+    trade_date: date,
+) -> dict[str, object]:
+    key = (symbol, trade_date)
+    row = capital_flow.get(key)
+    if row is None:
+        values: dict[str, object] = {"symbol": symbol, "trade_date": trade_date}
+        capital_flow[key] = SupplementalRow(symbol=symbol, trade_date=trade_date, values=values)
+        return values
+    return row.values
+
+
+def _main_outflow_days_by_key(
+    records: list[InformationRecord],
+    explicit_rows: dict[tuple[str, date], SupplementalRow],
+) -> dict[tuple[str, date], int]:
+    grouped: dict[str, list[tuple[date, InformationRecord | SupplementalRow]]] = {}
+    for record in records:
+        if record.normalized_symbol is not None:
+            grouped.setdefault(record.normalized_symbol, []).append((record.published_at, record))
+    for (symbol, trade_date), row in explicit_rows.items():
+        grouped.setdefault(symbol, []).append((trade_date, row))
+
+    result: dict[tuple[str, date], int] = {}
+    for symbol, symbol_events in grouped.items():
+        streak = 0
+        previous_date: date | None = None
+        for event_date, event in sorted(symbol_events, key=lambda item: item[0]):
+            if (
+                previous_date is not None
+                and (event_date - previous_date).days > _MAX_CONTINUOUS_OUTFLOW_GAP_DAYS
+            ):
+                streak = 0
+            if isinstance(event, SupplementalRow):
+                streak = _explicit_outflow_streak(event, streak)
+            else:
+                values = _parse_summary_numbers(event.summary, {"main_net_inflow"})
+                main_net_inflow = values.get("main_net_inflow")
+                streak = streak + 1 if main_net_inflow is not None and float(main_net_inflow) < 0 else 0
+                result[(symbol, event_date)] = streak
+            previous_date = event_date
+    return result
+
+
+def _explicit_outflow_streak(row: SupplementalRow, previous_streak: int) -> int:
+    raw_streak = row.values.get("main_outflow_days")
+    if isinstance(raw_streak, int):
+        return raw_streak
+
+    raw_inflow = row.values.get("main_net_inflow")
+    if isinstance(raw_inflow, (float, int)):
+        return previous_streak + 1 if float(raw_inflow) < 0 else 0
+    return 0
+
+
+def _parse_summary_numbers(summary: str, allowed_keys: set[str]) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for part in summary.split(";"):
+        if "=" not in part:
+            continue
+        key, raw_value = (item.strip() for item in part.split("=", 1))
+        if key not in allowed_keys:
             continue
         try:
             values[key] = float(raw_value)

@@ -176,6 +176,45 @@ class ResearchScoringTest(unittest.TestCase):
         self.assertEqual(score.components["fundamental"].score, 35.0)
         self.assertNotIn("pe", score.missing_fields)
 
+    def test_build_stock_scores_uses_information_capital_flow_loaded_into_dataset(self) -> None:
+        from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow
+        from fintech_quant.research.scoring import build_stock_scores
+
+        dataset = ResearchDataset(
+            features=[
+                FeatureRow(
+                    symbol="000001.SZ",
+                    trade_date=date(2026, 6, 3),
+                    values={
+                        "symbol": "000001.SZ",
+                        "trade_date": date(2026, 6, 3),
+                        "close_above_ma20": True,
+                        "close_above_ma60": True,
+                        "rsi14": 55.0,
+                        "macd_positive": True,
+                        "volume": 1000.0,
+                        "return_1d": 0.01,
+                    },
+                )
+            ],
+            fundamentals={},
+            capital_flow={
+                ("000001.SZ", date(2026, 6, 3)): SupplementalRow(
+                    "000001.SZ",
+                    date(2026, 6, 3),
+                    {"main_net_inflow": 1000.0, "main_outflow_days": 0, "margin_financing_positive": True},
+                )
+            },
+            market_state={},
+            information_records=[],
+            universe_symbols=("000001.SZ",),
+        )
+
+        score = build_stock_scores(dataset)[(date(2026, 6, 3), "000001.SZ")]
+
+        self.assertEqual(score.components["capital_flow"].score, 25.0)
+        self.assertNotIn("main_net_inflow", score.missing_fields)
+
 
 if __name__ == "__main__":
     unittest.main()

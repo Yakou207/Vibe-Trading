@@ -273,6 +273,359 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
 
         self.assertEqual(dataset.fundamentals, {})
 
+    def test_load_research_dataset_builds_capital_flow_from_information_records(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-03", 10.0)])
+            information_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-01",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=100.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_inflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-02",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=-50.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-03",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=-60.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-03",
+                                "source": "akshare_margin",
+                                "category": "stock_data",
+                                "title": "margin financing",
+                                "url": "",
+                                "summary": "financing_balance=1000.0; short_balance=20.0",
+                                "risk_tags": ["selected_universe", "margin_financing"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, information_path=information_path)
+
+        row = dataset.capital_flow[("000001.SZ", date(2026, 6, 3))]
+        self.assertEqual(row.values["main_net_inflow"], -60.0)
+        self.assertEqual(row.values["main_outflow_days"], 2)
+        self.assertNotIn("margin_financing_positive", row.values)
+
+    def test_information_fund_flow_resets_outflow_streak_after_missing_dates(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-05", 10.0)])
+            information_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-01",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=-50.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-05",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=-60.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, information_path=information_path)
+
+        row = dataset.capital_flow[("000001.SZ", date(2026, 6, 5))]
+        self.assertEqual(row.values["main_outflow_days"], 1)
+
+    def test_information_fund_flow_skips_malformed_summary(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-03", 10.0)])
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-06-03",
+                        "source": "akshare_fund_flow",
+                        "category": "stock_data",
+                        "title": "fund flow",
+                        "url": "",
+                        "summary": "main_net_amount=100.0",
+                        "risk_tags": ["selected_universe", "capital_flow"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, information_path=information_path)
+
+        self.assertEqual(dataset.capital_flow, {})
+
+    def test_explicit_capital_flow_csv_overrides_information_capital_flow(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            capital_flow_path = root / "capital_flow.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-03", 10.0)])
+            capital_flow_path.write_text(
+                "symbol,trade_date,main_net_inflow,main_outflow_days,margin_financing_positive\n"
+                "000001,2026-06-03,999,0,true\n",
+                encoding="utf-8",
+            )
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-06-03",
+                        "source": "akshare_fund_flow",
+                        "category": "stock_data",
+                        "title": "fund flow",
+                        "url": "",
+                        "summary": "main_net_inflow=-60.0",
+                        "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(
+                features_path,
+                universe_path,
+                capital_flow_path=capital_flow_path,
+                information_path=information_path,
+            )
+
+        row = dataset.capital_flow[("000001.SZ", date(2026, 6, 3))]
+        self.assertEqual(row.values["main_net_inflow"], 999.0)
+        self.assertEqual(row.values["main_outflow_days"], 0)
+
+    def test_explicit_capital_flow_csv_excludes_information_record_from_next_outflow_streak(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            capital_flow_path = root / "capital_flow.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-02", 10.0)])
+            capital_flow_path.write_text(
+                "symbol,trade_date,main_net_inflow,main_outflow_days\n"
+                "000001,2026-06-01,999,0\n",
+                encoding="utf-8",
+            )
+            information_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-01",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=-50.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-02",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=-60.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(
+                features_path,
+                universe_path,
+                capital_flow_path=capital_flow_path,
+                information_path=information_path,
+            )
+
+        row = dataset.capital_flow[("000001.SZ", date(2026, 6, 2))]
+        self.assertEqual(row.values["main_net_inflow"], -60.0)
+        self.assertEqual(row.values["main_outflow_days"], 1)
+
+    def test_explicit_capital_flow_csv_resets_outflow_streak_between_information_records(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            capital_flow_path = root / "capital_flow.csv"
+            information_path = root / "information.jsonl"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-06-02", 10.0)])
+            capital_flow_path.write_text(
+                "symbol,trade_date,main_net_inflow,main_outflow_days\n"
+                "000001,2026-06-01,999,0\n",
+                encoding="utf-8",
+            )
+            information_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-05-31",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=-50.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-06-02",
+                                "source": "akshare_fund_flow",
+                                "category": "stock_data",
+                                "title": "fund flow",
+                                "url": "",
+                                "summary": "main_net_inflow=-60.0",
+                                "risk_tags": ["selected_universe", "capital_flow", "main_outflow"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(
+                features_path,
+                universe_path,
+                capital_flow_path=capital_flow_path,
+                information_path=information_path,
+            )
+
+        row = dataset.capital_flow[("000001.SZ", date(2026, 6, 2))]
+        self.assertEqual(row.values["main_net_inflow"], -60.0)
+        self.assertEqual(row.values["main_outflow_days"], 1)
+
     def test_load_research_dataset_rejects_missing_explicit_information_path(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
 
