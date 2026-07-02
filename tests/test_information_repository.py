@@ -908,6 +908,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("akshare_multi", result.stdout)
         self.assertIn("akshare_policy", result.stdout)
         self.assertIn("akshare_fundamental", result.stdout)
+        self.assertIn("akshare_financial_report", result.stdout)
 
     def test_fetch_information_help_describes_recent_page_as_page_bounded(self) -> None:
         worktree = Path(__file__).resolve().parents[1]

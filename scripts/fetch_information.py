@@ -27,7 +27,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Fetch and store A-share information records.")
     parser.add_argument(
         "--source",
-        choices=("akshare_notice", "akshare_policy", "akshare_fundamental", "akshare_multi", "jsonl"),
+        choices=(
+            "akshare_notice",
+            "akshare_financial_report",
+            "akshare_policy",
+            "akshare_fundamental",
+            "akshare_multi",
+            "jsonl",
+        ),
         default="akshare_notice",
     )
     parser.add_argument("--input", default=None)
@@ -70,6 +77,7 @@ def _build_fetcher(args: argparse.Namespace):
         return CombinedInformationFetcher(
             [
                 AkShareNoticeFetcher(report_type=args.report_type, recent_page=args.recent_page),
+                AkShareNoticeFetcher(report_type="财务报告", recent_page=args.recent_page),
                 AkSharePolicyNewsFetcher(),
                 AkShareFundamentalFetcher(),
                 AkShareFundFlowFetcher(),
@@ -78,6 +86,8 @@ def _build_fetcher(args: argparse.Namespace):
             ],
             ignore_fetch_errors=True,
         )
+    if args.source == "akshare_financial_report":
+        return AkShareNoticeFetcher(report_type="财务报告", recent_page=args.recent_page)
     if args.source == "akshare_policy":
         return AkSharePolicyNewsFetcher()
     if args.source == "akshare_fundamental":
