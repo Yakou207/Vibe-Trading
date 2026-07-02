@@ -359,6 +359,37 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertEqual(records[0].category, InformationCategory.FINANCIAL_REPORT)
         self.assertEqual(records[0].url, "https://example.test/notice")
 
+    def test_akshare_notice_fetcher_reads_multiple_recent_pages(self) -> None:
+        from fintech_quant.information import AkShareNoticeFetcher
+
+        calls: list[int] = []
+
+        def page_fetcher(page: int) -> list[dict[str, object]]:
+            calls.append(page)
+            return [
+                {
+                    "代码": "000001",
+                    "公告日期": f"2026060{page}",
+                    "公告标题": f"Notice page {page}",
+                    "公告类型": "重大事项",
+                    "公告链接": f"https://example.test/notice-{page}",
+                }
+            ]
+
+        records = AkShareNoticeFetcher(
+            recent_page=1,
+            recent_pages=3,
+            page_fetcher=page_fetcher,
+        ).fetch(
+            "000001",
+            None,
+            date(2026, 6, 1),
+            date(2026, 6, 30),
+        )
+
+        self.assertEqual(calls, [1, 2, 3])
+        self.assertEqual([record.title for record in records], ["Notice page 1", "Notice page 2", "Notice page 3"])
+
     def test_akshare_notice_fetcher_wraps_fetch_failures(self) -> None:
         from fintech_quant.data.errors import ProviderFetchError
         from fintech_quant.information import AkShareNoticeFetcher
@@ -909,6 +940,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("akshare_policy", result.stdout)
         self.assertIn("akshare_fundamental", result.stdout)
         self.assertIn("akshare_financial_report", result.stdout)
+        self.assertIn("--recent-pages", result.stdout)
 
     def test_fetch_information_help_describes_recent_page_as_page_bounded(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
@@ -925,9 +957,9 @@ class InformationRepositoryTest(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertIn("Date filtering is page-", result.stdout)
-        self.assertIn("bounded to this page.", result.stdout)
         self.assertIn("--recent-page", result.stdout)
+        self.assertIn("--recent-pages", result.stdout)
+        self.assertIn("Number of AkShare notice pages", result.stdout)
         self.assertIn("--retention-as-of", result.stdout)
 
     def test_static_fetcher_normalizes_non_empty_symbol_filter(self) -> None:

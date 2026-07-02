@@ -87,17 +87,21 @@ class CombinedInformationFetcher(InformationFetcher):
 
 
 class AkShareNoticeFetcher(InformationFetcher):
-    """Fetch AkShare notice rows from one recent page and filter them locally by date."""
+    """Fetch AkShare notice rows from recent pages and filter them locally by date."""
 
     def __init__(
         self,
         report_type: str = "重大事项",
         recent_page: int = 1,
+        recent_pages: int = 1,
         fetcher: Callable[[], object] | None = None,
+        page_fetcher: Callable[[int], object] | None = None,
     ) -> None:
         self._report_type = report_type
         self._recent_page = recent_page
+        self._recent_pages = recent_pages
         self._fetcher = fetcher
+        self._page_fetcher = page_fetcher
 
     def fetch(
         self,
@@ -116,18 +120,21 @@ class AkShareNoticeFetcher(InformationFetcher):
         return _filter_records(records, symbol, sector, start, end)
 
     def _fetch_rows(self) -> list[dict[str, object]]:
+        self._validate_recent_pages()
         if self._fetcher is not None:
             return self._run_fetch(self._fetcher)
+        if self._page_fetcher is not None:
+            return self._fetch_page_range(self._page_fetcher)
 
         try:
             ak = importlib.import_module("akshare")
         except ImportError as exc:
             raise MissingProviderDependency("akshare is required for AkShareNoticeFetcher") from exc
 
-        return self._run_fetch(
-            lambda: ak.stock_notice_report(
+        return self._fetch_page_range(
+            lambda page: ak.stock_notice_report(
                 report_type=self._report_type,
-                recent_page=self._recent_page,
+                recent_page=page,
             ).to_dict(orient="records")
         )
 
@@ -138,6 +145,23 @@ class AkShareNoticeFetcher(InformationFetcher):
             raise ProviderFetchError(
                 f"akshare notice fetch failed for report_type={self._report_type!r}, recent_page={self._recent_page!r}"
             ) from exc
+
+    def _fetch_page_range(self, fetcher: Callable[[int], object]) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        try:
+            for page in range(self._recent_page, self._recent_page + self._recent_pages):
+                rows.extend(_rows_from_fetch_result(fetcher(page)))
+        except Exception as exc:
+            raise ProviderFetchError(
+                f"akshare notice fetch failed for report_type={self._report_type!r}, recent_page={self._recent_page!r}, recent_pages={self._recent_pages!r}"
+            ) from exc
+        return rows
+
+    def _validate_recent_pages(self) -> None:
+        if self._recent_page <= 0:
+            raise ValueError("recent_page must be positive")
+        if self._recent_pages <= 0:
+            raise ValueError("recent_pages must be positive")
 
 
 class AkSharePolicyNewsFetcher(InformationFetcher):

@@ -142,8 +142,11 @@ python scripts/fetch_information.py \
   --symbol 000001 \
   --start 2024-01-01 \
   --end 2026-06-30 \
+  --recent-pages 20 \
   --output data/raw/information/information.jsonl
 ```
+
+`--recent-pages` controls how many AkShare notice pages are scanned from `--recent-page`. Use a larger value for three-year backfills, then rely on the repository's retention policy to keep only recent text records.
 
 Archive the source documents behind financial-report URLs after fetching the notice index:
 

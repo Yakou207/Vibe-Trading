@@ -53,7 +53,13 @@ def main() -> int:
         "--recent-page",
         type=int,
         default=1,
-        help="AkShare notice page to fetch. Date filtering is page-bounded to this page.",
+        help="First AkShare notice page to fetch.",
+    )
+    parser.add_argument(
+        "--recent-pages",
+        type=int,
+        default=1,
+        help="Number of AkShare notice pages to fetch from --recent-page.",
     )
     args = parser.parse_args()
 
@@ -76,8 +82,16 @@ def _build_fetcher(args: argparse.Namespace):
     if args.source == "akshare_multi":
         return CombinedInformationFetcher(
             [
-                AkShareNoticeFetcher(report_type=args.report_type, recent_page=args.recent_page),
-                AkShareNoticeFetcher(report_type="财务报告", recent_page=args.recent_page),
+                AkShareNoticeFetcher(
+                    report_type=args.report_type,
+                    recent_page=args.recent_page,
+                    recent_pages=args.recent_pages,
+                ),
+                AkShareNoticeFetcher(
+                    report_type="财务报告",
+                    recent_page=args.recent_page,
+                    recent_pages=args.recent_pages,
+                ),
                 AkSharePolicyNewsFetcher(),
                 AkShareFundamentalFetcher(),
                 AkShareFundFlowFetcher(),
@@ -87,12 +101,20 @@ def _build_fetcher(args: argparse.Namespace):
             ignore_fetch_errors=True,
         )
     if args.source == "akshare_financial_report":
-        return AkShareNoticeFetcher(report_type="财务报告", recent_page=args.recent_page)
+        return AkShareNoticeFetcher(
+            report_type="财务报告",
+            recent_page=args.recent_page,
+            recent_pages=args.recent_pages,
+        )
     if args.source == "akshare_policy":
         return AkSharePolicyNewsFetcher()
     if args.source == "akshare_fundamental":
         return AkShareFundamentalFetcher()
-    return AkShareNoticeFetcher(report_type=args.report_type, recent_page=args.recent_page)
+    return AkShareNoticeFetcher(
+        report_type=args.report_type,
+        recent_page=args.recent_page,
+        recent_pages=args.recent_pages,
+    )
 
 
 if __name__ == "__main__":
