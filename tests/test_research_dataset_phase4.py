@@ -165,6 +165,26 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
 
         self.assertEqual(dataset.market_state[date(2026, 1, 2)].values["broad_market_drop_gt_3pct_count"], 16)
 
+    def test_market_state_derives_index_below_annual_ma_from_index_prices(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            market_state_path = root / "market_state.csv"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            _write_csv(features_path, [_feature_row("000001", "2026-01-02", 10.0)])
+            market_state_path.write_text(
+                "trade_date,index_close,index_ma250\n"
+                "2026-01-02,2980,3000\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, market_state_path=market_state_path)
+
+        self.assertEqual(dataset.market_state[date(2026, 1, 2)].values["index_below_annual_ma"], True)
+
     def test_load_research_dataset_builds_fundamentals_from_information_records(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
 

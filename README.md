@@ -147,6 +147,21 @@ python scripts/fetch_information.py \
 
 `akshare_multi` combines AkShare notices, financial-report announcements, policy/regulatory news, fundamental snapshots, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
 
+## Market Risk State
+
+Use `fetch_market_state.py` to build the market-level risk file consumed by research runs. By default it fetches the Shanghai Composite index (`sh000001`) from AkShare, computes the 250-day moving average, and writes `index_below_annual_ma`:
+
+```bash
+python scripts/fetch_market_state.py \
+  --source akshare \
+  --index-symbol sh000001 \
+  --start 2026-01-01 \
+  --end 2026-06-30 \
+  --output data/raw/market_state/sh000001_market_state.csv
+```
+
+The output can be passed to `scripts/run_research_baseline.py --market-state`. If a market-state CSV contains `index_close` and `index_ma250`, the research dataset loader derives `index_below_annual_ma` automatically unless the file already provides an explicit value.
+
 ## Local Setup
 
 ```bash

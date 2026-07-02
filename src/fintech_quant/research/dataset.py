@@ -55,6 +55,8 @@ _FLOAT_FIELDS = {
     "goodwill_ratio",
     "pledge_ratio",
     "main_net_inflow",
+    "index_close",
+    "index_ma250",
 }
 _MAX_CONTINUOUS_OUTFLOW_GAP_DAYS = 3
 _BROAD_MARKET_DROP_THRESHOLD = -0.03
@@ -182,8 +184,21 @@ def _load_market_state(path: Path | None) -> dict[date, MarketStateRow]:
         trade_date = _parse_date(row["trade_date"], path, "trade_date")
         values = _coerce_row(row, path)
         values["trade_date"] = trade_date
+        _derive_index_below_annual_ma(values)
         result[trade_date] = MarketStateRow(trade_date=trade_date, values=values)
     return result
+
+
+def _derive_index_below_annual_ma(values: dict[str, object]) -> None:
+    if "index_below_annual_ma" in values:
+        return
+    index_close = values.get("index_close")
+    index_ma250 = values.get("index_ma250")
+    if not isinstance(index_close, (float, int)) or not isinstance(index_ma250, (float, int)):
+        return
+    if float(index_ma250) <= 0:
+        return
+    values["index_below_annual_ma"] = float(index_close) < float(index_ma250)
 
 
 def _merge_derived_market_state(
