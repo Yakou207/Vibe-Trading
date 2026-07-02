@@ -5,6 +5,7 @@ from datetime import date
 from typing import Mapping, Sequence
 
 from fintech_quant.information import InformationRecord
+from fintech_quant.research.scoring import NEGATIVE_RISK_TAGS
 from fintech_quant.risk import RiskInput
 
 
@@ -44,6 +45,7 @@ def build_risk_input(
         single_position_drawdown=_single_position_drawdown(position, close),
         st_warning=_bool(fundamental_values.get("st_warning"))
         or _has_symbol_tag(symbol, trade_date, information_records, "st_warning", sector),
+        negative_event_count=_negative_event_count(symbol, trade_date, information_records, sector),
         goodwill_ratio=_float(fundamental_values.get("goodwill_ratio")),
         pledge_ratio=_float(fundamental_values.get("pledge_ratio")),
         main_outflow_days=_int(capital_values.get("main_outflow_days")),
@@ -64,6 +66,22 @@ def _has_symbol_tag(
         and record.published_at <= trade_date
         and tag in record.risk_tags
         for record in records
+    )
+
+
+def _negative_event_count(
+    symbol: str,
+    trade_date: date,
+    records: Sequence[InformationRecord],
+    sector: str | None = None,
+) -> int:
+    return sum(
+        1
+        for record in records
+        if (record.normalized_symbol == symbol or (sector is not None and record.symbol is None and record.sector == sector))
+        and record.published_at <= trade_date
+        and any(tag in NEGATIVE_RISK_TAGS for tag in record.risk_tags)
+        and "st_warning" not in record.risk_tags
     )
 
 

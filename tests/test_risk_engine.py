@@ -23,6 +23,7 @@ class RiskEngineTest(unittest.TestCase):
                 goodwill_ratio=0.31,
                 pledge_ratio=0.51,
                 main_outflow_days=4,
+                negative_event_count=1,
             )
         )
 
@@ -36,6 +37,7 @@ class RiskEngineTest(unittest.TestCase):
                 "goodwill_ratio",
                 "pledge_ratio",
                 "main_outflow_days",
+                "negative_event_count",
             },
         )
 

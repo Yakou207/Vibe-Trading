@@ -318,6 +318,7 @@ def _merge_risk_inputs(left: RiskInput, right: RiskInput) -> RiskInput:
         portfolio_drawdown=max(left.portfolio_drawdown, right.portfolio_drawdown),
         single_position_drawdown=max(left.single_position_drawdown, right.single_position_drawdown),
         st_warning=left.st_warning or right.st_warning,
+        negative_event_count=max(left.negative_event_count, right.negative_event_count),
         goodwill_ratio=max(left.goodwill_ratio, right.goodwill_ratio),
         pledge_ratio=max(left.pledge_ratio, right.pledge_ratio),
         main_outflow_days=max(left.main_outflow_days, right.main_outflow_days),

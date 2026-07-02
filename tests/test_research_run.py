@@ -103,6 +103,7 @@ class ResearchRunTest(unittest.TestCase):
         trade_actions = [row["action"] for row in report.trades]
 
         self.assertLess(second_day_sentiment["score"], scores_by_date["2026-01-01"]["components"]["sentiment"]["score"])
+        self.assertIn("negative_event_count", warning_rules)
         self.assertIn("main_outflow_days", warning_rules)
         self.assertIn("broad_market_drop_gt_3pct_count", warning_rules)
         self.assertEqual(trade_actions, ["buy", "sell"])

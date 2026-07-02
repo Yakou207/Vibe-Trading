@@ -36,6 +36,7 @@ class RiskInput:
     portfolio_drawdown: float = 0.0
     single_position_drawdown: float = 0.0
     st_warning: bool = False
+    negative_event_count: int = 0
     goodwill_ratio: float = 0.0
     pledge_ratio: float = 0.0
     main_outflow_days: int = 0
@@ -100,6 +101,16 @@ def evaluate_risk(
                 rule="st_warning",
                 action=RiskAction.REDUCE,
                 message="ST warning is active for the stock.",
+            )
+        )
+
+    if risk_input.negative_event_count > 0:
+        warnings.append(
+            RiskWarning(
+                layer="single_stock_negative",
+                rule="negative_event_count",
+                action=RiskAction.WATCH,
+                message="Negative stock-specific information is present.",
             )
         )
 
