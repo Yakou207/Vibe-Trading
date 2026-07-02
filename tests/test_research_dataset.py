@@ -137,6 +137,7 @@ class ResearchDatasetTest(unittest.TestCase):
             "macd_hist",
             "macd_positive",
             "volatility20",
+            "limit_up_streak",
         ])
         self.assertEqual([row["trade_date"] for row in features], ["2026-01-01", "2026-01-02"])
         self.assertNotIn("provider_debug", features[0])
@@ -156,6 +157,7 @@ class ResearchDatasetTest(unittest.TestCase):
         self.assertIn("rsi14", header)
         self.assertIn("macd_line", header)
         self.assertIn("volatility20", header)
+        self.assertIn("limit_up_streak", header)
 
     def test_load_research_dataset_keeps_sector_information_for_universe_members(self) -> None:
         from fintech_quant.research import load_research_dataset

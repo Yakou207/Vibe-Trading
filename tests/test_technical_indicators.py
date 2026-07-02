@@ -66,9 +66,57 @@ class TechnicalIndicatorsTest(unittest.TestCase):
 
         self.assertAlmostEqual(enriched[-1]["rsi3"], 50.0)
 
+    def test_enrich_daily_bars_computes_limit_up_streak_per_symbol(self) -> None:
+        from fintech_quant.features import enrich_daily_bars
 
-def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:
-    return {
+        rows = [
+            _bar("000001.SZ", "2026-01-01", 10.0, limit_up=True),
+            _bar("000001.SZ", "2026-01-02", 11.0, limit_up=True),
+            _bar("000001.SZ", "2026-01-03", 10.5, limit_up=False),
+            _bar("000001.SZ", "2026-01-04", 11.55, limit_up=True),
+            _bar("600000.SH", "2026-01-01", 20.0, limit_up=True),
+        ]
+
+        enriched = enrich_daily_bars(rows)
+        by_symbol_date = {(row["symbol"], row["trade_date"]): row for row in enriched}
+
+        self.assertEqual(by_symbol_date[("000001.SZ", "2026-01-01")]["limit_up_streak"], 1)
+        self.assertEqual(by_symbol_date[("000001.SZ", "2026-01-02")]["limit_up_streak"], 2)
+        self.assertEqual(by_symbol_date[("000001.SZ", "2026-01-03")]["limit_up_streak"], 0)
+        self.assertEqual(by_symbol_date[("000001.SZ", "2026-01-04")]["limit_up_streak"], 1)
+        self.assertEqual(by_symbol_date[("600000.SH", "2026-01-01")]["limit_up_streak"], 1)
+
+    def test_enrich_daily_bars_keeps_limit_up_streak_missing_without_source_flag(self) -> None:
+        from fintech_quant.features import enrich_daily_bars
+
+        rows = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 11.0),
+        ]
+
+        enriched = enrich_daily_bars(rows)
+
+        self.assertIsNone(enriched[0]["limit_up_streak"])
+        self.assertIsNone(enriched[1]["limit_up_streak"])
+
+    def test_enrich_daily_bars_resets_limit_up_streak_after_missing_source_flag(self) -> None:
+        from fintech_quant.features import enrich_daily_bars
+
+        rows = [
+            _bar("000001.SZ", "2026-01-01", 10.0, limit_up=True),
+            _bar("000001.SZ", "2026-01-02", 11.0),
+            _bar("000001.SZ", "2026-01-03", 12.1, limit_up=True),
+        ]
+
+        enriched = enrich_daily_bars(rows)
+
+        self.assertEqual(enriched[0]["limit_up_streak"], 1)
+        self.assertIsNone(enriched[1]["limit_up_streak"])
+        self.assertEqual(enriched[2]["limit_up_streak"], 1)
+
+
+def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:
+    row: dict[str, object] = {
         "symbol": symbol,
         "trade_date": trade_date,
         "open": close,
@@ -79,7 +127,9 @@ def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:
         "amount": close * 1000.0,
         "source": "fixture",
     }
-
+    if limit_up is not None:
+        row["limit_up"] = limit_up
+    return row
 
 if __name__ == "__main__":
     unittest.main()

@@ -26,9 +26,9 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
             input_path.write_text(
                 json.dumps(
                     [
-                        _bar("000001", "2026-01-03", 12.0),
-                        _bar("000001", "2026-01-01", 10.0),
-                        _bar("000001", "2026-01-02", 11.0),
+                        _bar("000001", "2026-01-03", 12.0, limit_up=False),
+                        _bar("000001", "2026-01-01", 10.0, limit_up=True),
+                        _bar("000001", "2026-01-02", 11.0, limit_up=True),
                     ],
                     ensure_ascii=False,
                     sort_keys=True,
@@ -90,11 +90,59 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
                 "macd_hist",
                 "macd_positive",
                 "volatility20",
+                "limit_up_streak",
             ])
+            self.assertEqual(feature_rows[0]["limit_up_streak"], "1")
+            self.assertEqual(feature_rows[1]["limit_up_streak"], "2")
+            self.assertEqual(feature_rows[2]["limit_up_streak"], "0")
+
+    def test_refresh_script_keeps_limit_up_streak_blank_without_source_flag(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            universe_path = tmp_path / "universe.csv"
+            input_path = tmp_path / "bars.json"
+            feature_output = tmp_path / "features.csv"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            input_path.write_text(
+                json.dumps([_bar("000001", "2026-01-01", 10.0), _bar("000001", "2026-01-02", 11.0)]),
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/refresh_research_data.py",
+                    "--source",
+                    "json",
+                    "--input",
+                    str(input_path),
+                    "--universe",
+                    str(universe_path),
+                    "--daily-output",
+                    str(tmp_path / "daily.csv"),
+                    "--feature-output",
+                    str(feature_output),
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            with feature_output.open("r", encoding="utf-8", newline="") as handle:
+                feature_rows = list(csv.DictReader(handle))
+
+        self.assertEqual(feature_rows[0]["limit_up_streak"], "")
+        self.assertEqual(feature_rows[1]["limit_up_streak"], "")
 
 
-def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:
-    return {
+def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:
+    row: dict[str, object] = {
         "symbol": symbol,
         "trade_date": trade_date,
         "open": close,
@@ -105,6 +153,9 @@ def _bar(symbol: str, trade_date: str, close: float) -> dict[str, object]:
         "amount": close * 1000.0,
         "source": "fixture",
     }
+    if limit_up is not None:
+        row["limit_up"] = limit_up
+    return row
 
 
 if __name__ == "__main__":

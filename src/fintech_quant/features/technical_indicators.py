@@ -42,6 +42,8 @@ def _enrich_symbol_rows(
     ema12: float | None = None
     ema26: float | None = None
     signal: float | None = None
+    limit_up_streak = 0
+    has_limit_up_source = False
     result: list[dict[str, object]] = []
 
     for row in rows:
@@ -67,12 +69,18 @@ def _enrich_symbol_rows(
 
         rsi = _rolling_rsi(returns, rsi_period)
         volatility = _rolling_volatility(returns, volatility_window)
+        has_limit_up_source = "limit_up" in row
+        if has_limit_up_source:
+            limit_up_streak = limit_up_streak + 1 if _truthy(row.get("limit_up")) else 0
+        else:
+            limit_up_streak = 0
         enriched[f"rsi{rsi_period}"] = _round_or_none(rsi)
         enriched["macd_line"] = round(macd_line, 6)
         enriched["macd_signal"] = round(signal, 6)
         enriched["macd_hist"] = round(macd_hist, 6)
         enriched["macd_positive"] = macd_line > signal
         enriched[f"volatility{volatility_window}"] = _round_or_none(volatility)
+        enriched["limit_up_streak"] = limit_up_streak if has_limit_up_source else None
         result.append(enriched)
 
     return result
@@ -111,3 +119,11 @@ def _rolling_volatility(returns: list[float], window: int) -> float | None:
 
 def _round_or_none(value: float | None) -> float | None:
     return None if value is None else round(value, 6)
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"true", "1", "yes"}

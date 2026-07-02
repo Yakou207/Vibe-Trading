@@ -18,7 +18,7 @@ class MarketDataProvider(ABC):
 
 def normalize_daily_bar(symbol: str, row: Mapping[str, object], source: str) -> dict[str, object]:
     trade_date = _require_value(row, "trade_date", ("trade_date", "date", "日期"))
-    return {
+    normalized = {
         "symbol": normalize_a_share_symbol(symbol),
         "trade_date": _normalize_trade_date(trade_date),
         "open": _require_float(row, "open", ("open", "开盘")),
@@ -29,6 +29,10 @@ def normalize_daily_bar(symbol: str, row: Mapping[str, object], source: str) -> 
         "amount": _require_float(row, "amount", ("amount", "成交额")),
         "source": source,
     }
+    limit_up = _optional_bool(row, ("limit_up", "is_limit_up", "涨停"))
+    if limit_up is not None:
+        normalized["limit_up"] = limit_up
+    return normalized
 
 
 def _first_present(row: Mapping[str, object], keys: tuple[str, ...]) -> object | None:
@@ -51,6 +55,20 @@ def _require_float(row: Mapping[str, object], field_name: str, keys: tuple[str, 
         return float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Daily bar field {field_name} must be numeric: {value!r}") from exc
+
+
+def _optional_bool(row: Mapping[str, object], keys: tuple[str, ...]) -> bool | None:
+    value = _first_present(row, keys)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    normalized = str(value).strip().lower()
+    if normalized in {"true", "1", "yes"}:
+        return True
+    if normalized in {"false", "0", "no"}:
+        return False
+    raise ValueError(f"Daily bar boolean field must be true/false-like: {value!r}")
 
 
 def _normalize_trade_date(value: object) -> str:

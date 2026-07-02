@@ -26,6 +26,10 @@ DEFAULT_FEATURE_FIELDS = (
     "macd_positive",
     "volatility20",
 )
+OUTPUT_FEATURE_FIELDS = (
+    *DEFAULT_FEATURE_FIELDS,
+    "limit_up_streak",
+)
 
 
 @dataclass(frozen=True)
@@ -79,7 +83,7 @@ def write_daily_bars_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> No
 
 
 def write_feature_rows_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
-    _write_csv(path, rows, DEFAULT_FEATURE_FIELDS)
+    _write_csv(path, rows, OUTPUT_FEATURE_FIELDS)
 
 
 def _write_csv(path: Path, rows: Sequence[Mapping[str, object]], fieldnames: Sequence[str]) -> None:

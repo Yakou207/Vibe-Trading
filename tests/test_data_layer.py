@@ -76,6 +76,22 @@ class DataLayerTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_normalize_daily_bar_preserves_optional_limit_up_flag(self) -> None:
+        from fintech_quant.data.base import normalize_daily_bar
+
+        row = {
+            "trade_date": "2026-06-03",
+            "open": "10.2",
+            "high": "10.6",
+            "low": "10.0",
+            "close": "10.4",
+            "volume": "54321",
+            "amount": "76543.2",
+            "limit_up": "false",
+        }
+
+        self.assertEqual(normalize_daily_bar("000001", row, "json")["limit_up"], False)
+
     def test_normalize_daily_bar_rejects_missing_required_fields(self) -> None:
         from fintech_quant.data.base import normalize_daily_bar
 
