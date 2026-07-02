@@ -118,6 +118,53 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
         self.assertEqual(dataset.information_records[0].title, "Risk notice")
         self.assertEqual(dataset.information_records[0].normalized_symbol, "000001.SZ")
 
+    def test_load_research_dataset_derives_market_drop_count_from_feature_returns(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            universe_path.write_text(
+                "symbol,name,sector\n000001,Ping An,Bank\n000002,Vanke,RealEstate\n000003,Test,Tech\n",
+                encoding="utf-8",
+            )
+            rows = [
+                _feature_row("000001", "2026-01-02", 10.0),
+                _feature_row("000002", "2026-01-02", 20.0),
+                _feature_row("000003", "2026-01-02", 30.0),
+            ]
+            rows[0]["return_1d"] = -0.04
+            rows[1]["return_1d"] = -0.031
+            rows[2]["return_1d"] = -0.03
+            _write_csv(features_path, rows)
+
+            dataset = load_research_dataset(features_path, universe_path)
+
+        self.assertEqual(dataset.market_state[date(2026, 1, 2)].values["broad_market_drop_gt_3pct_count"], 2)
+
+    def test_explicit_market_state_csv_overrides_derived_market_drop_count(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            market_state_path = root / "market_state.csv"
+            universe_path.write_text("symbol,name,sector\n000001,Ping An,Bank\n", encoding="utf-8")
+            row = _feature_row("000001", "2026-01-02", 10.0)
+            row["return_1d"] = -0.04
+            _write_csv(features_path, [row])
+            market_state_path.write_text(
+                "trade_date,broad_market_drop_gt_3pct_count\n"
+                "2026-01-02,16\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(features_path, universe_path, market_state_path=market_state_path)
+
+        self.assertEqual(dataset.market_state[date(2026, 1, 2)].values["broad_market_drop_gt_3pct_count"], 16)
+
     def test_load_research_dataset_builds_fundamentals_from_information_records(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
 

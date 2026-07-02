@@ -57,6 +57,7 @@ _FLOAT_FIELDS = {
     "main_net_inflow",
 }
 _MAX_CONTINUOUS_OUTFLOW_GAP_DAYS = 3
+_BROAD_MARKET_DROP_THRESHOLD = -0.03
 
 
 @dataclass(frozen=True)
@@ -108,11 +109,14 @@ def load_research_dataset(
     _merge_information_fundamentals(fundamentals, information_records, universe_set)
     capital_flow = _load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False)
     _merge_information_capital_flow(capital_flow, information_records, universe_set)
+    features = _load_features(features_path, universe_set, sector_by_symbol)
+    market_state = _load_market_state(market_state_path)
+    _merge_derived_market_state(market_state, features)
     return ResearchDataset(
-        features=_load_features(features_path, universe_set, sector_by_symbol),
+        features=features,
         fundamentals=fundamentals,
         capital_flow=capital_flow,
-        market_state=_load_market_state(market_state_path),
+        market_state=market_state,
         information_records=information_records,
         universe_symbols=universe_symbols,
     )
@@ -180,6 +184,30 @@ def _load_market_state(path: Path | None) -> dict[date, MarketStateRow]:
         values["trade_date"] = trade_date
         result[trade_date] = MarketStateRow(trade_date=trade_date, values=values)
     return result
+
+
+def _merge_derived_market_state(
+    market_state: dict[date, MarketStateRow],
+    features: list[FeatureRow],
+) -> None:
+    drop_counts: dict[date, int] = {}
+    for row in features:
+        return_1d = row.values.get("return_1d")
+        if isinstance(return_1d, (float, int)) and float(return_1d) < _BROAD_MARKET_DROP_THRESHOLD:
+            drop_counts[row.trade_date] = drop_counts.get(row.trade_date, 0) + 1
+        else:
+            drop_counts.setdefault(row.trade_date, 0)
+
+    for trade_date, count in drop_counts.items():
+        market_row = market_state.get(trade_date)
+        if market_row is None:
+            values: dict[str, object] = {
+                "trade_date": trade_date,
+                "broad_market_drop_gt_3pct_count": count,
+            }
+            market_state[trade_date] = MarketStateRow(trade_date=trade_date, values=values)
+            continue
+        market_row.values.setdefault("broad_market_drop_gt_3pct_count", count)
 
 
 def _load_information(
