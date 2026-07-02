@@ -26,6 +26,7 @@ DEFAULT_RL_STATE_FIELDS = (
     "main_net_inflow",
     "main_outflow_days",
     "margin_financing_positive",
+    "dragon_tiger_positive",
     "negative_event_count",
     "score_total",
     "score_confidence",
@@ -104,6 +105,7 @@ def _state_values(
     values.update(_values(fundamentals))
     values.update(_values(capital_flow))
     values["negative_event_count"] = score_input.negative_event_count
+    values["dragon_tiger_positive"] = score_input.dragon_tiger_positive
     values["score_total"] = score.total
     values["score_confidence"] = score.confidence
     for name, component in score.components.items():

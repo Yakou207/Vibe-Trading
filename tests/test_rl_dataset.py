@@ -65,6 +65,34 @@ class RlDatasetTest(unittest.TestCase):
 
         self.assertEqual(state["main_net_inflow"], 1000.0)
 
+    def test_build_rl_state_samples_uses_dragon_tiger_information(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+        from fintech_quant.training import build_rl_state_samples
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = _write_fixture_inputs(root)
+            information = root / "information.jsonl"
+            information.write_text(
+                '{"symbol": "000001", "sector": null, "published_at": "2026-01-01", '
+                '"source": "akshare_dragon_tiger", "category": "market_sentiment", "title": "dragon tiger", '
+                '"url": "", "summary": "net_amount=1000.0", '
+                '"risk_tags": ["dragon_tiger", "dragon_tiger_positive"]}\n',
+                encoding="utf-8",
+            )
+            dataset = load_research_dataset(
+                paths["features"],
+                paths["universe"],
+                fundamentals_path=paths["fundamentals"],
+                capital_flow_path=paths["capital_flow"],
+                information_path=information,
+            )
+
+        sample = build_rl_state_samples(dataset)[0]
+        state = dict(zip(sample.state_fields, sample.state_vector, strict=True))
+
+        self.assertEqual(state["dragon_tiger_positive"], 1.0)
+
     def test_write_rl_state_jsonl_serializes_stable_rows(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
         from fintech_quant.training import build_rl_state_samples, write_rl_state_jsonl

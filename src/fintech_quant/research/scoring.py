@@ -56,7 +56,10 @@ def build_score_input(
         main_outflow_days=_int_or_none(capital_values.get("main_outflow_days")),
         margin_financing_positive=_bool_or_none(capital_values.get("margin_financing_positive")),
         limit_up_streak=_int_or_none(feature_values.get("limit_up_streak")),
-        dragon_tiger_positive=_bool_or_none(feature_values.get("dragon_tiger_positive")),
+        dragon_tiger_positive=_first_present(
+            _bool_or_none(feature_values.get("dragon_tiger_positive")),
+            _dragon_tiger_positive(feature_row.symbol, feature_row.trade_date, information_records),
+        ),
         negative_event_count=_negative_event_count(
             feature_row.symbol,
             feature_row.trade_date,
@@ -97,6 +100,36 @@ def _negative_event_count(
     )
 
 
+def _dragon_tiger_positive(
+    symbol: str,
+    trade_date: date,
+    records: Sequence[InformationRecord],
+) -> bool | None:
+    matching_records = [
+        record
+        for record in records
+        if record.normalized_symbol == symbol
+        and record.published_at <= trade_date
+        and "dragon_tiger" in record.risk_tags
+    ]
+    if not matching_records:
+        return None
+
+    latest_record = max(matching_records, key=lambda record: record.published_at)
+    if "dragon_tiger_positive" in latest_record.risk_tags:
+        return True
+    if "dragon_tiger_negative" in latest_record.risk_tags:
+        return False
+    return None
+
+
+def _first_present(*values: bool | None) -> bool | None:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
 def _volume_confirmed(values: Mapping[str, object]) -> bool | None:
     volume = _float_or_none(values.get("volume"))
     return_1d = _float_or_none(values.get("return_1d"))
@@ -120,6 +153,12 @@ def _int_or_none(value: object) -> int | None:
 def _bool_or_none(value: object) -> bool | None:
     if value is None:
         return None
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes"}:
+            return True
+        if normalized in {"false", "0", "no"}:
+            return False
     return bool(value)
 
 

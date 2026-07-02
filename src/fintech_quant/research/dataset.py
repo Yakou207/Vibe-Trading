@@ -18,6 +18,7 @@ _BOOLEAN_FIELDS = {
     "close_above_ma250",
     "macd_positive",
     "margin_financing_positive",
+    "dragon_tiger_positive",
     "st_warning",
     "index_below_annual_ma",
     "is_suspended",
