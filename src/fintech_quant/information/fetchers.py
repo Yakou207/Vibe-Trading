@@ -292,6 +292,46 @@ class AkShareFundamentalFetcher(InformationFetcher):
         return _rows_from_fetch_result(ak.stock_financial_analysis_indicator(symbol=symbol))
 
 
+class AkShareFinancialStatementFetcher(InformationFetcher):
+    def __init__(
+        self,
+        statement_types: tuple[str, ...] = ("资产负债表", "利润表", "现金流量表"),
+        fetcher: Callable[[str, str], object] | None = None,
+    ) -> None:
+        self._statement_types = statement_types
+        self._fetcher = fetcher
+
+    def fetch(
+        self,
+        symbol: str | None,
+        sector: str | None,
+        start: date,
+        end: date,
+    ) -> list[InformationRecord]:
+        del sector
+        if symbol is None:
+            return []
+        normalized_symbol = normalize_a_share_symbol(symbol)
+        stock = f"{_market_from_symbol(normalized_symbol)}{_plain_symbol(normalized_symbol)}"
+        try:
+            records = [
+                _record_from_financial_statement_row(row, normalized_symbol, statement_type)
+                for statement_type in self._statement_types
+                for row in self._fetch_rows(stock, statement_type)
+            ]
+        except Exception as exc:
+            raise ProviderFetchError(
+                f"akshare financial-statement fetch failed for symbol={normalized_symbol!r}"
+            ) from exc
+        return _filter_records(records, normalized_symbol, None, start, end)
+
+    def _fetch_rows(self, stock: str, statement_type: str) -> list[dict[str, object]]:
+        if self._fetcher is not None:
+            return _rows_from_fetch_result(self._fetcher(stock, statement_type))
+        ak = _import_akshare("AkShareFinancialStatementFetcher")
+        return _rows_from_fetch_result(ak.stock_financial_report_sina(stock=stock, symbol=statement_type))
+
+
 class AkShareMarginFetcher(InformationFetcher):
     def __init__(self, fetcher: Callable[[date, str], object] | None = None) -> None:
         self._fetcher = fetcher
@@ -396,6 +436,7 @@ def _record_from_json(data: dict[str, object]) -> InformationRecord:
         url=str(data.get("url", "")),
         summary=str(data.get("summary", "")),
         risk_tags=tuple(str(tag) for tag in data.get("risk_tags", ())),
+        metadata=dict(data.get("metadata", {})),
     )
 
 
@@ -519,6 +560,26 @@ def _record_from_margin_row(row: dict[str, object], normalized_symbol: str, fall
     )
 
 
+def _record_from_financial_statement_row(
+    row: dict[str, object],
+    normalized_symbol: str,
+    statement_type: str,
+) -> InformationRecord:
+    report_date = _parse_date(_first_value(row, "报告日", "报表日期", "截止日期", "日期", "report_date"))
+    return InformationRecord(
+        symbol=normalized_symbol,
+        sector=None,
+        published_at=report_date,
+        source="akshare_financial_statement",
+        category=InformationCategory.STOCK_DATA,
+        title=f"{normalized_symbol} {statement_type} {report_date.isoformat()}",
+        url="",
+        summary=_financial_statement_summary(row),
+        risk_tags=("selected_universe", "financial_statement", _statement_tag(statement_type)),
+        metadata={"statement_type": statement_type, "raw_row": _metadata_row(row)},
+    )
+
+
 def _record_from_dragon_tiger_row(row: dict[str, object], published_at: date) -> InformationRecord:
     raw_symbol = _first_value(row, "代码", "股票代码", "symbol")
     normalized_symbol = normalize_a_share_symbol(str(raw_symbol).strip())
@@ -545,6 +606,53 @@ def _first_notice_url(row: dict[str, object]) -> str:
         if value not in (None, ""):
             return str(value).strip()
     return ""
+
+
+def _financial_statement_summary(row: dict[str, object]) -> str:
+    summary_fields = (
+        ("revenue", ("营业收入", "营业总收入", "主营业务收入")),
+        ("net_profit", ("净利润", "归属于母公司所有者的净利润")),
+        ("goodwill", ("商誉",)),
+        ("total_assets", ("资产总计", "总资产")),
+        ("total_liabilities", ("负债合计", "总负债")),
+        ("operating_cash_flow", ("经营活动产生的现金流量净额", "经营现金流量净额")),
+    )
+    parts: list[str] = []
+    for output_key, source_keys in summary_fields:
+        value = _first_optional_value(row, source_keys)
+        if value not in (None, ""):
+            parts.append(f"{output_key}={value}")
+    return "; ".join(parts)
+
+
+def _first_optional_value(row: dict[str, object], keys: tuple[str, ...]) -> object | None:
+    for key in keys:
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _statement_tag(statement_type: str) -> str:
+    if statement_type == "资产负债表":
+        return "balance_sheet"
+    if statement_type == "利润表":
+        return "income_statement"
+    if statement_type == "现金流量表":
+        return "cash_flow_statement"
+    return "financial_statement"
+
+
+def _metadata_row(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _metadata_value(value) for key, value in row.items()}
+
+
+def _metadata_value(value: object) -> object:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return str(value)
 
 
 _POLICY_KEYWORDS = (

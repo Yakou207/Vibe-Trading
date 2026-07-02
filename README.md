@@ -134,6 +134,17 @@ python scripts/fetch_information.py \
   --output data/raw/information/information.jsonl
 ```
 
+Use `akshare_financial_statement` when you want structured balance-sheet, income-statement, and cash-flow rows from AkShare's Sina financial-report endpoint. These are stored as selected-universe `stock_data` records so they are retained for RL training and later factor/risk extraction:
+
+```bash
+python scripts/fetch_information.py \
+  --source akshare_financial_statement \
+  --symbol 000001 \
+  --start 2024-01-01 \
+  --end 2026-06-30 \
+  --output data/raw/information/information.jsonl
+```
+
 Use `akshare_financial_report` when you only want text financial-report announcements. These records are stored as `financial_report` text records and follow the three-year text retention policy:
 
 ```bash

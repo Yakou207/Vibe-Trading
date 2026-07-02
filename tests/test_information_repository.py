@@ -613,6 +613,45 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("roe=0.16", records[0].summary)
         self.assertIn("growth=0.12", records[0].summary)
 
+    def test_akshare_financial_statement_fetcher_maps_three_statement_rows(self) -> None:
+        from fintech_quant.information import AkShareFinancialStatementFetcher, InformationCategory
+
+        calls: list[tuple[str, str]] = []
+
+        def fetcher(stock: str, statement_type: str) -> list[dict[str, object]]:
+            calls.append((stock, statement_type))
+            return [
+                {
+                    "报告日": "2025-12-31",
+                    "营业收入": "120000",
+                    "净利润": "15000",
+                    "商誉": "3000",
+                }
+            ]
+
+        records = AkShareFinancialStatementFetcher(fetcher=fetcher).fetch(
+            "000001",
+            None,
+            date(2025, 1, 1),
+            date(2025, 12, 31),
+        )
+
+        self.assertEqual(
+            calls,
+            [
+                ("sz000001", "资产负债表"),
+                ("sz000001", "利润表"),
+                ("sz000001", "现金流量表"),
+            ],
+        )
+        self.assertEqual(len(records), 3)
+        self.assertEqual(records[0].category, InformationCategory.STOCK_DATA)
+        self.assertIn("selected_universe", records[0].risk_tags)
+        self.assertIn("financial_statement", records[0].risk_tags)
+        self.assertEqual(records[0].metadata["statement_type"], "资产负债表")
+        self.assertEqual(records[0].metadata["raw_row"]["营业收入"], "120000")
+        self.assertIn("revenue=120000", records[1].summary)
+
     def test_akshare_fundamental_fetcher_uses_current_api_names(self) -> None:
         from fintech_quant.information import AkShareFundamentalFetcher
 
@@ -939,6 +978,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("akshare_multi", result.stdout)
         self.assertIn("akshare_policy", result.stdout)
         self.assertIn("akshare_fundamental", result.stdout)
+        self.assertIn("akshare_financial_statement", result.stdout)
         self.assertIn("akshare_financial_report", result.stdout)
         self.assertIn("--recent-pages", result.stdout)
 
