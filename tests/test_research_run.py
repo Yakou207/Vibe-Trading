@@ -211,6 +211,46 @@ class ResearchRunTest(unittest.TestCase):
 
         self.assertIn("pledge_ratio", {warning["rule"] for warning in report.risk_warnings})
 
+    def test_run_research_baseline_warns_on_information_st_status(self) -> None:
+        from fintech_quant.research.run import ResearchRunConfig, run_research_baseline
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = _write_fixture_inputs(root)
+            information_path = root / "information.jsonl"
+            information_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-01-01",
+                        "source": "akshare_st_status",
+                        "category": "stock_data",
+                        "title": "000001.SZ ST status",
+                        "url": "",
+                        "summary": "st_warning=true; stock_name=*ST平安",
+                        "risk_tags": ["selected_universe", "st_warning"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            report = run_research_baseline(
+                ResearchRunConfig(
+                    run_id="st-risk",
+                    features_path=paths["features"],
+                    universe_path=paths["universe"],
+                    information_path=information_path,
+                    capital_flow_path=paths["capital_flow"],
+                    initial_cash=100000.0,
+                )
+            )
+
+        self.assertIn("st_warning", {warning["rule"] for warning in report.risk_warnings})
+
 
 def _write_fixture_inputs(root: Path, *, limit_up: bool = False) -> dict[str, Path]:
     universe = root / "universe.csv"

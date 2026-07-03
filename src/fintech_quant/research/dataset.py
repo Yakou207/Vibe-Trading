@@ -111,6 +111,7 @@ def load_research_dataset(
     _merge_information_fundamentals(fundamentals, information_records, universe_set)
     _merge_information_financial_statements(fundamentals, information_records, universe_set)
     _merge_information_pledge_ratios(fundamentals, information_records, universe_set)
+    _merge_information_st_status(fundamentals, information_records, universe_set)
     capital_flow = _load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False)
     _merge_information_capital_flow(capital_flow, information_records, universe_set)
     features = _load_features(features_path, universe_set, sector_by_symbol)
@@ -357,6 +358,27 @@ def _merge_information_pledge_ratios(
             continue
         target_values = _ensure_fundamental_values(fundamentals, symbol, record.published_at)
         target_values.setdefault("pledge_ratio", values["pledge_ratio"])
+
+
+def _merge_information_st_status(
+    fundamentals: dict[tuple[str, date | None], SupplementalRow],
+    records: list[InformationRecord],
+    universe_symbols: set[str],
+) -> None:
+    for record in records:
+        if (
+            record.source != "akshare_st_status"
+            or record.category is not InformationCategory.STOCK_DATA
+            or "st_warning" not in record.risk_tags
+        ):
+            continue
+        symbol = record.normalized_symbol
+        if symbol is None or symbol not in universe_symbols:
+            continue
+        if (symbol, None) in fundamentals:
+            continue
+        target_values = _ensure_fundamental_values(fundamentals, symbol, record.published_at)
+        target_values.setdefault("st_warning", True)
 
 
 def _merge_information_capital_flow(

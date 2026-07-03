@@ -375,6 +375,49 @@ class AkSharePledgeRatioFetcher(InformationFetcher):
         return _rows_from_fetch_result(ak.stock_gpzy_pledge_ratio_em())
 
 
+class AkShareStStatusFetcher(InformationFetcher):
+    def __init__(
+        self,
+        *,
+        as_of: date | None = None,
+        fetcher: Callable[[], object] | None = None,
+    ) -> None:
+        self._as_of = as_of
+        self._fetcher = fetcher
+
+    def fetch(
+        self,
+        symbol: str | None,
+        sector: str | None,
+        start: date,
+        end: date,
+    ) -> list[InformationRecord]:
+        del sector
+        if symbol is None:
+            return []
+        as_of = self._as_of or end
+        if not start <= as_of <= end:
+            return []
+        normalized_symbol = normalize_a_share_symbol(symbol)
+        try:
+            records = [
+                _record_from_st_status_row(row, normalized_symbol, as_of)
+                for row in self._fetch_rows()
+                if _row_matches_symbol(row, normalized_symbol) and _is_st_name(row)
+            ]
+        except Exception as exc:
+            raise ProviderFetchError(
+                f"akshare ST status fetch failed for symbol={normalized_symbol!r}"
+            ) from exc
+        return _filter_records(records, normalized_symbol, None, start, end)
+
+    def _fetch_rows(self) -> list[dict[str, object]]:
+        if self._fetcher is not None:
+            return _rows_from_fetch_result(self._fetcher())
+        ak = _import_akshare("AkShareStStatusFetcher")
+        return _rows_from_fetch_result(ak.stock_zh_a_spot_em())
+
+
 class AkShareMarginFetcher(InformationFetcher):
     def __init__(self, fetcher: Callable[[date, str], object] | None = None) -> None:
         self._fetcher = fetcher
@@ -646,6 +689,26 @@ def _record_from_pledge_ratio_row(
     )
 
 
+def _record_from_st_status_row(
+    row: dict[str, object],
+    normalized_symbol: str,
+    as_of: date,
+) -> InformationRecord:
+    stock_name = str(_first_optional_value(row, ("名称", "股票简称", "name")) or "").strip()
+    return InformationRecord(
+        symbol=normalized_symbol,
+        sector=None,
+        published_at=as_of,
+        source="akshare_st_status",
+        category=InformationCategory.STOCK_DATA,
+        title=f"{normalized_symbol} ST status",
+        url="",
+        summary=f"st_warning=true; stock_name={stock_name}",
+        risk_tags=("selected_universe", "st_warning"),
+        metadata={"raw_row": _metadata_row(row)},
+    )
+
+
 def _record_from_dragon_tiger_row(row: dict[str, object], published_at: date) -> InformationRecord:
     raw_symbol = _first_value(row, "代码", "股票代码", "symbol")
     normalized_symbol = normalize_a_share_symbol(str(raw_symbol).strip())
@@ -679,6 +742,11 @@ def _row_matches_symbol(row: dict[str, object], normalized_symbol: str) -> bool:
     if raw_symbol in (None, ""):
         return False
     return normalize_a_share_symbol(str(raw_symbol).strip()) == normalized_symbol
+
+
+def _is_st_name(row: dict[str, object]) -> bool:
+    stock_name = str(_first_optional_value(row, ("名称", "股票简称", "name")) or "").upper()
+    return "ST" in stock_name
 
 
 def _financial_statement_summary(row: dict[str, object]) -> str:

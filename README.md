@@ -156,6 +156,17 @@ python scripts/fetch_information.py \
   --output data/raw/information/information.jsonl
 ```
 
+Use `akshare_st_status` when you want ST warning snapshots from A-share realtime names. Names containing `ST`, such as `*ST`, are stored as `st_warning` records:
+
+```bash
+python scripts/fetch_information.py \
+  --source akshare_st_status \
+  --symbol 000001 \
+  --start 2026-06-01 \
+  --end 2026-06-30 \
+  --output data/raw/information/information.jsonl
+```
+
 Use `akshare_financial_report` when you only want text financial-report announcements. These records are stored as `financial_report` text records and follow the three-year text retention policy:
 
 ```bash
