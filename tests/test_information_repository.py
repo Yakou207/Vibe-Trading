@@ -652,6 +652,27 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertEqual(records[0].metadata["raw_row"]["营业收入"], "120000")
         self.assertIn("revenue=120000", records[1].summary)
 
+    def test_akshare_pledge_ratio_fetcher_maps_selected_stock_data(self) -> None:
+        from fintech_quant.information import AkSharePledgeRatioFetcher, InformationCategory
+
+        def fetcher() -> list[dict[str, object]]:
+            return [
+                {"证券代码": "000001", "质押比例": "51%", "股票简称": "Ping An"},
+                {"证券代码": "000002", "质押比例": "10%", "股票简称": "Other"},
+            ]
+
+        records = AkSharePledgeRatioFetcher(
+            fetcher=fetcher,
+            as_of=date(2026, 6, 30),
+        ).fetch("000001", None, date(2026, 6, 1), date(2026, 6, 30))
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].category, InformationCategory.STOCK_DATA)
+        self.assertEqual(records[0].published_at, date(2026, 6, 30))
+        self.assertIn("selected_universe", records[0].risk_tags)
+        self.assertIn("pledge_ratio", records[0].risk_tags)
+        self.assertEqual(records[0].summary, "pledge_ratio=0.51")
+
     def test_akshare_fundamental_fetcher_uses_current_api_names(self) -> None:
         from fintech_quant.information import AkShareFundamentalFetcher
 
@@ -979,6 +1000,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("akshare_policy", result.stdout)
         self.assertIn("akshare_fundamental", result.stdout)
         self.assertIn("akshare_financial_statement", result.stdout)
+        self.assertIn("akshare_pledge_ratio", result.stdout)
         self.assertIn("akshare_financial_report", result.stdout)
         self.assertIn("--recent-pages", result.stdout)
 

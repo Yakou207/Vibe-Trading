@@ -145,6 +145,17 @@ python scripts/fetch_information.py \
   --output data/raw/information/information.jsonl
 ```
 
+Use `akshare_pledge_ratio` when you want listed-company pledge ratio snapshots for the selected stock. These records feed the existing `pledge_ratio > 50%` risk rule:
+
+```bash
+python scripts/fetch_information.py \
+  --source akshare_pledge_ratio \
+  --symbol 000001 \
+  --start 2026-06-01 \
+  --end 2026-06-30 \
+  --output data/raw/information/information.jsonl
+```
+
 Use `akshare_financial_report` when you only want text financial-report announcements. These records are stored as `financial_report` text records and follow the three-year text retention policy:
 
 ```bash

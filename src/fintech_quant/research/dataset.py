@@ -110,6 +110,7 @@ def load_research_dataset(
     fundamentals = _load_supplemental(fundamentals_path, universe_set, allow_missing_trade_date=True)
     _merge_information_fundamentals(fundamentals, information_records, universe_set)
     _merge_information_financial_statements(fundamentals, information_records, universe_set)
+    _merge_information_pledge_ratios(fundamentals, information_records, universe_set)
     capital_flow = _load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False)
     _merge_information_capital_flow(capital_flow, information_records, universe_set)
     features = _load_features(features_path, universe_set, sector_by_symbol)
@@ -332,6 +333,30 @@ def _parse_financial_statement_summary(summary: str) -> dict[str, object]:
     if goodwill is None or total_assets is None or float(total_assets) <= 0:
         return {}
     return {"goodwill_ratio": round(float(goodwill) / float(total_assets), 6)}
+
+
+def _merge_information_pledge_ratios(
+    fundamentals: dict[tuple[str, date | None], SupplementalRow],
+    records: list[InformationRecord],
+    universe_symbols: set[str],
+) -> None:
+    for record in records:
+        if (
+            record.source != "akshare_pledge_ratio"
+            or record.category is not InformationCategory.STOCK_DATA
+            or "pledge_ratio" not in record.risk_tags
+        ):
+            continue
+        symbol = record.normalized_symbol
+        if symbol is None or symbol not in universe_symbols:
+            continue
+        if (symbol, None) in fundamentals:
+            continue
+        values = _parse_summary_numbers(record.summary, {"pledge_ratio"})
+        if "pledge_ratio" not in values:
+            continue
+        target_values = _ensure_fundamental_values(fundamentals, symbol, record.published_at)
+        target_values.setdefault("pledge_ratio", values["pledge_ratio"])
 
 
 def _merge_information_capital_flow(

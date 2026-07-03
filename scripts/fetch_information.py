@@ -17,6 +17,7 @@ from fintech_quant.information import (
     AkShareFinancialStatementFetcher,
     AkShareMarginFetcher,
     AkShareNoticeFetcher,
+    AkSharePledgeRatioFetcher,
     AkSharePolicyNewsFetcher,
     CombinedInformationFetcher,
     InformationRepository,
@@ -34,6 +35,7 @@ def main() -> int:
             "akshare_policy",
             "akshare_fundamental",
             "akshare_financial_statement",
+            "akshare_pledge_ratio",
             "akshare_multi",
             "jsonl",
         ),
@@ -97,6 +99,7 @@ def _build_fetcher(args: argparse.Namespace):
                 AkSharePolicyNewsFetcher(),
                 AkShareFundamentalFetcher(),
                 AkShareFinancialStatementFetcher(),
+                AkSharePledgeRatioFetcher(),
                 AkShareFundFlowFetcher(),
                 AkShareMarginFetcher(),
                 AkShareDragonTigerFetcher(),
@@ -115,6 +118,8 @@ def _build_fetcher(args: argparse.Namespace):
         return AkShareFundamentalFetcher()
     if args.source == "akshare_financial_statement":
         return AkShareFinancialStatementFetcher()
+    if args.source == "akshare_pledge_ratio":
+        return AkSharePledgeRatioFetcher()
     return AkShareNoticeFetcher(
         report_type=args.report_type,
         recent_page=args.recent_page,

@@ -332,6 +332,49 @@ class AkShareFinancialStatementFetcher(InformationFetcher):
         return _rows_from_fetch_result(ak.stock_financial_report_sina(stock=stock, symbol=statement_type))
 
 
+class AkSharePledgeRatioFetcher(InformationFetcher):
+    def __init__(
+        self,
+        *,
+        as_of: date | None = None,
+        fetcher: Callable[[], object] | None = None,
+    ) -> None:
+        self._as_of = as_of
+        self._fetcher = fetcher
+
+    def fetch(
+        self,
+        symbol: str | None,
+        sector: str | None,
+        start: date,
+        end: date,
+    ) -> list[InformationRecord]:
+        del sector
+        if symbol is None:
+            return []
+        as_of = self._as_of or end
+        if not start <= as_of <= end:
+            return []
+        normalized_symbol = normalize_a_share_symbol(symbol)
+        try:
+            records = [
+                _record_from_pledge_ratio_row(row, normalized_symbol, as_of)
+                for row in self._fetch_rows()
+                if _row_matches_symbol(row, normalized_symbol)
+            ]
+        except Exception as exc:
+            raise ProviderFetchError(
+                f"akshare pledge-ratio fetch failed for symbol={normalized_symbol!r}"
+            ) from exc
+        return _filter_records(records, normalized_symbol, None, start, end)
+
+    def _fetch_rows(self) -> list[dict[str, object]]:
+        if self._fetcher is not None:
+            return _rows_from_fetch_result(self._fetcher())
+        ak = _import_akshare("AkSharePledgeRatioFetcher")
+        return _rows_from_fetch_result(ak.stock_gpzy_pledge_ratio_em())
+
+
 class AkShareMarginFetcher(InformationFetcher):
     def __init__(self, fetcher: Callable[[date, str], object] | None = None) -> None:
         self._fetcher = fetcher
@@ -580,6 +623,29 @@ def _record_from_financial_statement_row(
     )
 
 
+def _record_from_pledge_ratio_row(
+    row: dict[str, object],
+    normalized_symbol: str,
+    as_of: date,
+) -> InformationRecord:
+    pledge_ratio = _ratio_from_percent(
+        _float_or_none(_first_value(row, "质押比例", "质押总比例", "pledge_ratio", default=0.0))
+    )
+    pledge_ratio = 0.0 if pledge_ratio is None else pledge_ratio
+    return InformationRecord(
+        symbol=normalized_symbol,
+        sector=None,
+        published_at=as_of,
+        source="akshare_pledge_ratio",
+        category=InformationCategory.STOCK_DATA,
+        title=f"{normalized_symbol} pledge ratio",
+        url="",
+        summary=f"pledge_ratio={pledge_ratio}",
+        risk_tags=("selected_universe", "pledge_ratio"),
+        metadata={"raw_row": _metadata_row(row)},
+    )
+
+
 def _record_from_dragon_tiger_row(row: dict[str, object], published_at: date) -> InformationRecord:
     raw_symbol = _first_value(row, "代码", "股票代码", "symbol")
     normalized_symbol = normalize_a_share_symbol(str(raw_symbol).strip())
@@ -606,6 +672,13 @@ def _first_notice_url(row: dict[str, object]) -> str:
         if value not in (None, ""):
             return str(value).strip()
     return ""
+
+
+def _row_matches_symbol(row: dict[str, object], normalized_symbol: str) -> bool:
+    raw_symbol = _first_optional_value(row, ("证券代码", "股票代码", "代码", "symbol"))
+    if raw_symbol in (None, ""):
+        return False
+    return normalize_a_share_symbol(str(raw_symbol).strip()) == normalized_symbol
 
 
 def _financial_statement_summary(row: dict[str, object]) -> str:
