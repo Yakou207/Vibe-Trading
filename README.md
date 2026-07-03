@@ -150,6 +150,17 @@ python scripts/fetch_information.py \
   --output data/raw/information/information.jsonl
 ```
 
+Use `tushare_fundamental` after configuring `TUSHARE_TOKEN` when you want the same selected-universe fundamental record shape from Tushare Pro `daily_basic` and `fina_indicator`:
+
+```bash
+TUSHARE_TOKEN=... python scripts/fetch_information.py \
+  --source tushare_fundamental \
+  --symbol 000001 \
+  --start 2026-01-01 \
+  --end 2026-06-30 \
+  --output data/raw/information/information.jsonl
+```
+
 Use `akshare_financial_statement` when you want structured balance-sheet, income-statement, and cash-flow rows from AkShare's Sina financial-report endpoint. These are stored as selected-universe `stock_data` records so they are retained for RL training and later factor/risk extraction:
 
 ```bash

@@ -12,6 +12,7 @@ from fintech_quant.information.fetchers import (
     InformationFetcher,
     JsonlInformationFetcher,
     StaticInformationFetcher,
+    TushareFundamentalFetcher,
 )
 from fintech_quant.information.models import InformationCategory, InformationRecord, RetentionClass
 from fintech_quant.information.repository import InformationRepository
@@ -34,4 +35,5 @@ __all__ = [
     "JsonlInformationFetcher",
     "RetentionClass",
     "StaticInformationFetcher",
+    "TushareFundamentalFetcher",
 ]

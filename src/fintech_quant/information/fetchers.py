@@ -3,12 +3,13 @@ from __future__ import annotations
 import importlib
 import json
 import math
+import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from fintech_quant.data.errors import MissingProviderDependency, ProviderFetchError
+from fintech_quant.data.errors import MissingProviderCredential, MissingProviderDependency, ProviderFetchError
 from fintech_quant.data.symbols import normalize_a_share_symbol
 from fintech_quant.information.models import InformationCategory, InformationRecord
 
@@ -290,6 +291,80 @@ class AkShareFundamentalFetcher(InformationFetcher):
             return _rows_from_fetch_result(self._financial_fetcher(symbol))
         ak = _import_akshare("AkShareFundamentalFetcher")
         return _rows_from_fetch_result(ak.stock_financial_analysis_indicator(symbol=symbol))
+
+
+class TushareFundamentalFetcher(InformationFetcher):
+    def __init__(
+        self,
+        token: str | None = None,
+        daily_basic_fetcher: Callable[..., object] | None = None,
+        financial_indicator_fetcher: Callable[..., object] | None = None,
+    ) -> None:
+        self._token = token if token is not None else os.getenv("TUSHARE_TOKEN", "")
+        self._daily_basic_fetcher = daily_basic_fetcher
+        self._financial_indicator_fetcher = financial_indicator_fetcher
+
+    def fetch(
+        self,
+        symbol: str | None,
+        sector: str | None,
+        start: date,
+        end: date,
+    ) -> list[InformationRecord]:
+        del sector
+        if symbol is None:
+            return []
+        if not self._token.strip():
+            raise MissingProviderCredential("TUSHARE_TOKEN is required for TushareFundamentalFetcher")
+        normalized_symbol = normalize_a_share_symbol(symbol)
+        try:
+            daily_basic_rows = self._fetch_daily_basic_rows(normalized_symbol, start, end)
+            financial_indicator_rows = self._fetch_financial_indicator_rows(normalized_symbol, start, end)
+            records = _records_from_tushare_fundamental_rows(
+                normalized_symbol,
+                daily_basic_rows,
+                financial_indicator_rows,
+            )
+        except MissingProviderDependency:
+            raise
+        except Exception as exc:
+            raise ProviderFetchError(f"tushare fundamental fetch failed for symbol={normalized_symbol!r}") from exc
+        return _filter_records(records, normalized_symbol, None, start, end)
+
+    def _fetch_daily_basic_rows(self, symbol: str, start: date, end: date) -> list[dict[str, object]]:
+        if self._daily_basic_fetcher is not None:
+            return _rows_from_fetch_result(
+                self._daily_basic_fetcher(symbol=symbol, start=start, end=end, token=self._token)
+            )
+        pro = self._load_pro_api()
+        return _rows_from_fetch_result(
+            pro.daily_basic(
+                ts_code=symbol,
+                start_date=start.strftime("%Y%m%d"),
+                end_date=end.strftime("%Y%m%d"),
+            )
+        )
+
+    def _fetch_financial_indicator_rows(self, symbol: str, start: date, end: date) -> list[dict[str, object]]:
+        if self._financial_indicator_fetcher is not None:
+            return _rows_from_fetch_result(
+                self._financial_indicator_fetcher(symbol=symbol, start=start, end=end, token=self._token)
+            )
+        pro = self._load_pro_api()
+        return _rows_from_fetch_result(
+            pro.fina_indicator(
+                ts_code=symbol,
+                start_date=start.strftime("%Y%m%d"),
+                end_date=end.strftime("%Y%m%d"),
+            )
+        )
+
+    def _load_pro_api(self) -> object:
+        try:
+            ts = importlib.import_module("tushare")
+        except ImportError as exc:
+            raise MissingProviderDependency("tushare is required for TushareFundamentalFetcher") from exc
+        return ts.pro_api(self._token)
 
 
 class AkShareFinancialStatementFetcher(InformationFetcher):
@@ -622,6 +697,47 @@ def _records_from_fundamental_rows(
                 url="",
                 summary=summary,
                 risk_tags=("selected_universe", "fundamental"),
+            )
+        )
+    return records
+
+
+def _records_from_tushare_fundamental_rows(
+    normalized_symbol: str,
+    daily_basic_rows: list[dict[str, object]],
+    financial_indicator_rows: list[dict[str, object]],
+) -> list[InformationRecord]:
+    daily_basic_by_date = {
+        _parse_date(_first_value(row, "trade_date", "ann_date", "end_date", "date")): row for row in daily_basic_rows
+    }
+    financial_by_date = {
+        _parse_date(_first_value(row, "end_date", "ann_date", "trade_date", "date")): row
+        for row in financial_indicator_rows
+    }
+    records: list[InformationRecord] = []
+    for record_date in sorted(set(daily_basic_by_date) | set(financial_by_date)):
+        daily_basic = daily_basic_by_date.get(record_date, {})
+        financial = financial_by_date.get(record_date, {})
+        pe = _float_or_none(_first_value(daily_basic, "pe_ttm", "pe", default=None))
+        pb = _float_or_none(_first_value(daily_basic, "pb", default=None))
+        roe = _ratio_from_percent(_float_or_none(_first_value(financial, "roe_dt", "roe", default=None)))
+        growth = _ratio_from_percent(
+            _float_or_none(_first_value(financial, "revenue_yoy", "or_yoy", "tr_yoy", default=None))
+        )
+        summary = _fundamental_summary(pe, pb, roe, growth)
+        if not summary:
+            continue
+        records.append(
+            InformationRecord(
+                symbol=normalized_symbol,
+                sector=None,
+                published_at=record_date,
+                source="tushare_fundamental",
+                category=InformationCategory.STOCK_DATA,
+                title=f"{normalized_symbol} tushare fundamental snapshot",
+                url="",
+                summary=summary,
+                risk_tags=("selected_universe", "fundamental", "tushare"),
             )
         )
     return records

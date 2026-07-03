@@ -23,6 +23,7 @@ from fintech_quant.information import (
     CombinedInformationFetcher,
     InformationRepository,
     JsonlInformationFetcher,
+    TushareFundamentalFetcher,
 )
 
 
@@ -38,6 +39,7 @@ def main() -> int:
             "akshare_financial_statement",
             "akshare_pledge_ratio",
             "akshare_st_status",
+            "tushare_fundamental",
             "akshare_multi",
             "jsonl",
         ),
@@ -125,6 +127,8 @@ def _build_fetcher(args: argparse.Namespace):
         return AkSharePledgeRatioFetcher()
     if args.source == "akshare_st_status":
         return AkShareStStatusFetcher()
+    if args.source == "tushare_fundamental":
+        return TushareFundamentalFetcher()
     return AkShareNoticeFetcher(
         report_type=args.report_type,
         recent_page=args.recent_page,
