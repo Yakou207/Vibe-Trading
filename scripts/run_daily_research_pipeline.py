@@ -31,6 +31,7 @@ def main() -> int:
             "akshare_financial_statement",
             "akshare_pledge_ratio",
             "akshare_st_status",
+            "tushare_fundamental",
             "akshare_multi",
             "jsonl",
         ),

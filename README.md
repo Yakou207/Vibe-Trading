@@ -40,6 +40,8 @@ python scripts/run_daily_research_pipeline.py \
 
 For offline testing, use `--price-source json --price-input bars.json`, `--information-source jsonl --information-input information.jsonl`, and `--market-source csv --market-input index.csv`.
 
+After configuring `TUSHARE_TOKEN`, the same pipeline can use `--information-source tushare_fundamental` for Tushare Pro fundamental snapshots while keeping AkShare as the default daily data provider.
+
 Fetch realtime A-share quotes for intraday monitoring or ad-hoc risk checks:
 
 ```bash

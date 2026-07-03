@@ -10,6 +10,23 @@ from pathlib import Path
 
 
 class DailyResearchPipelineScriptTest(unittest.TestCase):
+    def test_daily_pipeline_help_exposes_tushare_fundamental_information_source(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+
+        result = subprocess.run(
+            [sys.executable, "scripts/run_daily_research_pipeline.py", "--help"],
+            cwd=worktree,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("tushare_fundamental", result.stdout)
+
     def test_daily_pipeline_builds_information_features_market_state_and_rl_dataset(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
         env = dict(os.environ)
