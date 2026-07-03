@@ -15,6 +15,7 @@ NEGATIVE_RISK_TAGS = frozenset(
         "regulatory_risk",
         "pledge_risk",
         "goodwill_risk",
+        "negative_text_sentiment",
     }
 )
 

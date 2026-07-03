@@ -192,7 +192,17 @@ python scripts/archive_financial_reports.py \
 
 The archiver downloads the original report document and writes `raw_document_path` metadata. HTML and plain-text reports also get extracted into `raw_text_path`; PDF text extraction is used when `pypdf` is available, otherwise the PDF original is still retained.
 
-`akshare_multi` combines AkShare notices, financial-report announcements, policy/regulatory news, fundamental snapshots, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
+Analyze text sentiment after fetching and archiving information records:
+
+```bash
+python scripts/analyze_information_sentiment.py \
+  --input data/raw/information/information.jsonl \
+  --output data/raw/information/information.jsonl
+```
+
+The sentiment step uses a fixed dictionary, writes `text_sentiment_score` metadata, and adds `negative_text_sentiment` when negative wording is detected. This keeps the sentiment signal reproducible before adding heavier NLP models.
+
+`akshare_multi` combines AkShare notices, financial-report announcements, policy/regulatory news, fundamental snapshots, structured financial statements, pledge ratio, ST status, individual fund flow, margin financing rows, and dragon-tiger board sentiment into the same classified JSONL repository.
 
 ## Market Risk State
 
