@@ -188,6 +188,17 @@ python scripts/fetch_information.py \
   --output data/raw/information/information.jsonl
 ```
 
+Before a daily run, use the source health check to see per-source record counts and errors without writing repository records:
+
+```bash
+python scripts/check_information_sources.py \
+  --sources akshare_notice,akshare_policy,akshare_fundamental,akshare_financial_statement \
+  --symbol 000001 \
+  --start 2026-01-01 \
+  --end 2026-06-30 \
+  --output outputs/information_source_health.json
+```
+
 Use `akshare_policy` when you only want policy/regulatory text for a stock code or sector keyword:
 
 ```bash
