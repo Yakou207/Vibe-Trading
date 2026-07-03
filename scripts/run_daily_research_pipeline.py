@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,7 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from fintech_quant.data import load_universe_csv  # noqa: E402
+from fintech_quant.data import UniverseMember, load_universe_csv  # noqa: E402
 
 
 def main() -> int:
@@ -64,6 +65,29 @@ def main() -> int:
             args.information_source,
             "--symbol",
             member.symbol,
+            "--start",
+            args.start,
+            "--end",
+            args.end,
+            "--output",
+            args.information_output,
+            "--report-type",
+            args.report_type,
+            "--recent-page",
+            str(args.recent_page),
+            "--recent-pages",
+            str(args.recent_pages),
+        ]
+        if args.information_input:
+            command.extend(["--input", args.information_input])
+        _run(command)
+    for sector in _universe_sectors(universe):
+        command = [
+            "scripts/fetch_information.py",
+            "--source",
+            args.information_source,
+            "--sector",
+            sector,
             "--start",
             args.start,
             "--end",
@@ -186,6 +210,10 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--information-input is required when --information-source jsonl")
     if args.market_source == "csv" and not args.market_input:
         raise SystemExit("--market-input is required when --market-source csv")
+
+
+def _universe_sectors(universe: Sequence[UniverseMember]) -> list[str]:
+    return sorted({member.sector for member in universe if member.sector})
 
 
 def _run(command: list[str]) -> None:

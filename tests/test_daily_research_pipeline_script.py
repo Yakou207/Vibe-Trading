@@ -41,20 +41,39 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                 encoding="utf-8",
             )
             information_input.write_text(
-                json.dumps(
-                    {
-                        "symbol": "000001",
-                        "sector": None,
-                        "published_at": "2026-01-02",
-                        "source": "fixture",
-                        "category": "company_announcement",
-                        "title": "监管问询",
-                        "url": "",
-                        "summary": "公司收到监管问询。",
-                        "risk_tags": [],
-                    },
-                    ensure_ascii=False,
-                    sort_keys=True,
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "symbol": "000001",
+                                "sector": None,
+                                "published_at": "2026-01-02",
+                                "source": "fixture",
+                                "category": "company_announcement",
+                                "title": "监管问询",
+                                "url": "",
+                                "summary": "公司收到监管问询。",
+                                "risk_tags": [],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": None,
+                                "sector": "银行",
+                                "published_at": "2026-01-02",
+                                "source": "fixture",
+                                "category": "regulatory_policy",
+                                "title": "银行板块监管政策",
+                                "url": "",
+                                "summary": "银行板块资本监管政策更新。",
+                                "risk_tags": ["regulatory_policy"],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                    ]
                 )
                 + "\n",
                 encoding="utf-8",
@@ -114,10 +133,18 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             self.assertTrue(market_output.exists())
             self.assertTrue(rl_output.exists())
             self.assertTrue((report_output_root / "fixture-pipeline" / "run_report.json").exists())
-            information_record = json.loads(information_output.read_text(encoding="utf-8"))
+            information_records = [
+                json.loads(line)
+                for line in information_output.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
             rl_record = json.loads(rl_output.read_text(encoding="utf-8").splitlines()[0])
 
-        self.assertIn("negative_text_sentiment", information_record["risk_tags"])
+        titles = {record["title"] for record in information_records}
+        company_record = next(record for record in information_records if record["title"] == "监管问询")
+        self.assertIn("监管问询", titles)
+        self.assertIn("银行板块监管政策", titles)
+        self.assertIn("negative_text_sentiment", company_record["risk_tags"])
         self.assertIn("state_vector", rl_record)
         self.assertIn("state_fields", rl_record)
         self.assertEqual(rl_record["symbol"], "000001.SZ")
