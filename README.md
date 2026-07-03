@@ -51,6 +51,14 @@ python scripts/fetch_realtime_quotes.py \
 
 You can also pass `--universe universe.csv` to fetch realtime quotes for the selected research universe. Offline tests use `--source json --input quotes.json`.
 
+Evaluate realtime systemic risk from normalized quote CSVs. The script counts valid rows with `change_pct < -0.03` and feeds that count into the existing risk engine, where more than 15 names triggers a `reduce` action:
+
+```bash
+python scripts/evaluate_realtime_risk.py \
+  --quotes data/raw/realtime_quotes/a_share_realtime_quotes.csv \
+  --output outputs/realtime_risk.json
+```
+
 Summarize the information warehouse after a fetch to review category coverage, stock-data retention, risk tags, source mix, and recent negative records:
 
 ```bash
