@@ -106,6 +106,18 @@ python scripts/run_research_baseline.py \
 
 The command writes `outputs/research_runs/<run_id>/run_report.json` with scores, missing fields, risk warnings, trades, portfolio equity, drawdown, and summary metrics. DQN remains frozen until these baseline artifacts are stable enough for comparison.
 
+Use the explanation command when you need to inspect one stock's factor score. It outputs the 35/25/25/15 component weights, actual component scores, scoring reasons, and the raw or derived inputs used by each component:
+
+```bash
+python scripts/explain_stock_analysis.py \
+  --features data/processed/akshare_research_features.csv \
+  --universe universe.csv \
+  --information data/raw/information/information.jsonl \
+  --symbol 000001 \
+  --trade-date 2026-01-02 \
+  --output outputs/stock_analysis_explanation.json
+```
+
 ## Phase 5 A-share Execution Constraints
 
 Phase 5 wires practical A-share constraints into the multi-symbol portfolio runner:
