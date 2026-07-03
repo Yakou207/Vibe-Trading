@@ -24,6 +24,22 @@ AkShare is the default A-share provider. Tushare has a token-aware adapter for f
 
 Phase 1 implementation notes and system assessment are documented in `docs/phase-one-change-report.md`.
 
+## Daily Pipeline
+
+Use the daily pipeline command to run the practical research loop from one selected-universe file. It fetches/updates the information repository, archives financial-report documents, applies dictionary sentiment tags, refreshes daily bars and features, builds market-state risk input, writes the RL state dataset, and produces a baseline run report:
+
+```bash
+python scripts/run_daily_research_pipeline.py \
+  --universe universe.csv \
+  --start 2026-01-01 \
+  --end 2026-06-30 \
+  --price-source akshare \
+  --information-source akshare_multi \
+  --market-source akshare
+```
+
+For offline testing, use `--price-source json --price-input bars.json`, `--information-source jsonl --information-input information.jsonl`, and `--market-source csv --market-input index.csv`.
+
 ## Phase 2 Baseline Runner
 
 Phase 2 adds a deterministic one-symbol daily backtest runner for the scored baseline strategy. It consumes normalized bars, precomputed `StockScore` values, and optional `RiskInput` records, then outputs trades, equity curve, risk warnings, drawdown, and summary metrics.

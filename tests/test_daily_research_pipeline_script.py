@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+class DailyResearchPipelineScriptTest(unittest.TestCase):
+    def test_daily_pipeline_builds_information_features_market_state_and_rl_dataset(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            bars_path = root / "bars.json"
+            information_input = root / "seed_information.jsonl"
+            market_input = root / "index.csv"
+            information_output = root / "information.jsonl"
+            daily_output = root / "daily.csv"
+            feature_output = root / "features.csv"
+            market_output = root / "market_state.csv"
+            rl_output = root / "rl_state.jsonl"
+            report_output_root = root / "reports"
+
+            universe_path.write_text("symbol,name,sector\n000001,平安银行,银行\n", encoding="utf-8")
+            bars_path.write_text(
+                json.dumps(
+                    [
+                        _bar("000001", "2026-01-01", 10.0),
+                        _bar("000001", "2026-01-02", 10.5, limit_up=True),
+                    ],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            information_input.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-01-02",
+                        "source": "fixture",
+                        "category": "company_announcement",
+                        "title": "监管问询",
+                        "url": "",
+                        "summary": "公司收到监管问询。",
+                        "risk_tags": [],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            market_input.write_text("date,close\n2026-01-01,100\n2026-01-02,99\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_daily_research_pipeline.py",
+                    "--universe",
+                    str(universe_path),
+                    "--start",
+                    "2026-01-01",
+                    "--end",
+                    "2026-01-02",
+                    "--price-source",
+                    "json",
+                    "--price-input",
+                    str(bars_path),
+                    "--information-source",
+                    "jsonl",
+                    "--information-input",
+                    str(information_input),
+                    "--market-source",
+                    "csv",
+                    "--market-input",
+                    str(market_input),
+                    "--information-output",
+                    str(information_output),
+                    "--daily-output",
+                    str(daily_output),
+                    "--feature-output",
+                    str(feature_output),
+                    "--market-output",
+                    str(market_output),
+                    "--rl-output",
+                    str(rl_output),
+                    "--run-id",
+                    "fixture-pipeline",
+                    "--report-output-root",
+                    str(report_output_root),
+                    "--ma-window",
+                    "2",
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertIn("pipeline_steps=7", result.stdout)
+            self.assertTrue(daily_output.exists())
+            self.assertTrue(feature_output.exists())
+            self.assertTrue(market_output.exists())
+            self.assertTrue(rl_output.exists())
+            self.assertTrue((report_output_root / "fixture-pipeline" / "run_report.json").exists())
+            information_record = json.loads(information_output.read_text(encoding="utf-8"))
+            rl_record = json.loads(rl_output.read_text(encoding="utf-8").splitlines()[0])
+
+        self.assertIn("negative_text_sentiment", information_record["risk_tags"])
+        self.assertIn("state_vector", rl_record)
+        self.assertIn("state_fields", rl_record)
+        self.assertEqual(rl_record["symbol"], "000001.SZ")
+
+
+def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:
+    row: dict[str, object] = {
+        "symbol": symbol,
+        "trade_date": trade_date,
+        "open": close,
+        "high": close,
+        "low": close,
+        "close": close,
+        "volume": 1000.0,
+        "amount": close * 1000.0,
+        "source": "fixture",
+    }
+    if limit_up is not None:
+        row["limit_up"] = limit_up
+    return row
+
+
+if __name__ == "__main__":
+    unittest.main()
