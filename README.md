@@ -40,6 +40,17 @@ python scripts/run_daily_research_pipeline.py \
 
 For offline testing, use `--price-source json --price-input bars.json`, `--information-source jsonl --information-input information.jsonl`, and `--market-source csv --market-input index.csv`.
 
+Fetch realtime A-share quotes for intraday monitoring or ad-hoc risk checks:
+
+```bash
+python scripts/fetch_realtime_quotes.py \
+  --source akshare \
+  --symbols 000001,600000 \
+  --output data/raw/realtime_quotes/a_share_realtime_quotes.csv
+```
+
+You can also pass `--universe universe.csv` to fetch realtime quotes for the selected research universe. Offline tests use `--source json --input quotes.json`.
+
 Summarize the information warehouse after a fetch to review category coverage, stock-data retention, risk tags, source mix, and recent negative records:
 
 ```bash

@@ -146,6 +146,66 @@ class DataLayerTest(unittest.TestCase):
 
         self.assertEqual(rows, [{"symbol": "000001.SZ", "trade_date": "2026-01-01", "source": "akshare"}])
 
+    def test_normalize_realtime_quote_maps_akshare_spot_columns(self) -> None:
+        from fintech_quant.data import normalize_realtime_quote
+
+        row = {
+            "代码": "000001",
+            "名称": "平安银行",
+            "最新价": "10.5",
+            "涨跌幅": "1.2",
+            "涨跌额": "0.12",
+            "成交量": "12345",
+            "成交额": "678900",
+            "换手率": "0.8",
+            "市盈率-动态": "8.5",
+            "市净率": "0.9",
+        }
+
+        self.assertEqual(
+            normalize_realtime_quote(row, "akshare"),
+            {
+                "symbol": "000001.SZ",
+                "name": "平安银行",
+                "price": 10.5,
+                "change_pct": 0.012,
+                "change_amount": 0.12,
+                "volume": 12345.0,
+                "amount": 678900.0,
+                "turnover_rate": 0.008,
+                "pe_dynamic": 8.5,
+                "pb": 0.9,
+                "source": "akshare",
+            },
+        )
+
+    def test_akshare_realtime_provider_fetches_full_market_and_filters_symbols(self) -> None:
+        from fintech_quant.data import AkShareRealtimeQuoteProvider
+
+        def fetcher() -> list[dict[str, object]]:
+            return [
+                {"代码": "000001", "名称": "平安银行", "最新价": "10.5", "涨跌幅": "1.2", "涨跌额": "0.12", "成交量": "1", "成交额": "10"},
+                {"代码": "600000", "名称": "浦发银行", "最新价": "8.0", "涨跌幅": "-0.5", "涨跌额": "-0.04", "成交量": "2", "成交额": "16"},
+            ]
+
+        provider = AkShareRealtimeQuoteProvider(fetcher=fetcher)
+
+        self.assertEqual(
+            [quote["symbol"] for quote in provider.quotes(["000001"])],
+            ["000001.SZ"],
+        )
+
+    def test_akshare_realtime_provider_wraps_missing_dependency(self) -> None:
+        from fintech_quant.data import AkShareRealtimeQuoteProvider
+        from fintech_quant.data.errors import MissingProviderDependency
+
+        with patch(
+            "fintech_quant.data.realtime.importlib.import_module",
+            side_effect=ImportError("No module named 'akshare'"),
+        ):
+            with self.assertRaisesRegex(MissingProviderDependency, "akshare"):
+                AkShareRealtimeQuoteProvider().quotes(["000001"])
+
     def test_tushare_provider_requires_token_before_use(self) -> None:
         from fintech_quant.data.errors import MissingProviderCredential
         from fintech_quant.data.tushare_provider import TushareProvider
