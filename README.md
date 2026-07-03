@@ -120,6 +120,23 @@ python scripts/explain_stock_analysis.py \
   --output outputs/stock_analysis_explanation.json
 ```
 
+## Risk Matrix
+
+The risk engine exposes an auditable `RISK_RULE_CATALOG` and evaluates warnings through the same rules:
+
+| Layer | Rule | Trigger | Action |
+| --- | --- | --- | --- |
+| portfolio_drawdown | portfolio_drawdown | portfolio_drawdown >= 15% | liquidate |
+| single_stock_negative | position_weight | position_weight > configured max weight | reduce |
+| single_stock_negative | single_position_drawdown | single_position_drawdown > 8% | reduce |
+| single_stock_negative | st_warning | ST warning is active | reduce |
+| single_stock_negative | negative_event_count | negative stock-specific information exists | watch |
+| single_stock_negative | goodwill_ratio | goodwill_ratio > 30% | watch |
+| single_stock_negative | pledge_ratio | pledge_ratio > 50% | watch |
+| single_stock_negative | main_outflow_days | main_outflow_days > 3 | watch |
+| broad_market_abnormal | index_below_annual_ma | broad index below 250-day moving average | watch |
+| systemic_risk | broad_market_drop_gt_3pct_count | more than 15 tracked names fall over 3% | reduce |
+
 ## Phase 5 A-share Execution Constraints
 
 Phase 5 wires practical A-share constraints into the multi-symbol portfolio runner:

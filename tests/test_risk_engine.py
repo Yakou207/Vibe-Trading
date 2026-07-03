@@ -57,6 +57,52 @@ class RiskEngineTest(unittest.TestCase):
             {"index_below_annual_ma", "broad_market_drop_gt_3pct_count"},
         )
 
+    def test_risk_rule_catalog_covers_layers_triggers_and_runtime_warnings(self) -> None:
+        from fintech_quant.risk import RISK_RULE_CATALOG, RiskInput, evaluate_risk
+
+        self.assertEqual(
+            {item.layer for item in RISK_RULE_CATALOG},
+            {
+                "portfolio_drawdown",
+                "single_stock_negative",
+                "broad_market_abnormal",
+                "systemic_risk",
+            },
+        )
+        self.assertEqual(
+            {item.rule for item in RISK_RULE_CATALOG},
+            {
+                "position_weight",
+                "portfolio_drawdown",
+                "single_position_drawdown",
+                "st_warning",
+                "negative_event_count",
+                "goodwill_ratio",
+                "pledge_ratio",
+                "main_outflow_days",
+                "index_below_annual_ma",
+                "broad_market_drop_gt_3pct_count",
+            },
+        )
+
+        result = evaluate_risk(
+            RiskInput(
+                position_weight=0.081,
+                portfolio_drawdown=0.15,
+                single_position_drawdown=0.081,
+                st_warning=True,
+                negative_event_count=1,
+                goodwill_ratio=0.31,
+                pledge_ratio=0.51,
+                main_outflow_days=4,
+                index_below_annual_ma=True,
+                broad_market_drop_gt_3pct_count=16,
+            )
+        )
+        catalog_rules = {item.rule for item in RISK_RULE_CATALOG}
+
+        self.assertTrue({warning.rule for warning in result.warnings}.issubset(catalog_rules))
+
 
 if __name__ == "__main__":
     unittest.main()
