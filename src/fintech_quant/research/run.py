@@ -172,6 +172,7 @@ def _report_from_result(
             "recovery_date": result.drawdown.recovery_date.isoformat() if result.drawdown.recovery_date else None,
             "liquidation_date": result.drawdown.liquidation_date.isoformat() if result.drawdown.liquidation_date else None,
             "points": [_drawdown_point_to_json(point) for point in result.drawdown.points],
+            "episodes": [_drawdown_episode_to_json(episode) for episode in (result.drawdown.episodes or [])],
         },
         summary=result.summary,
     )
@@ -244,6 +245,19 @@ def _drawdown_point_to_json(point: object) -> dict[str, object]:
         "equity": point.equity,
         "rolling_peak": point.rolling_peak,
         "drawdown": round(point.drawdown, 6),
+    }
+
+
+def _drawdown_episode_to_json(episode: object) -> dict[str, object]:
+    return {
+        "start_date": episode.start_date.isoformat(),
+        "trough_date": episode.trough_date.isoformat(),
+        "recovery_date": episode.recovery_date.isoformat() if episode.recovery_date else None,
+        "peak_equity": round(episode.peak_equity, 6),
+        "trough_equity": round(episode.trough_equity, 6),
+        "max_drawdown": round(episode.max_drawdown, 6),
+        "duration_days": episode.duration_days,
+        "recovery_days": episode.recovery_days,
     }
 
 

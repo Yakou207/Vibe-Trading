@@ -106,7 +106,7 @@ python scripts/run_research_baseline.py \
   --output-root outputs/research_runs
 ```
 
-The command writes `outputs/research_runs/<run_id>/run_report.json` with scores, missing fields, risk warnings, trades, portfolio equity, drawdown, and summary metrics. DQN remains frozen until these baseline artifacts are stable enough for comparison.
+The command writes `outputs/research_runs/<run_id>/run_report.json` with scores, missing fields, risk warnings, trades, portfolio equity, drawdown, and summary metrics. Drawdown output includes both point-level rolling-peak records and episode diagnostics with start date, trough date, recovery date, depth, duration days, and recovery days. DQN remains frozen until these baseline artifacts are stable enough for comparison.
 
 Use the explanation command when you need to inspect one stock's factor score. It outputs the 35/25/25/15 component weights, actual component scores, scoring reasons, and the raw or derived inputs used by each component:
 

@@ -2,6 +2,7 @@
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
 from fintech_quant.backtesting.drawdown import (
+    DrawdownEpisode,
     DrawdownPoint,
     DrawdownResult,
     EquityPoint,
@@ -27,6 +28,7 @@ __all__ = [
     "BacktestTrade",
     "DailyEquity",
     "DatedRiskWarning",
+    "DrawdownEpisode",
     "DrawdownPoint",
     "DrawdownResult",
     "EquityPoint",

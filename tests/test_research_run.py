@@ -57,6 +57,7 @@ class ResearchRunTest(unittest.TestCase):
         self.assertIn("summary", payload)
         self.assertEqual(payload["scores"][0]["symbol"], "000001.SZ")
         self.assertIn("points", payload["drawdown"])
+        self.assertIn("episodes", payload["drawdown"])
         self.assertEqual(payload["drawdown"]["points"][0]["trade_date"], "2026-01-01")
         self.assertIn("rolling_peak", payload["drawdown"]["points"][0])
 
@@ -130,6 +131,10 @@ class ResearchRunTest(unittest.TestCase):
                 },
             ],
         )
+        self.assertEqual(report.drawdown["episodes"][0]["start_date"], "2026-01-01")
+        self.assertEqual(report.drawdown["episodes"][0]["trough_date"], "2026-01-02")
+        self.assertIsNone(report.drawdown["episodes"][0]["recovery_date"])
+        self.assertEqual(report.drawdown["episodes"][0]["duration_days"], 2)
 
     def test_run_research_baseline_warns_on_financial_statement_goodwill_ratio(self) -> None:
         from fintech_quant.research.run import ResearchRunConfig, run_research_baseline
