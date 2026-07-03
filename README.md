@@ -120,6 +120,18 @@ python scripts/explain_stock_analysis.py \
   --output outputs/stock_analysis_explanation.json
 ```
 
+Use the coverage command before trusting a batch of scores. It reports score distribution, component averages, confidence, and missing-field counts/rates across the selected universe:
+
+```bash
+python scripts/summarize_scoring_coverage.py \
+  --features data/processed/akshare_research_features.csv \
+  --universe universe.csv \
+  --information data/raw/information/information.jsonl \
+  --fundamentals data/processed/fundamentals.csv \
+  --capital-flow data/processed/capital_flow.csv \
+  --output outputs/scoring_coverage.json
+```
+
 ## Risk Matrix
 
 The risk engine exposes an auditable `RISK_RULE_CATALOG` and evaluates warnings through the same rules:
