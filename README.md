@@ -40,6 +40,16 @@ python scripts/run_daily_research_pipeline.py \
 
 For offline testing, use `--price-source json --price-input bars.json`, `--information-source jsonl --information-input information.jsonl`, and `--market-source csv --market-input index.csv`.
 
+Summarize the information warehouse after a fetch to review category coverage, stock-data retention, risk tags, source mix, and recent negative records:
+
+```bash
+python scripts/summarize_information_repository.py \
+  --input data/raw/information/information.jsonl \
+  --symbol 000001 \
+  --sector 银行 \
+  --output outputs/information_repository_summary.json
+```
+
 ## Phase 2 Baseline Runner
 
 Phase 2 adds a deterministic one-symbol daily backtest runner for the scored baseline strategy. It consumes normalized bars, precomputed `StockScore` values, and optional `RiskInput` records, then outputs trades, equity curve, risk warnings, drawdown, and summary metrics.
