@@ -50,6 +50,7 @@ python scripts/run_daily_research_pipeline.py \
   --rl-policy-transaction-cost 0.001 \
   --dqn-policy-report-output outputs/research_runs/linear_q_dqn/run_report.json \
   --dqn-policy-transaction-cost 0.001 \
+  --strategy-comparison-output outputs/research_runs/baseline_vs_dqn.json \
   --scoring-coverage-output outputs/scoring_coverage.json
 ```
 
@@ -278,7 +279,7 @@ This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `b
 
 ## Phase 7 Strategy Comparison
 
-Phase 7 compares a baseline `run_report.json` against a candidate report, such as a future DQN run:
+Phase 7 compares a baseline `run_report.json` against a candidate report, such as the linear Q DQN-style run:
 
 ```bash
 python scripts/compare_strategy_reports.py \
@@ -288,6 +289,8 @@ python scripts/compare_strategy_reports.py \
 ```
 
 The comparison includes total return, annualized return, Sharpe, max drawdown, trade count, win rate, excess return, and walk-forward segment returns.
+
+The daily pipeline can run this comparison automatically when both `--dqn-policy-report-output` and `--strategy-comparison-output` are set.
 
 ## Phase 8 Multi-source Information Fetch
 

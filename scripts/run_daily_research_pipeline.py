@@ -57,6 +57,7 @@ def main() -> int:
     parser.add_argument("--dqn-learning-rate", type=float, default=0.05)
     parser.add_argument("--dqn-gamma", type=float, default=0.0)
     parser.add_argument("--dqn-policy-transaction-cost", type=float, default=0.0)
+    parser.add_argument("--strategy-comparison-output", default=None)
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
@@ -327,6 +328,21 @@ def main() -> int:
     )
     step_count += 1
 
+    if args.strategy_comparison_output:
+        baseline_report = Path(args.report_output_root) / args.run_id / "run_report.json"
+        _run(
+            [
+                "scripts/compare_strategy_reports.py",
+                "--baseline",
+                str(baseline_report),
+                "--candidate",
+                args.dqn_policy_report_output,
+                "--output",
+                args.strategy_comparison_output,
+            ]
+        )
+        step_count += 1
+
     print(f"pipeline_steps={step_count}")
     print(f"information_output={args.information_output}")
     print(f"classified_information_output_dir={args.classified_information_output_dir}")
@@ -337,6 +353,8 @@ def main() -> int:
         print(f"rl_policy_report_output={args.rl_policy_report_output}")
     if args.dqn_policy_report_output:
         print(f"dqn_policy_report_output={args.dqn_policy_report_output}")
+    if args.strategy_comparison_output:
+        print(f"strategy_comparison_output={args.strategy_comparison_output}")
     print(f"scoring_coverage_output={args.scoring_coverage_output}")
     if args.preflight_data_sources:
         print(f"data_source_health_output={args.data_source_health_output}")
@@ -351,6 +369,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--information-input is required when --information-source jsonl")
     if args.market_source == "csv" and not args.market_input:
         raise SystemExit("--market-input is required when --market-source csv")
+    if args.strategy_comparison_output and not args.dqn_policy_report_output:
+        raise SystemExit("--dqn-policy-report-output is required when --strategy-comparison-output is set")
 
 
 def _universe_sectors(universe: Sequence[UniverseMember]) -> list[str]:
