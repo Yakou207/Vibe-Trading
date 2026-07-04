@@ -46,6 +46,7 @@ def main() -> int:
     parser.add_argument("--feature-output", default="data/processed/akshare_research_features.csv")
     parser.add_argument("--market-output", default="data/raw/market_state/sh000001_market_state.csv")
     parser.add_argument("--rl-output", default="data/processed/rl_state_dataset.jsonl")
+    parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
     parser.add_argument("--run-id", default="daily-pipeline-baseline")
     parser.add_argument("--report-output-root", default="outputs/research_runs")
     parser.add_argument("--index-symbol", default="sh000001")
@@ -178,6 +179,23 @@ def main() -> int:
 
     _run(
         [
+            "scripts/summarize_scoring_coverage.py",
+            "--features",
+            args.feature_output,
+            "--universe",
+            args.universe,
+            "--information",
+            args.information_output,
+            "--market-state",
+            args.market_output,
+            "--output",
+            args.scoring_coverage_output,
+        ]
+    )
+    step_count += 1
+
+    _run(
+        [
             "scripts/run_research_baseline.py",
             "--run-id",
             args.run_id,
@@ -200,6 +218,7 @@ def main() -> int:
     print(f"feature_output={args.feature_output}")
     print(f"market_output={args.market_output}")
     print(f"rl_output={args.rl_output}")
+    print(f"scoring_coverage_output={args.scoring_coverage_output}")
     print(f"report_output_root={args.report_output_root}")
     return 0
 

@@ -26,7 +26,7 @@ Phase 1 implementation notes and system assessment are documented in `docs/phase
 
 ## Daily Pipeline
 
-Use the daily pipeline command to run the practical research loop from one selected-universe file. It fetches/updates the information repository, archives financial-report documents, applies dictionary sentiment tags, refreshes daily bars and features, builds market-state risk input, writes the RL state dataset, and produces a baseline run report:
+Use the daily pipeline command to run the practical research loop from one selected-universe file. It fetches/updates the information repository, archives financial-report documents, applies dictionary sentiment tags, refreshes daily bars and features, builds market-state risk input, writes the RL state dataset, reports scoring coverage, and produces a baseline run report:
 
 ```bash
 python scripts/run_daily_research_pipeline.py \
@@ -35,7 +35,8 @@ python scripts/run_daily_research_pipeline.py \
   --end 2026-06-30 \
   --price-source akshare \
   --information-source akshare_multi \
-  --market-source akshare
+  --market-source akshare \
+  --scoring-coverage-output outputs/scoring_coverage.json
 ```
 
 For offline testing, use `--price-source json --price-input bars.json`, `--information-source jsonl --information-input information.jsonl`, and `--market-source csv --market-input index.csv`.
