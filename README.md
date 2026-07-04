@@ -230,6 +230,20 @@ step = env.step("buy")     # buy, sell, or hold
 
 The environment is deliberately small: one symbol per episode, one long/cash position flag, forward-return rewards, and explicit transaction cost. This keeps DQN experiments comparable with the scored baseline before adding more complex execution behavior.
 
+Before training DQN, generate a simple RL-environment policy report as a sanity baseline:
+
+```bash
+python scripts/evaluate_rl_policy.py \
+  --input data/processed/rl_state_dataset.jsonl \
+  --policy buy_and_hold \
+  --symbol 000001.SZ \
+  --transaction-cost 0.001 \
+  --run-id rl-buy-and-hold \
+  --output outputs/research_runs/rl_buy_and_hold/run_report.json
+```
+
+The output uses the same minimal `run_report.json` fields needed by `scripts/compare_strategy_reports.py`: `run_id`, `strategy_config`, `equity_curve`, `trades`, and `summary`. Its `summary.win_rate` is based on positive reward steps, and the report records this in `summary.win_rate_basis`.
+
 ## Phase 7 Strategy Comparison
 
 Phase 7 compares a baseline `run_report.json` against a candidate report, such as a future DQN run:
