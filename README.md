@@ -210,6 +210,18 @@ python scripts/build_rl_dataset.py \
 
 Each row contains a stable `state_fields` list, numeric `state_vector`, and one-day forward return target. This is a data contract for RL training, not a trained DQN policy.
 
+The training package also exposes a lightweight daily environment for future DQN work:
+
+```python
+from fintech_quant.training import AShareBuySellHoldEnvironment
+
+env = AShareBuySellHoldEnvironment(samples, transaction_cost=0.001)
+observation = env.reset()  # state_vector plus current position
+step = env.step("buy")     # buy, sell, or hold
+```
+
+The environment is deliberately small: one symbol per episode, one long/cash position flag, forward-return rewards, and explicit transaction cost. This keeps DQN experiments comparable with the scored baseline before adding more complex execution behavior.
+
 ## Phase 7 Strategy Comparison
 
 Phase 7 compares a baseline `run_report.json` against a candidate report, such as a future DQN run:

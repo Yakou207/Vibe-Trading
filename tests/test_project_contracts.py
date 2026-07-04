@@ -20,7 +20,7 @@ class ProjectContractsTest(unittest.TestCase):
             {"buy", "sell", "hold"},
         )
 
-    def test_rl_strategy_stub_returns_hold_until_training_exists(self) -> None:
+    def test_untrained_rl_strategy_returns_hold(self) -> None:
         from fintech_quant.strategies.rl import RlBuySellHoldStrategy
         from fintech_quant.trading import TradeAction
 
