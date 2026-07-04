@@ -58,7 +58,9 @@ class ResearchRunTest(unittest.TestCase):
         self.assertEqual(report_path.name, "run_report.json")
         self.assertIn("scores", payload)
         self.assertIn("risk_warnings", payload)
+        self.assertIn("risk_summary", payload)
         self.assertIn("summary", payload)
+        self.assertEqual(payload["risk_summary"]["total_warnings"], 0)
         self.assertEqual(payload["strategy_config"]["min_confidence"], 0.8)
         self.assertEqual(payload["scores"][0]["symbol"], "000001.SZ")
         self.assertIn("points", payload["drawdown"])
@@ -86,7 +88,7 @@ class ResearchRunTest(unittest.TestCase):
         self.assertEqual(report.summary["trade_count"], 0)
 
     def test_run_research_baseline_links_information_capital_market_risk_and_drawdown(self) -> None:
-        from fintech_quant.research.run import ResearchRunConfig, run_research_baseline
+        from fintech_quant.research.run import ResearchRunConfig, run_research_baseline, write_run_report
 
         with tempfile.TemporaryDirectory() as tmp:
             paths = _write_full_loop_fixture(Path(tmp))
@@ -102,6 +104,8 @@ class ResearchRunTest(unittest.TestCase):
                     initial_cash=100000.0,
                 )
             )
+            report_path = write_run_report(report, paths["features"].parent / "outputs")
+            written_risk_summary = json.loads(report_path.read_text(encoding="utf-8"))["risk_summary"]
 
         scores_by_date = {row["trade_date"]: row for row in report.scores}
         second_day_sentiment = scores_by_date["2026-01-02"]["components"]["sentiment"]
@@ -112,6 +116,12 @@ class ResearchRunTest(unittest.TestCase):
         self.assertIn("negative_event_count", warning_rules)
         self.assertIn("main_outflow_days", warning_rules)
         self.assertIn("broad_market_drop_gt_3pct_count", warning_rules)
+        self.assertEqual(report.risk_summary["total_warnings"], len(report.risk_warnings))
+        self.assertEqual(report.risk_summary["by_layer"]["broad_market_abnormal"], 1)
+        self.assertEqual(report.risk_summary["by_layer"]["systemic_risk"], 1)
+        self.assertEqual(report.risk_summary["by_rule"]["main_outflow_days"], 1)
+        self.assertGreaterEqual(report.risk_summary["by_action"]["reduce"], 1)
+        self.assertEqual(written_risk_summary, report.risk_summary)
         self.assertEqual(trade_actions, ["buy", "sell"])
         self.assertGreater(len(report.equity_curve), 0)
         self.assertGreater(report.drawdown["max_drawdown"], 0.0)

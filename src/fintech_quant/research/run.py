@@ -43,6 +43,7 @@ class ResearchRunReport:
     scores: list[dict[str, object]]
     missing_fields: list[dict[str, object]]
     risk_warnings: list[dict[str, object]]
+    risk_summary: dict[str, object]
     trades: list[dict[str, object]]
     equity_curve: list[dict[str, object]]
     drawdown: dict[str, object]
@@ -149,6 +150,7 @@ def _report_from_result(
     result: PortfolioBacktestResult,
 ) -> ResearchRunReport:
     score_rows = [_score_to_json(trade_date, symbol, score) for (trade_date, symbol), score in sorted(scores.items())]
+    risk_warnings = [_risk_warning_to_json(warning) for warning in result.risk_warnings]
     return ResearchRunReport(
         run_id=config.run_id,
         inputs={
@@ -171,7 +173,8 @@ def _report_from_result(
             for row in score_rows
             if row["missing_fields"]
         ],
-        risk_warnings=[_risk_warning_to_json(warning) for warning in result.risk_warnings],
+        risk_warnings=risk_warnings,
+        risk_summary=_risk_summary(risk_warnings),
         trades=[_trade_to_json(trade) for trade in result.trades],
         equity_curve=[_equity_to_json(point) for point in result.equity_curve],
         drawdown={
@@ -225,6 +228,23 @@ def _risk_warning_to_json(warning: object) -> dict[str, object]:
         "action": warning.action,
         "message": warning.message,
     }
+
+
+def _risk_summary(warnings: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "total_warnings": len(warnings),
+        "by_layer": _count_by(warnings, "layer"),
+        "by_action": _count_by(warnings, "action"),
+        "by_rule": _count_by(warnings, "rule"),
+    }
+
+
+def _count_by(rows: list[dict[str, object]], field: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in rows:
+        value = str(row[field])
+        counts[value] = counts.get(value, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def _trade_to_json(trade: object) -> dict[str, object]:
@@ -284,6 +304,7 @@ def _report_to_json(report: ResearchRunReport) -> dict[str, object]:
         "scores": report.scores,
         "missing_fields": report.missing_fields,
         "risk_warnings": report.risk_warnings,
+        "risk_summary": report.risk_summary,
         "trades": report.trades,
         "equity_curve": report.equity_curve,
         "drawdown": report.drawdown,
