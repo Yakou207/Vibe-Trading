@@ -44,6 +44,9 @@ python scripts/run_daily_research_pipeline.py \
   --max-pledge-ratio 0.50 \
   --max-main-outflow-days 3 \
   --broad-market-drop-threshold 15 \
+  --rl-policy-report-output outputs/research_runs/rl_buy_and_hold/run_report.json \
+  --rl-policy buy_and_hold \
+  --rl-policy-transaction-cost 0.001 \
   --scoring-coverage-output outputs/scoring_coverage.json
 ```
 

@@ -46,6 +46,10 @@ def main() -> int:
     parser.add_argument("--feature-output", default="data/processed/akshare_research_features.csv")
     parser.add_argument("--market-output", default="data/raw/market_state/sh000001_market_state.csv")
     parser.add_argument("--rl-output", default="data/processed/rl_state_dataset.jsonl")
+    parser.add_argument("--rl-policy-report-output", default=None)
+    parser.add_argument("--rl-policy", choices=("always_hold", "buy_and_hold"), default="buy_and_hold")
+    parser.add_argument("--rl-policy-symbol", default=None)
+    parser.add_argument("--rl-policy-transaction-cost", type=float, default=0.0)
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
@@ -211,6 +215,25 @@ def main() -> int:
     )
     step_count += 1
 
+    if args.rl_policy_report_output:
+        rl_policy_command = [
+            "scripts/evaluate_rl_policy.py",
+            "--input",
+            args.rl_output,
+            "--output",
+            args.rl_policy_report_output,
+            "--policy",
+            args.rl_policy,
+            "--transaction-cost",
+            str(args.rl_policy_transaction_cost),
+            "--run-id",
+            f"{args.run_id}-{args.rl_policy}",
+        ]
+        if args.rl_policy_symbol:
+            rl_policy_command.extend(["--symbol", args.rl_policy_symbol])
+        _run(rl_policy_command)
+        step_count += 1
+
     _run(
         [
             "scripts/summarize_scoring_coverage.py",
@@ -268,6 +291,8 @@ def main() -> int:
     print(f"feature_output={args.feature_output}")
     print(f"market_output={args.market_output}")
     print(f"rl_output={args.rl_output}")
+    if args.rl_policy_report_output:
+        print(f"rl_policy_report_output={args.rl_policy_report_output}")
     print(f"scoring_coverage_output={args.scoring_coverage_output}")
     if args.preflight_data_sources:
         print(f"data_source_health_output={args.data_source_health_output}")

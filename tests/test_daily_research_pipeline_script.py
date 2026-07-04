@@ -46,6 +46,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             feature_output = root / "features.csv"
             market_output = root / "market_state.csv"
             rl_output = root / "rl_state.jsonl"
+            rl_policy_report_output = root / "rl_policy_report.json"
             scoring_coverage_output = root / "scoring_coverage.json"
             data_source_health_output = root / "data_source_health.json"
             report_output_root = root / "reports"
@@ -134,6 +135,14 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     str(market_output),
                     "--rl-output",
                     str(rl_output),
+                    "--rl-policy-report-output",
+                    str(rl_policy_report_output),
+                    "--rl-policy",
+                    "buy_and_hold",
+                    "--rl-policy-symbol",
+                    "000001.SZ",
+                    "--rl-policy-transaction-cost",
+                    "0.001",
                     "--scoring-coverage-output",
                     str(scoring_coverage_output),
                     "--buy-threshold",
@@ -164,11 +173,12 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            self.assertIn("pipeline_steps=9", result.stdout)
+            self.assertIn("pipeline_steps=10", result.stdout)
             self.assertTrue(daily_output.exists())
             self.assertTrue(feature_output.exists())
             self.assertTrue(market_output.exists())
             self.assertTrue(rl_output.exists())
+            self.assertTrue(rl_policy_report_output.exists())
             self.assertTrue(scoring_coverage_output.exists())
             self.assertTrue(data_source_health_output.exists())
             self.assertTrue((report_output_root / "fixture-pipeline" / "run_report.json").exists())
@@ -178,6 +188,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                 if line.strip()
             ]
             rl_record = json.loads(rl_output.read_text(encoding="utf-8").splitlines()[0])
+            rl_policy_report = json.loads(rl_policy_report_output.read_text(encoding="utf-8"))
             scoring_coverage = json.loads(scoring_coverage_output.read_text(encoding="utf-8"))
             data_source_health = json.loads(data_source_health_output.read_text(encoding="utf-8"))
             run_report = json.loads((report_output_root / "fixture-pipeline" / "run_report.json").read_text(encoding="utf-8"))
@@ -190,6 +201,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertIn("state_vector", rl_record)
         self.assertIn("state_fields", rl_record)
         self.assertEqual(rl_record["symbol"], "000001.SZ")
+        self.assertEqual(rl_policy_report["strategy_config"]["policy"], "buy_and_hold")
+        self.assertEqual(rl_policy_report["strategy_config"]["symbol"], "000001.SZ")
+        self.assertEqual(rl_policy_report["summary"]["ending_equity"], 1.049)
         self.assertEqual(scoring_coverage["pipeline"], "a_share_daily_factor_pipeline_v0")
         self.assertEqual(scoring_coverage["row_count"], 2)
         self.assertEqual(data_source_health["summary"], {"ok": 0, "failed": 0, "skipped": 1})
