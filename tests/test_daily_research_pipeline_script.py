@@ -206,6 +206,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(rl_policy_report["summary"]["ending_equity"], 1.049)
         self.assertEqual(scoring_coverage["pipeline"], "a_share_daily_factor_pipeline_v0")
         self.assertEqual(scoring_coverage["row_count"], 2)
+        self.assertEqual(data_source_health["symbols"], ["000001.SZ"])
         self.assertEqual(data_source_health["summary"], {"ok": 0, "failed": 0, "skipped": 1})
         self.assertEqual(data_source_health["checks"][0]["name"], "tushare_daily")
         self.assertEqual(run_report["strategy_config"]["buy_threshold"], 65.0)

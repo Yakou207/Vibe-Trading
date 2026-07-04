@@ -11,6 +11,57 @@ from pathlib import Path
 
 
 class CheckDataSourcesScriptTest(unittest.TestCase):
+    def test_check_data_sources_can_check_every_symbol_in_universe(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fake_modules = root / "fake_modules"
+            fake_modules.mkdir()
+            universe_path = root / "universe.csv"
+            output_path = root / "source_health.json"
+            _write_fake_akshare(fake_modules / "akshare.py")
+            universe_path.write_text("symbol,name,sector\n000001,平安银行,银行\n600000,浦发银行,银行\n", encoding="utf-8")
+
+            env = dict(os.environ)
+            env["PYTHONPATH"] = str(fake_modules)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/check_data_sources.py",
+                    "--checks",
+                    "akshare_daily",
+                    "--universe",
+                    str(universe_path),
+                    "--start",
+                    "2026-01-01",
+                    "--end",
+                    "2026-01-02",
+                    "--output",
+                    str(output_path),
+                    "--strict",
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["symbols"], ["000001.SZ", "600000.SH"])
+        self.assertEqual(payload["summary"], {"ok": 2, "failed": 0, "skipped": 0})
+        self.assertEqual(
+            [(check["name"], check["symbol"], check["status"]) for check in payload["checks"]],
+            [
+                ("akshare_daily", "000001.SZ", "ok"),
+                ("akshare_daily", "600000.SH", "ok"),
+            ],
+        )
+
     def test_check_data_sources_reports_akshare_and_tushare_smoke_status(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
 

@@ -12,7 +12,12 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from fintech_quant.data import AkShareProvider, AkShareRealtimeQuoteProvider, TushareProvider  # noqa: E402
+from fintech_quant.data import (  # noqa: E402
+    AkShareProvider,
+    AkShareRealtimeQuoteProvider,
+    TushareProvider,
+    load_universe_csv,
+)
 from fintech_quant.data.errors import MissingProviderCredential, MissingProviderDependency  # noqa: E402
 from fintech_quant.information import AkShareFundamentalFetcher, TushareFundamentalFetcher  # noqa: E402
 
@@ -30,6 +35,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run live smoke checks for configured A-share data sources.")
     parser.add_argument("--checks", default="akshare_daily,akshare_realtime,akshare_fundamental,tushare_daily,tushare_fundamental")
     parser.add_argument("--symbol", default="000001")
+    parser.add_argument("--universe", default=None, help="Optional universe CSV; checks every symbol when provided.")
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--output", default="outputs/data_source_health.json")
@@ -39,10 +45,12 @@ def main() -> int:
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end)
     checks = _parse_checks(args.checks)
-    results = [_run_check(name, args.symbol, start, end) for name in checks]
+    symbols = _symbols(args.symbol, args.universe)
+    results = [_run_check(name, symbol, start, end) for symbol in symbols for name in checks]
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "symbol": args.symbol,
+        "symbol": symbols[0],
+        "symbols": symbols,
         "start": start.isoformat(),
         "end": end.isoformat(),
         "checks": results,
@@ -57,6 +65,14 @@ def main() -> int:
     if args.strict and (payload["summary"]["failed"] or payload["summary"]["skipped"]):
         return 1
     return 0
+
+
+def _symbols(symbol: str, universe_path: str | None) -> list[str]:
+    if universe_path:
+        return [member.symbol for member in load_universe_csv(Path(universe_path))]
+    from fintech_quant.data.symbols import normalize_a_share_symbol
+
+    return [normalize_a_share_symbol(symbol)]
 
 
 def _parse_checks(raw_checks: str) -> list[str]:
@@ -78,12 +94,12 @@ def _run_check(name: str, symbol: str, start: date, end: date) -> dict[str, obje
     try:
         rows = runners[name](symbol, start, end)
     except MissingProviderCredential as exc:
-        return _result(name, "skipped", 0, (), str(exc))
+        return _result(name, symbol, "skipped", 0, (), str(exc))
     except MissingProviderDependency as exc:
-        return _result(name, "failed", 0, (), str(exc))
+        return _result(name, symbol, "failed", 0, (), str(exc))
     except Exception as exc:
-        return _result(name, "failed", 0, (), str(exc))
-    return _result(name, "ok", len(rows), _fields(rows), "ok")
+        return _result(name, symbol, "failed", 0, (), str(exc))
+    return _result(name, symbol, "ok", len(rows), _fields(rows), "ok")
 
 
 def _check_akshare_daily(symbol: str, start: date, end: date) -> list[dict[str, object]]:
@@ -128,6 +144,7 @@ def _fields(rows: list[dict[str, object]]) -> tuple[str, ...]:
 
 def _result(
     name: str,
+    symbol: str,
     status: str,
     row_count: int,
     fields: tuple[str, ...],
@@ -135,6 +152,7 @@ def _result(
 ) -> dict[str, object]:
     return {
         "name": name,
+        "symbol": symbol,
         "status": status,
         "row_count": row_count,
         "fields": list(fields),
