@@ -13,6 +13,7 @@ from fintech_quant.trading import TradeAction, TradeDecision
 class ScoredBaselineStrategy(Strategy):
     name: str = "scored_baseline_v0"
     buy_threshold: float = 70.0
+    min_confidence: float = 0.8
 
     def decide(self, state: dict[str, Any]) -> TradeDecision:
         score = state["score"]
@@ -27,6 +28,12 @@ class ScoredBaselineStrategy(Strategy):
                 action=TradeAction.SELL,
                 confidence=1.0,
                 reason=f"Risk action {risk_action.value} overrides score {score.total}.",
+            )
+        if score.confidence < self.min_confidence:
+            return TradeDecision(
+                action=TradeAction.HOLD,
+                confidence=score.confidence,
+                reason=f"Score confidence {score.confidence} is below minimum {self.min_confidence}.",
             )
         if score.total >= self.buy_threshold:
             return TradeDecision(

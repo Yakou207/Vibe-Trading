@@ -73,6 +73,32 @@ class ScoredBaselineStrategyTest(unittest.TestCase):
         self.assertEqual(decision.action, TradeAction.SELL)
         self.assertIn("risk", decision.reason.lower())
 
+    def test_holds_high_score_when_confidence_is_below_minimum(self) -> None:
+        from fintech_quant.features import ComponentScore, StockScore
+        from fintech_quant.risk import RiskAction
+        from fintech_quant.strategies.scored_baseline import ScoredBaselineStrategy
+        from fintech_quant.trading import TradeAction
+
+        strategy = ScoredBaselineStrategy(buy_threshold=70.0, min_confidence=0.8)
+        score = StockScore(
+            symbol="000001.SZ",
+            total=90.0,
+            components={
+                "fundamental": ComponentScore("fundamental", 35.0, 35.0, ()),
+                "technical": ComponentScore("technical", 25.0, 25.0, ()),
+                "capital_flow": ComponentScore("capital_flow", 25.0, 25.0, ()),
+                "sentiment": ComponentScore("sentiment", 5.0, 15.0, ()),
+            },
+            confidence=0.6,
+            missing_fields=("dragon_tiger_positive", "negative_event_count"),
+        )
+
+        decision = strategy.decide({"score": score, "risk_action": RiskAction.NONE})
+
+        self.assertEqual(decision.action, TradeAction.HOLD)
+        self.assertEqual(decision.confidence, 0.6)
+        self.assertIn("confidence", decision.reason.lower())
+
     def test_holds_when_score_is_below_threshold(self) -> None:
         from fintech_quant.features import ScoreInput, score_stock
         from fintech_quant.risk import RiskAction
