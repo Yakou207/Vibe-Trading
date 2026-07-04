@@ -7,6 +7,35 @@ from pathlib import Path
 
 
 class ResearchRunTest(unittest.TestCase):
+    def test_research_run_config_rejects_invalid_ratios_and_thresholds(self) -> None:
+        from fintech_quant.research.run import ResearchRunConfig
+
+        base_config = {
+            "run_id": "invalid-config",
+            "features_path": Path("features.csv"),
+            "universe_path": Path("universe.csv"),
+        }
+
+        invalid_cases = [
+            ("initial_cash", 0),
+            ("max_position_weight", 0),
+            ("commission_rate", -0.001),
+            ("slippage_rate", -0.001),
+            ("buy_threshold", -1),
+            ("min_score_confidence", 1.2),
+            ("max_portfolio_drawdown", -0.1),
+            ("max_single_position_drawdown", 1.5),
+            ("max_goodwill_ratio", -0.1),
+            ("max_pledge_ratio", 1.1),
+            ("max_main_outflow_days", -1),
+            ("broad_market_drop_threshold", -1),
+        ]
+
+        for field, value in invalid_cases:
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError, field):
+                    ResearchRunConfig(**base_config, **{field: value})
+
     def test_run_research_baseline_outputs_scores_trades_equity_and_summary(self) -> None:
         from fintech_quant.research.run import ResearchRunConfig, run_research_baseline
 

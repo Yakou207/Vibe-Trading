@@ -38,8 +38,8 @@ def main() -> int:
     args = parser.parse_args()
 
     run_id = args.run_id or f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-baseline"
-    report = run_research_baseline(
-        ResearchRunConfig(
+    try:
+        config = ResearchRunConfig(
             run_id=run_id,
             features_path=Path(args.features),
             universe_path=Path(args.universe),
@@ -60,7 +60,11 @@ def main() -> int:
             max_main_outflow_days=args.max_main_outflow_days,
             broad_market_drop_threshold=args.broad_market_drop_threshold,
         )
-    )
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    report = run_research_baseline(config)
     report_path = write_run_report(report, Path(args.output_root))
     print(f"report_path={report_path}")
     print(f"ending_equity={report.summary['ending_equity']}")

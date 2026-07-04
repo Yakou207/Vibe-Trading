@@ -82,6 +82,38 @@ class RunResearchBaselineScriptTest(unittest.TestCase):
         self.assertEqual(payload["drawdown"]["points"][0]["trade_date"], "2026-01-01")
         self.assertIn("rolling_peak", payload["drawdown"]["points"][0])
 
+    def test_run_research_baseline_script_rejects_invalid_config(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = _write_fixture_inputs(root)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_research_baseline.py",
+                    "--run-id",
+                    "invalid-run",
+                    "--features",
+                    str(paths["features"]),
+                    "--universe",
+                    str(paths["universe"]),
+                    "--min-score-confidence",
+                    "1.2",
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("min_score_confidence", result.stderr)
+
 
 def _write_fixture_inputs(root: Path) -> dict[str, Path]:
     universe = root / "universe.csv"
