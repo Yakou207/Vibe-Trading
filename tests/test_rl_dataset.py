@@ -95,7 +95,7 @@ class RlDatasetTest(unittest.TestCase):
 
     def test_write_rl_state_jsonl_serializes_stable_rows(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
-        from fintech_quant.training import build_rl_state_samples, write_rl_state_jsonl
+        from fintech_quant.training import build_rl_state_samples, load_rl_state_jsonl, write_rl_state_jsonl
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -110,6 +110,7 @@ class RlDatasetTest(unittest.TestCase):
             write_rl_state_jsonl(output_path, build_rl_state_samples(dataset))
 
             rows = [json.loads(line) for line in output_path.read_text(encoding="utf-8").splitlines()]
+            loaded_samples = load_rl_state_jsonl(output_path)
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["symbol"], "000001.SZ")
@@ -117,6 +118,94 @@ class RlDatasetTest(unittest.TestCase):
         self.assertEqual(rows[0]["next_trade_date"], "2026-01-02")
         self.assertEqual(rows[0]["forward_return_1d"], 0.1)
         self.assertIsInstance(rows[0]["state_vector"], list)
+        self.assertEqual(len(loaded_samples), 1)
+        self.assertEqual(loaded_samples[0].symbol, "000001.SZ")
+        self.assertEqual(loaded_samples[0].trade_date.isoformat(), "2026-01-01")
+        self.assertEqual(loaded_samples[0].state_vector, tuple(rows[0]["state_vector"]))
+
+    def test_group_rl_state_samples_by_symbol_marks_episode_terminals(self) -> None:
+        from fintech_quant.training import RlStateSample, group_rl_state_samples_by_symbol
+
+        samples = [
+            RlStateSample("600000.SH", _date("2026-01-02"), _date("2026-01-03"), ("x",), (3.0,), 0.03),
+            RlStateSample("000001.SZ", _date("2026-01-02"), _date("2026-01-03"), ("x",), (2.0,), 0.02),
+            RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("x",), (1.0,), 0.01),
+        ]
+
+        grouped = group_rl_state_samples_by_symbol(samples)
+
+        self.assertEqual(tuple(grouped), ("000001.SZ", "600000.SH"))
+        self.assertEqual(len(grouped["000001.SZ"]), 1)
+        self.assertEqual(
+            [sample.trade_date.isoformat() for sample in grouped["000001.SZ"][0]],
+            ["2026-01-01", "2026-01-02"],
+        )
+        self.assertFalse(grouped["000001.SZ"][0][0].terminal)
+        self.assertTrue(grouped["000001.SZ"][0][1].terminal)
+        self.assertTrue(grouped["600000.SH"][0][0].terminal)
+
+    def test_group_rl_state_samples_by_symbol_preserves_terminal_boundaries(self) -> None:
+        from fintech_quant.training import RlStateSample, group_rl_state_samples_by_symbol
+
+        samples = [
+            RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("x",), (1.0,), 0.01, terminal=True),
+            RlStateSample("000001.SZ", _date("2026-01-02"), _date("2026-01-03"), ("x",), (2.0,), 0.02),
+        ]
+
+        grouped = group_rl_state_samples_by_symbol(samples)
+
+        self.assertEqual(len(grouped["000001.SZ"]), 2)
+        self.assertTrue(grouped["000001.SZ"][0][0].terminal)
+        self.assertTrue(grouped["000001.SZ"][1][0].terminal)
+
+    def test_group_rl_state_samples_by_symbol_splits_transition_gaps(self) -> None:
+        from fintech_quant.training import RlStateSample, group_rl_state_samples_by_symbol
+
+        samples = [
+            RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("x",), (1.0,), 0.01),
+            RlStateSample("000001.SZ", _date("2026-01-03"), _date("2026-01-04"), ("x",), (2.0,), 0.02),
+        ]
+
+        grouped = group_rl_state_samples_by_symbol(samples)
+
+        self.assertEqual(len(grouped["000001.SZ"]), 2)
+        self.assertTrue(grouped["000001.SZ"][0][0].terminal)
+        self.assertTrue(grouped["000001.SZ"][1][0].terminal)
+
+    def test_group_rl_state_samples_by_symbol_rejects_state_field_changes_inside_episode(self) -> None:
+        from fintech_quant.training import RlStateSample, group_rl_state_samples_by_symbol
+
+        samples = [
+            RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("x",), (1.0,), 0.01),
+            RlStateSample("000001.SZ", _date("2026-01-02"), _date("2026-01-03"), ("y",), (2.0,), 0.02),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "state_fields"):
+            group_rl_state_samples_by_symbol(samples)
+
+    def test_load_rl_state_jsonl_rejects_state_field_vector_mismatch(self) -> None:
+        from fintech_quant.training import load_rl_state_jsonl
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bad_rl_state.jsonl"
+            path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001.SZ",
+                        "trade_date": "2026-01-01",
+                        "next_trade_date": "2026-01-02",
+                        "state_fields": ["x", "y"],
+                        "state_vector": [1.0],
+                        "forward_return_1d": 0.01,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "state_vector"):
+                load_rl_state_jsonl(path)
 
     def test_build_rl_dataset_script_writes_jsonl_from_research_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -178,6 +267,13 @@ def _write_fixture_inputs(root: Path) -> dict[str, Path]:
         "fundamentals": fundamentals,
         "capital_flow": capital_flow,
     }
+
+
+def _date(value: str) -> object:
+    from datetime import date
+
+    year, month, day = (int(part) for part in value.split("-"))
+    return date(year, month, day)
 
 
 if __name__ == "__main__":

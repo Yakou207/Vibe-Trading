@@ -5,6 +5,8 @@ from fintech_quant.training.rl_dataset import (
     DEFAULT_RL_STATE_FIELDS,
     RlStateSample,
     build_rl_state_samples,
+    group_rl_state_samples_by_symbol,
+    load_rl_state_jsonl,
     write_rl_state_jsonl,
 )
 
@@ -14,5 +16,7 @@ __all__ = [
     "RlEnvironmentStep",
     "RlStateSample",
     "build_rl_state_samples",
+    "group_rl_state_samples_by_symbol",
+    "load_rl_state_jsonl",
     "write_rl_state_jsonl",
 ]

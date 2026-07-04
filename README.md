@@ -213,9 +213,17 @@ Each row contains a stable `state_fields` list, numeric `state_vector`, and one-
 The training package also exposes a lightweight daily environment for future DQN work:
 
 ```python
-from fintech_quant.training import AShareBuySellHoldEnvironment
+from pathlib import Path
 
-env = AShareBuySellHoldEnvironment(samples, transaction_cost=0.001)
+from fintech_quant.training import (
+    AShareBuySellHoldEnvironment,
+    group_rl_state_samples_by_symbol,
+    load_rl_state_jsonl,
+)
+
+samples = load_rl_state_jsonl(Path("data/processed/rl_state_dataset.jsonl"))
+episodes = group_rl_state_samples_by_symbol(samples)
+env = AShareBuySellHoldEnvironment(episodes["000001.SZ"][0], transaction_cost=0.001)
 observation = env.reset()  # state_vector plus current position
 step = env.step("buy")     # buy, sell, or hold
 ```

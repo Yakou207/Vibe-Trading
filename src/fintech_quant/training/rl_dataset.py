@@ -82,6 +82,27 @@ def write_rl_state_jsonl(path: Path, samples: Sequence[RlStateSample]) -> None:
             handle.write(json.dumps(_sample_to_json(sample), ensure_ascii=False, sort_keys=True) + "\n")
 
 
+def load_rl_state_jsonl(path: Path) -> list[RlStateSample]:
+    samples: list[RlStateSample] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            samples.append(_sample_from_json(json.loads(line), line_number))
+    return samples
+
+
+def group_rl_state_samples_by_symbol(samples: Sequence[RlStateSample]) -> dict[str, list[list[RlStateSample]]]:
+    grouped: dict[str, list[RlStateSample]] = {}
+    for sample in samples:
+        grouped.setdefault(sample.symbol, []).append(sample)
+    episodes: dict[str, list[list[RlStateSample]]] = {}
+    for symbol, symbol_samples in sorted(grouped.items()):
+        ordered = sorted(symbol_samples, key=lambda item: item.trade_date)
+        episodes[symbol] = _episodes_for_symbol(ordered)
+    return episodes
+
+
 def _features_by_symbol(rows: Sequence[FeatureRow]) -> list[tuple[str, list[FeatureRow]]]:
     grouped: dict[str, list[FeatureRow]] = {}
     for row in rows:
@@ -143,3 +164,74 @@ def _sample_to_json(sample: RlStateSample) -> dict[str, object]:
         "forward_return_1d": sample.forward_return_1d,
         "terminal": sample.terminal,
     }
+
+
+def _sample_from_json(payload: Mapping[str, object], line_number: int) -> RlStateSample:
+    state_fields = tuple(str(field) for field in _list(payload, "state_fields", line_number))
+    state_vector = tuple(float(value) for value in _list(payload, "state_vector", line_number))
+    if len(state_fields) != len(state_vector):
+        raise ValueError(f"line {line_number}: state_vector length must match state_fields length")
+    return RlStateSample(
+        symbol=str(payload["symbol"]),
+        trade_date=date.fromisoformat(str(payload["trade_date"])),
+        next_trade_date=date.fromisoformat(str(payload["next_trade_date"])),
+        state_fields=state_fields,
+        state_vector=state_vector,
+        forward_return_1d=float(payload["forward_return_1d"]),
+        terminal=bool(payload.get("terminal", False)),
+    )
+
+
+def _list(payload: Mapping[str, object], field: str, line_number: int) -> list[object]:
+    value = payload[field]
+    if not isinstance(value, list):
+        raise ValueError(f"line {line_number}: {field} must be a list")
+    return value
+
+
+def _replace_terminal(sample: RlStateSample, *, terminal: bool) -> RlStateSample:
+    if sample.terminal == terminal:
+        return sample
+    return RlStateSample(
+        symbol=sample.symbol,
+        trade_date=sample.trade_date,
+        next_trade_date=sample.next_trade_date,
+        state_fields=sample.state_fields,
+        state_vector=sample.state_vector,
+        forward_return_1d=sample.forward_return_1d,
+        terminal=terminal,
+    )
+
+
+def _episodes_for_symbol(samples: Sequence[RlStateSample]) -> list[list[RlStateSample]]:
+    episodes: list[list[RlStateSample]] = []
+    current: list[RlStateSample] = []
+    expected_fields: tuple[str, ...] | None = None
+    previous: RlStateSample | None = None
+    for sample in samples:
+        if previous is not None and not previous.terminal and previous.next_trade_date != sample.trade_date:
+            _finish_episode(episodes, current)
+            current = []
+            expected_fields = None
+        if expected_fields is None:
+            expected_fields = sample.state_fields
+        elif sample.state_fields != expected_fields:
+            raise ValueError("state_fields must be stable within an RL episode")
+        current.append(sample)
+        previous = sample
+        if sample.terminal:
+            _finish_episode(episodes, current)
+            current = []
+            expected_fields = None
+            previous = None
+    if current:
+        _finish_episode(episodes, current)
+    return episodes
+
+
+def _finish_episode(episodes: list[list[RlStateSample]], samples: list[RlStateSample]) -> None:
+    if not samples:
+        return
+    episode = list(samples)
+    episode[-1] = _replace_terminal(episode[-1], terminal=True)
+    episodes.append(episode)
