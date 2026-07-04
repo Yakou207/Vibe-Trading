@@ -43,6 +43,17 @@ For offline testing, use `--price-source json --price-input bars.json`, `--infor
 
 After configuring `TUSHARE_TOKEN`, the same pipeline can use `--information-source tushare_fundamental` for Tushare Pro fundamental snapshots while keeping AkShare as the default daily data provider.
 
+Run a data-source smoke check before daily jobs or after provider upgrades. It checks the current AkShare/Tushare adapter paths, writes per-source status, row counts, and returned fields. Tushare checks are skipped without `TUSHARE_TOKEN` unless `--strict` is used:
+
+```bash
+python scripts/check_data_sources.py \
+  --checks akshare_daily,akshare_realtime,akshare_fundamental,tushare_daily,tushare_fundamental \
+  --symbol 000001 \
+  --start 2026-01-01 \
+  --end 2026-01-10 \
+  --output outputs/data_source_health.json
+```
+
 Fetch realtime A-share quotes for intraday monitoring or ad-hoc risk checks:
 
 ```bash
