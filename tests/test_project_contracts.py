@@ -1,4 +1,6 @@
 import unittest
+import tomllib
+from pathlib import Path
 
 
 class ProjectContractsTest(unittest.TestCase):
@@ -11,6 +13,13 @@ class ProjectContractsTest(unittest.TestCase):
         self.assertEqual(settings.frequency, "1d")
         self.assertEqual(settings.execution_mode, "paper")
         self.assertEqual(settings.data_sources, ("akshare", "tushare"))
+
+    def test_data_extra_keeps_a_share_provider_scope(self) -> None:
+        pyproject = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+
+        data_dependencies = set(pyproject["project"]["optional-dependencies"]["data"])
+
+        self.assertEqual(data_dependencies, {"akshare", "tushare"})
 
     def test_trade_action_only_allows_buy_sell_hold(self) -> None:
         from fintech_quant.trading import TradeAction

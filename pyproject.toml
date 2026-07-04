@@ -12,9 +12,7 @@ dev = [
 ]
 data = [
     "akshare",
-    "finnhub-python",
     "tushare",
-    "yfinance",
 ]
 research = [
     "numpy",
