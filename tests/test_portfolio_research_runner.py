@@ -211,6 +211,24 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
         self.assertNotIn("position_weight", [warning.rule for warning in result.risk_warnings])
 
+    def test_portfolio_runner_uses_custom_risk_limits_for_static_warnings(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+        from fintech_quant.risk import RiskLimits
+
+        bars = [_bar("000001.SZ", "2026-01-01", 10.0)]
+        scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
+        risk_inputs = {(date(2026, 1, 1), "000001.SZ"): RiskInput(main_outflow_days=3)}
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            risk_inputs=risk_inputs,
+            risk_limits=RiskLimits(max_main_outflow_days=2),
+            initial_cash=100000.0,
+        )
+
+        self.assertIn("main_outflow_days", [warning.rule for warning in result.risk_warnings])
+
     def test_portfolio_runner_does_not_false_sell_flat_default_position_after_commission(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 

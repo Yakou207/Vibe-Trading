@@ -38,6 +38,12 @@ python scripts/run_daily_research_pipeline.py \
   --market-source akshare \
   --buy-threshold 70 \
   --min-score-confidence 0.8 \
+  --max-portfolio-drawdown 0.15 \
+  --max-single-position-drawdown 0.08 \
+  --max-goodwill-ratio 0.30 \
+  --max-pledge-ratio 0.50 \
+  --max-main-outflow-days 3 \
+  --broad-market-drop-threshold 15 \
   --scoring-coverage-output outputs/scoring_coverage.json
 ```
 
@@ -121,6 +127,10 @@ python scripts/run_research_baseline.py \
   --universe universe.csv \
   --buy-threshold 70 \
   --min-score-confidence 0.8 \
+  --max-portfolio-drawdown 0.15 \
+  --max-single-position-drawdown 0.08 \
+  --max-goodwill-ratio 0.30 \
+  --max-pledge-ratio 0.50 \
   --output-root outputs/research_runs
 ```
 

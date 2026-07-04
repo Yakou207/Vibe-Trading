@@ -29,6 +29,12 @@ def main() -> int:
     parser.add_argument("--slippage-rate", type=float, default=0.0005)
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
+    parser.add_argument("--max-portfolio-drawdown", type=float, default=0.15)
+    parser.add_argument("--max-single-position-drawdown", type=float, default=0.08)
+    parser.add_argument("--max-goodwill-ratio", type=float, default=0.30)
+    parser.add_argument("--max-pledge-ratio", type=float, default=0.50)
+    parser.add_argument("--max-main-outflow-days", type=int, default=3)
+    parser.add_argument("--broad-market-drop-threshold", type=int, default=15)
     args = parser.parse_args()
 
     run_id = args.run_id or f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-baseline"
@@ -47,6 +53,12 @@ def main() -> int:
             slippage_rate=args.slippage_rate,
             buy_threshold=args.buy_threshold,
             min_score_confidence=args.min_score_confidence,
+            max_portfolio_drawdown=args.max_portfolio_drawdown,
+            max_single_position_drawdown=args.max_single_position_drawdown,
+            max_goodwill_ratio=args.max_goodwill_ratio,
+            max_pledge_ratio=args.max_pledge_ratio,
+            max_main_outflow_days=args.max_main_outflow_days,
+            broad_market_drop_threshold=args.broad_market_drop_threshold,
         )
     )
     report_path = write_run_report(report, Path(args.output_root))

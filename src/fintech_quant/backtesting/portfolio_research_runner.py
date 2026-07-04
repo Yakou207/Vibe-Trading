@@ -71,6 +71,7 @@ def run_portfolio_scored_baseline_backtest(
     slippage_rate: float = 0.0,
     constraints: AShareTradingConstraints | None = None,
     strategy: ScoredBaselineStrategy | None = None,
+    risk_limits: RiskLimits | None = None,
 ) -> PortfolioBacktestResult:
     if initial_cash <= 0:
         raise ValueError("initial_cash must be positive")
@@ -83,7 +84,7 @@ def run_portfolio_scored_baseline_backtest(
 
     active_strategy = strategy or ScoredBaselineStrategy()
     risk_by_key = risk_inputs or {}
-    risk_limits = RiskLimits(max_position_weight=max_position_weight)
+    active_risk_limits = risk_limits or RiskLimits(max_position_weight=max_position_weight)
     cash = float(initial_cash)
     positions: dict[str, _Position] = {}
     trades: list[PortfolioBacktestTrade] = []
@@ -109,7 +110,7 @@ def run_portfolio_scored_baseline_backtest(
                 risk_by_key.get((trade_date, symbol), RiskInput()),
                 _dynamic_risk_input(close, position, starting_equity, rolling_peak, commission_rate),
             )
-            risk = evaluate_risk(risk_input, risk_limits)
+            risk = evaluate_risk(risk_input, active_risk_limits)
             warnings.extend(_dated_warnings(trade_date, symbol, risk.warnings))
 
             if score is None:

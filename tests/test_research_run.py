@@ -22,12 +22,24 @@ class ResearchRunTest(unittest.TestCase):
                     initial_cash=100000.0,
                     buy_threshold=65.0,
                     min_score_confidence=0.75,
+                    max_portfolio_drawdown=0.12,
+                    max_single_position_drawdown=0.06,
+                    max_goodwill_ratio=0.25,
+                    max_pledge_ratio=0.45,
+                    max_main_outflow_days=2,
+                    broad_market_drop_threshold=10,
                 )
             )
 
         self.assertEqual(report.run_id, "fixture-run")
         self.assertEqual(report.strategy_config["buy_threshold"], 65.0)
         self.assertEqual(report.strategy_config["min_confidence"], 0.75)
+        self.assertEqual(report.risk_limits["max_portfolio_drawdown"], 0.12)
+        self.assertEqual(report.risk_limits["max_single_position_drawdown"], 0.06)
+        self.assertEqual(report.risk_limits["max_goodwill_ratio"], 0.25)
+        self.assertEqual(report.risk_limits["max_pledge_ratio"], 0.45)
+        self.assertEqual(report.risk_limits["max_main_outflow_days"], 2)
+        self.assertEqual(report.risk_limits["broad_market_drop_threshold"], 10)
         self.assertGreater(len(report.scores), 0)
         self.assertGreater(len(report.trades), 0)
         self.assertGreater(len(report.equity_curve), 0)
@@ -62,6 +74,7 @@ class ResearchRunTest(unittest.TestCase):
         self.assertIn("summary", payload)
         self.assertEqual(payload["risk_summary"]["total_warnings"], 0)
         self.assertEqual(payload["strategy_config"]["min_confidence"], 0.8)
+        self.assertEqual(payload["risk_limits"]["max_portfolio_drawdown"], 0.15)
         self.assertEqual(payload["scores"][0]["symbol"], "000001.SZ")
         self.assertIn("points", payload["drawdown"])
         self.assertIn("episodes", payload["drawdown"])

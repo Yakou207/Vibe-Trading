@@ -140,6 +140,10 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     "65",
                     "--min-score-confidence",
                     "0.75",
+                    "--max-main-outflow-days",
+                    "2",
+                    "--broad-market-drop-threshold",
+                    "10",
                     "--preflight-data-sources",
                     "--preflight-data-source-checks",
                     "tushare_daily",
@@ -192,6 +196,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(data_source_health["checks"][0]["name"], "tushare_daily")
         self.assertEqual(run_report["strategy_config"]["buy_threshold"], 65.0)
         self.assertEqual(run_report["strategy_config"]["min_confidence"], 0.75)
+        self.assertEqual(run_report["risk_limits"]["max_main_outflow_days"], 2)
+        self.assertEqual(run_report["risk_limits"]["broad_market_drop_threshold"], 10)
 
 
 def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:

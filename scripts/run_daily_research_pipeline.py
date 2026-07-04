@@ -49,6 +49,12 @@ def main() -> int:
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
+    parser.add_argument("--max-portfolio-drawdown", type=float, default=0.15)
+    parser.add_argument("--max-single-position-drawdown", type=float, default=0.08)
+    parser.add_argument("--max-goodwill-ratio", type=float, default=0.30)
+    parser.add_argument("--max-pledge-ratio", type=float, default=0.50)
+    parser.add_argument("--max-main-outflow-days", type=int, default=3)
+    parser.add_argument("--broad-market-drop-threshold", type=int, default=15)
     parser.add_argument("--preflight-data-sources", action="store_true")
     parser.add_argument(
         "--preflight-data-source-checks",
@@ -241,6 +247,18 @@ def main() -> int:
             str(args.buy_threshold),
             "--min-score-confidence",
             str(args.min_score_confidence),
+            "--max-portfolio-drawdown",
+            str(args.max_portfolio_drawdown),
+            "--max-single-position-drawdown",
+            str(args.max_single_position_drawdown),
+            "--max-goodwill-ratio",
+            str(args.max_goodwill_ratio),
+            "--max-pledge-ratio",
+            str(args.max_pledge_ratio),
+            "--max-main-outflow-days",
+            str(args.max_main_outflow_days),
+            "--broad-market-drop-threshold",
+            str(args.broad_market_drop_threshold),
         ]
     )
     step_count += 1

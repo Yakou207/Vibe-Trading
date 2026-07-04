@@ -42,6 +42,18 @@ class RunResearchBaselineScriptTest(unittest.TestCase):
                     "65",
                     "--min-score-confidence",
                     "0.75",
+                    "--max-portfolio-drawdown",
+                    "0.12",
+                    "--max-single-position-drawdown",
+                    "0.06",
+                    "--max-goodwill-ratio",
+                    "0.25",
+                    "--max-pledge-ratio",
+                    "0.45",
+                    "--max-main-outflow-days",
+                    "2",
+                    "--broad-market-drop-threshold",
+                    "10",
                 ],
                 cwd=worktree,
                 env=env,
@@ -59,6 +71,12 @@ class RunResearchBaselineScriptTest(unittest.TestCase):
         self.assertIn("summary", payload)
         self.assertEqual(payload["strategy_config"]["buy_threshold"], 65.0)
         self.assertEqual(payload["strategy_config"]["min_confidence"], 0.75)
+        self.assertEqual(payload["risk_limits"]["max_portfolio_drawdown"], 0.12)
+        self.assertEqual(payload["risk_limits"]["max_single_position_drawdown"], 0.06)
+        self.assertEqual(payload["risk_limits"]["max_goodwill_ratio"], 0.25)
+        self.assertEqual(payload["risk_limits"]["max_pledge_ratio"], 0.45)
+        self.assertEqual(payload["risk_limits"]["max_main_outflow_days"], 2)
+        self.assertEqual(payload["risk_limits"]["broad_market_drop_threshold"], 10)
         self.assertGreater(payload["summary"]["trade_count"], 0)
         self.assertIn("points", payload["drawdown"])
         self.assertEqual(payload["drawdown"]["points"][0]["trade_date"], "2026-01-01")

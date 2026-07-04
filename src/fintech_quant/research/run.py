@@ -11,7 +11,7 @@ from fintech_quant.features import StockScore
 from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow, load_research_dataset
 from fintech_quant.research.risk_builder import PortfolioRiskState, build_risk_input
 from fintech_quant.research.scoring import build_stock_scores
-from fintech_quant.risk import RiskInput
+from fintech_quant.risk import RiskInput, RiskLimits
 from fintech_quant.strategies import ScoredBaselineStrategy
 from fintech_quant.trading import TradeAction
 
@@ -31,6 +31,12 @@ class ResearchRunConfig:
     slippage_rate: float = 0.0
     buy_threshold: float = 70.0
     min_score_confidence: float = 0.8
+    max_portfolio_drawdown: float = 0.15
+    max_single_position_drawdown: float = 0.08
+    max_goodwill_ratio: float = 0.30
+    max_pledge_ratio: float = 0.50
+    max_main_outflow_days: int = 3
+    broad_market_drop_threshold: int = 15
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,7 @@ class ResearchRunReport:
     run_id: str
     inputs: dict[str, str | None]
     strategy_config: dict[str, float]
+    risk_limits: dict[str, float | int]
     universe_symbols: tuple[str, ...]
     date_range: tuple[str, str] | None
     scores: list[dict[str, object]]
@@ -74,6 +81,7 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
         commission_rate=config.commission_rate,
         slippage_rate=config.slippage_rate,
         strategy=strategy,
+        risk_limits=_risk_limits_from_config(config),
     )
     return _report_from_result(config, dataset, scores, result)
 
@@ -165,6 +173,7 @@ def _report_from_result(
             "buy_threshold": config.buy_threshold,
             "min_confidence": config.min_score_confidence,
         },
+        risk_limits=_risk_limits_to_json(_risk_limits_from_config(config)),
         universe_symbols=dataset.universe_symbols,
         date_range=_date_range(dataset.features),
         scores=score_rows,
@@ -227,6 +236,30 @@ def _risk_warning_to_json(warning: object) -> dict[str, object]:
         "rule": warning.rule,
         "action": warning.action,
         "message": warning.message,
+    }
+
+
+def _risk_limits_from_config(config: ResearchRunConfig) -> RiskLimits:
+    return RiskLimits(
+        max_position_weight=config.max_position_weight,
+        max_portfolio_drawdown=config.max_portfolio_drawdown,
+        max_single_position_drawdown=config.max_single_position_drawdown,
+        max_goodwill_ratio=config.max_goodwill_ratio,
+        max_pledge_ratio=config.max_pledge_ratio,
+        max_main_outflow_days=config.max_main_outflow_days,
+        broad_market_drop_threshold=config.broad_market_drop_threshold,
+    )
+
+
+def _risk_limits_to_json(limits: RiskLimits) -> dict[str, float | int]:
+    return {
+        "max_position_weight": limits.max_position_weight,
+        "max_portfolio_drawdown": limits.max_portfolio_drawdown,
+        "max_single_position_drawdown": limits.max_single_position_drawdown,
+        "max_goodwill_ratio": limits.max_goodwill_ratio,
+        "max_pledge_ratio": limits.max_pledge_ratio,
+        "max_main_outflow_days": limits.max_main_outflow_days,
+        "broad_market_drop_threshold": limits.broad_market_drop_threshold,
     }
 
 
@@ -299,6 +332,7 @@ def _report_to_json(report: ResearchRunReport) -> dict[str, object]:
         "run_id": report.run_id,
         "inputs": report.inputs,
         "strategy_config": report.strategy_config,
+        "risk_limits": report.risk_limits,
         "universe_symbols": list(report.universe_symbols),
         "date_range": list(report.date_range) if report.date_range else None,
         "scores": report.scores,
