@@ -54,6 +54,8 @@ python scripts/check_data_sources.py \
   --output outputs/data_source_health.json
 ```
 
+The daily pipeline does not run live smoke checks by default. Add `--preflight-data-sources` when you want the pipeline to run `check_data_sources.py` first and write `--data-source-health-output`; add `--preflight-data-source-strict` in CI or a formal daily job when skipped/failed checks should stop the pipeline.
+
 Fetch realtime A-share quotes for intraday monitoring or ad-hoc risk checks:
 
 ```bash

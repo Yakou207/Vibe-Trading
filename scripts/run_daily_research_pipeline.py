@@ -47,6 +47,13 @@ def main() -> int:
     parser.add_argument("--market-output", default="data/raw/market_state/sh000001_market_state.csv")
     parser.add_argument("--rl-output", default="data/processed/rl_state_dataset.jsonl")
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
+    parser.add_argument("--preflight-data-sources", action="store_true")
+    parser.add_argument(
+        "--preflight-data-source-checks",
+        default="akshare_daily,akshare_realtime,akshare_fundamental,tushare_daily,tushare_fundamental",
+    )
+    parser.add_argument("--data-source-health-output", default="outputs/data_source_health.json")
+    parser.add_argument("--preflight-data-source-strict", action="store_true")
     parser.add_argument("--run-id", default="daily-pipeline-baseline")
     parser.add_argument("--report-output-root", default="outputs/research_runs")
     parser.add_argument("--index-symbol", default="sh000001")
@@ -60,6 +67,25 @@ def main() -> int:
     universe = load_universe_csv(Path(args.universe))
 
     step_count = 0
+    if args.preflight_data_sources:
+        preflight_command = [
+            "scripts/check_data_sources.py",
+            "--checks",
+            args.preflight_data_source_checks,
+            "--symbol",
+            universe[0].symbol,
+            "--start",
+            args.start,
+            "--end",
+            args.end,
+            "--output",
+            args.data_source_health_output,
+        ]
+        if args.preflight_data_source_strict:
+            preflight_command.append("--strict")
+        _run(preflight_command)
+        step_count += 1
+
     for member in universe:
         command = [
             "scripts/fetch_information.py",
@@ -219,6 +245,8 @@ def main() -> int:
     print(f"market_output={args.market_output}")
     print(f"rl_output={args.rl_output}")
     print(f"scoring_coverage_output={args.scoring_coverage_output}")
+    if args.preflight_data_sources:
+        print(f"data_source_health_output={args.data_source_health_output}")
     print(f"report_output_root={args.report_output_root}")
     return 0
 

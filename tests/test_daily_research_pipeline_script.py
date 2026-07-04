@@ -14,6 +14,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         worktree = Path(__file__).resolve().parents[1]
         env = dict(os.environ)
         env.pop("PYTHONPATH", None)
+        env.pop("TUSHARE_TOKEN", None)
 
         result = subprocess.run(
             [sys.executable, "scripts/run_daily_research_pipeline.py", "--help"],
@@ -26,11 +27,13 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("tushare_fundamental", result.stdout)
+        self.assertIn("preflight-data-sources", result.stdout)
 
     def test_daily_pipeline_builds_information_features_market_state_and_rl_dataset(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
         env = dict(os.environ)
         env.pop("PYTHONPATH", None)
+        env.pop("TUSHARE_TOKEN", None)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -44,6 +47,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             market_output = root / "market_state.csv"
             rl_output = root / "rl_state.jsonl"
             scoring_coverage_output = root / "scoring_coverage.json"
+            data_source_health_output = root / "data_source_health.json"
             report_output_root = root / "reports"
 
             universe_path.write_text("symbol,name,sector\n000001,平安银行,银行\n", encoding="utf-8")
@@ -132,6 +136,11 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     str(rl_output),
                     "--scoring-coverage-output",
                     str(scoring_coverage_output),
+                    "--preflight-data-sources",
+                    "--preflight-data-source-checks",
+                    "tushare_daily",
+                    "--data-source-health-output",
+                    str(data_source_health_output),
                     "--run-id",
                     "fixture-pipeline",
                     "--report-output-root",
@@ -147,12 +156,13 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            self.assertIn("pipeline_steps=8", result.stdout)
+            self.assertIn("pipeline_steps=9", result.stdout)
             self.assertTrue(daily_output.exists())
             self.assertTrue(feature_output.exists())
             self.assertTrue(market_output.exists())
             self.assertTrue(rl_output.exists())
             self.assertTrue(scoring_coverage_output.exists())
+            self.assertTrue(data_source_health_output.exists())
             self.assertTrue((report_output_root / "fixture-pipeline" / "run_report.json").exists())
             information_records = [
                 json.loads(line)
@@ -161,6 +171,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             ]
             rl_record = json.loads(rl_output.read_text(encoding="utf-8").splitlines()[0])
             scoring_coverage = json.loads(scoring_coverage_output.read_text(encoding="utf-8"))
+            data_source_health = json.loads(data_source_health_output.read_text(encoding="utf-8"))
 
         titles = {record["title"] for record in information_records}
         company_record = next(record for record in information_records if record["title"] == "监管问询")
@@ -172,6 +183,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(rl_record["symbol"], "000001.SZ")
         self.assertEqual(scoring_coverage["pipeline"], "a_share_daily_factor_pipeline_v0")
         self.assertEqual(scoring_coverage["row_count"], 2)
+        self.assertEqual(data_source_health["summary"], {"ok": 0, "failed": 0, "skipped": 1})
+        self.assertEqual(data_source_health["checks"][0]["name"], "tushare_daily")
 
 
 def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:
