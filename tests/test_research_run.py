@@ -20,10 +20,14 @@ class ResearchRunTest(unittest.TestCase):
                     fundamentals_path=paths["fundamentals"],
                     capital_flow_path=paths["capital_flow"],
                     initial_cash=100000.0,
+                    buy_threshold=65.0,
+                    min_score_confidence=0.75,
                 )
             )
 
         self.assertEqual(report.run_id, "fixture-run")
+        self.assertEqual(report.strategy_config["buy_threshold"], 65.0)
+        self.assertEqual(report.strategy_config["min_confidence"], 0.75)
         self.assertGreater(len(report.scores), 0)
         self.assertGreater(len(report.trades), 0)
         self.assertGreater(len(report.equity_curve), 0)
@@ -55,6 +59,7 @@ class ResearchRunTest(unittest.TestCase):
         self.assertIn("scores", payload)
         self.assertIn("risk_warnings", payload)
         self.assertIn("summary", payload)
+        self.assertEqual(payload["strategy_config"]["min_confidence"], 0.8)
         self.assertEqual(payload["scores"][0]["symbol"], "000001.SZ")
         self.assertIn("points", payload["drawdown"])
         self.assertIn("episodes", payload["drawdown"])

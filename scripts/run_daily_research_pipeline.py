@@ -47,6 +47,8 @@ def main() -> int:
     parser.add_argument("--market-output", default="data/raw/market_state/sh000001_market_state.csv")
     parser.add_argument("--rl-output", default="data/processed/rl_state_dataset.jsonl")
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
+    parser.add_argument("--buy-threshold", type=float, default=70.0)
+    parser.add_argument("--min-score-confidence", type=float, default=0.8)
     parser.add_argument("--preflight-data-sources", action="store_true")
     parser.add_argument(
         "--preflight-data-source-checks",
@@ -235,6 +237,10 @@ def main() -> int:
             args.market_output,
             "--output-root",
             args.report_output_root,
+            "--buy-threshold",
+            str(args.buy_threshold),
+            "--min-score-confidence",
+            str(args.min_score_confidence),
         ]
     )
     step_count += 1

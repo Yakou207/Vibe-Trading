@@ -12,6 +12,7 @@ from fintech_quant.research.dataset import FeatureRow, ResearchDataset, Suppleme
 from fintech_quant.research.risk_builder import PortfolioRiskState, build_risk_input
 from fintech_quant.research.scoring import build_stock_scores
 from fintech_quant.risk import RiskInput
+from fintech_quant.strategies import ScoredBaselineStrategy
 from fintech_quant.trading import TradeAction
 
 
@@ -28,12 +29,15 @@ class ResearchRunConfig:
     max_position_weight: float = 0.08
     commission_rate: float = 0.0003
     slippage_rate: float = 0.0
+    buy_threshold: float = 70.0
+    min_score_confidence: float = 0.8
 
 
 @dataclass(frozen=True)
 class ResearchRunReport:
     run_id: str
     inputs: dict[str, str | None]
+    strategy_config: dict[str, float]
     universe_symbols: tuple[str, ...]
     date_range: tuple[str, str] | None
     scores: list[dict[str, object]]
@@ -56,6 +60,10 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
     )
     scores = build_stock_scores(dataset)
     risk_inputs = _build_static_risk_inputs(dataset, config.initial_cash)
+    strategy = ScoredBaselineStrategy(
+        buy_threshold=config.buy_threshold,
+        min_confidence=config.min_score_confidence,
+    )
     result = run_portfolio_scored_baseline_backtest(
         [_bar_from_feature(row) for row in dataset.features],
         scores,
@@ -64,6 +72,7 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
         max_position_weight=config.max_position_weight,
         commission_rate=config.commission_rate,
         slippage_rate=config.slippage_rate,
+        strategy=strategy,
     )
     return _report_from_result(config, dataset, scores, result)
 
@@ -149,6 +158,10 @@ def _report_from_result(
             "fundamentals": str(config.fundamentals_path) if config.fundamentals_path else None,
             "capital_flow": str(config.capital_flow_path) if config.capital_flow_path else None,
             "market_state": str(config.market_state_path) if config.market_state_path else None,
+        },
+        strategy_config={
+            "buy_threshold": config.buy_threshold,
+            "min_confidence": config.min_score_confidence,
         },
         universe_symbols=dataset.universe_symbols,
         date_range=_date_range(dataset.features),
@@ -265,6 +278,7 @@ def _report_to_json(report: ResearchRunReport) -> dict[str, object]:
     return {
         "run_id": report.run_id,
         "inputs": report.inputs,
+        "strategy_config": report.strategy_config,
         "universe_symbols": list(report.universe_symbols),
         "date_range": list(report.date_range) if report.date_range else None,
         "scores": report.scores,

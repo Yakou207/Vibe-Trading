@@ -136,6 +136,10 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     str(rl_output),
                     "--scoring-coverage-output",
                     str(scoring_coverage_output),
+                    "--buy-threshold",
+                    "65",
+                    "--min-score-confidence",
+                    "0.75",
                     "--preflight-data-sources",
                     "--preflight-data-source-checks",
                     "tushare_daily",
@@ -172,6 +176,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             rl_record = json.loads(rl_output.read_text(encoding="utf-8").splitlines()[0])
             scoring_coverage = json.loads(scoring_coverage_output.read_text(encoding="utf-8"))
             data_source_health = json.loads(data_source_health_output.read_text(encoding="utf-8"))
+            run_report = json.loads((report_output_root / "fixture-pipeline" / "run_report.json").read_text(encoding="utf-8"))
 
         titles = {record["title"] for record in information_records}
         company_record = next(record for record in information_records if record["title"] == "监管问询")
@@ -185,6 +190,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(scoring_coverage["row_count"], 2)
         self.assertEqual(data_source_health["summary"], {"ok": 0, "failed": 0, "skipped": 1})
         self.assertEqual(data_source_health["checks"][0]["name"], "tushare_daily")
+        self.assertEqual(run_report["strategy_config"]["buy_threshold"], 65.0)
+        self.assertEqual(run_report["strategy_config"]["min_confidence"], 0.75)
 
 
 def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:

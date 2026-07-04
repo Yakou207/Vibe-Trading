@@ -36,6 +36,8 @@ python scripts/run_daily_research_pipeline.py \
   --price-source akshare \
   --information-source akshare_multi \
   --market-source akshare \
+  --buy-threshold 70 \
+  --min-score-confidence 0.8 \
   --scoring-coverage-output outputs/scoring_coverage.json
 ```
 
@@ -117,6 +119,8 @@ python scripts/run_research_baseline.py \
   --run-id fixture-run \
   --features data/processed/akshare_research_features.csv \
   --universe universe.csv \
+  --buy-threshold 70 \
+  --min-score-confidence 0.8 \
   --output-root outputs/research_runs
 ```
 

@@ -38,6 +38,10 @@ class RunResearchBaselineScriptTest(unittest.TestCase):
                     str(output_root),
                     "--initial-cash",
                     "100000",
+                    "--buy-threshold",
+                    "65",
+                    "--min-score-confidence",
+                    "0.75",
                 ],
                 cwd=worktree,
                 env=env,
@@ -47,12 +51,14 @@ class RunResearchBaselineScriptTest(unittest.TestCase):
             )
 
             report_path = output_root / "fixture-run" / "run_report.json"
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            self.assertIn(f"report_path={report_path}", result.stdout)
             payload = json.loads(report_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(result.returncode, 0, msg=result.stderr)
-        self.assertIn(f"report_path={report_path}", result.stdout)
         self.assertEqual(payload["run_id"], "fixture-run")
         self.assertIn("summary", payload)
+        self.assertEqual(payload["strategy_config"]["buy_threshold"], 65.0)
+        self.assertEqual(payload["strategy_config"]["min_confidence"], 0.75)
         self.assertGreater(payload["summary"]["trade_count"], 0)
         self.assertIn("points", payload["drawdown"])
         self.assertEqual(payload["drawdown"]["points"][0]["trade_date"], "2026-01-01")
