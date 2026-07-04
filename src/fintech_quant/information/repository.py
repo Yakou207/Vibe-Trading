@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import calendar
 import json
+from collections import Counter
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -28,6 +29,35 @@ class InformationRepository:
 
     def replace_all(self, records: list[InformationRecord]) -> None:
         self._write_all(records)
+
+    def export_by_retention_class(self, output_dir: Path) -> dict[str, object]:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        records = sorted(
+            self._read_all(),
+            key=lambda record: (
+                record.retention_class.value,
+                record.published_at,
+                record.normalized_symbol or "",
+                record.title,
+            ),
+        )
+        classes: dict[str, dict[str, object]] = {}
+        for retention_class in RetentionClass:
+            class_records = [record for record in records if record.retention_class is retention_class]
+            output_path = output_dir / f"{retention_class.value}.jsonl"
+            self._write_jsonl(output_path, class_records)
+            classes[retention_class.value] = _class_manifest(output_path, class_records)
+        manifest = {
+            "source": str(self.path),
+            "output_dir": str(output_dir),
+            "record_count": len(records),
+            "classes": classes,
+        }
+        (output_dir / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return manifest
 
     def query(
         self,
@@ -71,7 +101,11 @@ class InformationRepository:
 
     def _write_all(self, records: list[InformationRecord]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("w", encoding="utf-8") as handle:
+        self._write_jsonl(self.path, records)
+
+    def _write_jsonl(self, path: Path, records: list[InformationRecord]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
             for record in records:
                 handle.write(json.dumps(self._to_json(record), ensure_ascii=False, sort_keys=True) + "\n")
 
@@ -97,3 +131,17 @@ class InformationRepository:
             risk_tags=tuple(data.get("risk_tags", ())),
             metadata=dict(data.get("metadata", {})),
         )
+
+
+def _class_manifest(path: Path, records: list[InformationRecord]) -> dict[str, object]:
+    dates = [record.published_at for record in records]
+    symbols = sorted({record.normalized_symbol for record in records if record.normalized_symbol})
+    return {
+        "path": str(path),
+        "record_count": len(records),
+        "category_counts": dict(Counter(record.category.value for record in records)),
+        "source_counts": dict(Counter(record.source for record in records)),
+        "symbols": symbols,
+        "oldest_published_at": min(dates).isoformat() if dates else None,
+        "newest_published_at": max(dates).isoformat() if dates else None,
+    }

@@ -91,6 +91,54 @@ class InformationRepositoryTest(unittest.TestCase):
             self.assertEqual(removed, 0)
             self.assertEqual(len(repo.query(symbol="000001")), 1)
 
+    def test_export_by_retention_class_writes_split_jsonl_files_and_manifest(self) -> None:
+        from fintech_quant.information import InformationCategory, InformationRecord, InformationRepository
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = InformationRepository(root / "info.jsonl")
+            repo.append(
+                InformationRecord(
+                    symbol="000001",
+                    sector=None,
+                    published_at=date(2026, 1, 2),
+                    source="exchange",
+                    category=InformationCategory.FINANCIAL_REPORT,
+                    title="Annual report",
+                    url="https://example.test/report",
+                    summary="Revenue grew.",
+                    risk_tags=("financial_report",),
+                )
+            )
+            repo.append(
+                InformationRecord(
+                    symbol="000001",
+                    sector=None,
+                    published_at=date(2021, 1, 2),
+                    source="akshare",
+                    category=InformationCategory.STOCK_DATA,
+                    title="Training data",
+                    url="",
+                    summary="pe=12.0",
+                    risk_tags=("selected_universe", "fundamental"),
+                )
+            )
+
+            manifest = repo.export_by_retention_class(root / "classified")
+
+            text_path = root / "classified" / "text_financial_report.jsonl"
+            stock_data_path = root / "classified" / "selected_universe_stock_data.jsonl"
+            manifest_path = root / "classified" / "manifest.json"
+            self.assertTrue(text_path.exists())
+            self.assertTrue(stock_data_path.exists())
+            self.assertTrue(manifest_path.exists())
+            self.assertIn("Annual report", text_path.read_text(encoding="utf-8"))
+            self.assertNotIn("Training data", text_path.read_text(encoding="utf-8"))
+            self.assertIn("Training data", stock_data_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["classes"]["text_financial_report"]["record_count"], 1)
+            self.assertEqual(manifest["classes"]["selected_universe_stock_data"]["record_count"], 1)
+            self.assertEqual(manifest["classes"]["selected_universe_stock_data"]["symbols"], ["000001.SZ"])
+
     def test_stock_data_requires_selected_universe_tag(self) -> None:
         from fintech_quant.information import InformationCategory, InformationRecord
 
@@ -198,6 +246,55 @@ class InformationRepositoryTest(unittest.TestCase):
             self.assertEqual(result.stdout.strip(), "stored_records=1\npruned_text_records=0")
             self.assertEqual(result.stderr, "")
             self.assertIn("Fixture announcement", output_path.read_text(encoding="utf-8"))
+
+    def test_export_information_repository_script_writes_classified_outputs(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_path = root / "information.jsonl"
+            output_dir = root / "classified"
+            input_path.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001.SZ",
+                        "sector": None,
+                        "published_at": "2026-01-15",
+                        "source": "fixture",
+                        "category": "stock_data",
+                        "title": "Training row",
+                        "url": "",
+                        "summary": "pe=12.0",
+                        "risk_tags": ["selected_universe", "fundamental"],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/export_information_repository.py",
+                    "--input",
+                    str(input_path),
+                    "--output-dir",
+                    str(output_dir),
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn(f"manifest_path={output_dir / 'manifest.json'}", result.stdout)
+        self.assertEqual(manifest["classes"]["selected_universe_stock_data"]["record_count"], 1)
 
     def test_fetch_information_script_prunes_old_text_records_after_append(self) -> None:
         worktree = Path(__file__).resolve().parents[1]

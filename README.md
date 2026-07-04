@@ -36,6 +36,7 @@ python scripts/run_daily_research_pipeline.py \
   --price-source akshare \
   --information-source akshare_multi \
   --market-source akshare \
+  --classified-information-output-dir data/raw/information/classified \
   --buy-threshold 70 \
   --min-score-confidence 0.8 \
   --max-portfolio-drawdown 0.15 \
@@ -103,6 +104,16 @@ python scripts/summarize_information_repository.py \
   --sector 银行 \
   --output outputs/information_repository_summary.json
 ```
+
+Export the warehouse into explicit retention-class files when you want to inspect or hand off the two data families separately:
+
+```bash
+python scripts/export_information_repository.py \
+  --input data/raw/information/information.jsonl \
+  --output-dir data/raw/information/classified
+```
+
+This writes `text_financial_report.jsonl`, `selected_universe_stock_data.jsonl`, and `manifest.json`. The daily pipeline runs this export after sentiment analysis, so the classified files include updated risk tags and text-sentiment metadata.
 
 ## Phase 2 Baseline Runner
 
