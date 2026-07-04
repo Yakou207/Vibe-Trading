@@ -4,6 +4,24 @@ import unittest
 
 
 class RiskEngineTest(unittest.TestCase):
+    def test_risk_limits_reject_invalid_thresholds(self) -> None:
+        from fintech_quant.risk import RiskLimits
+
+        invalid_cases = [
+            ("max_position_weight", 0),
+            ("max_portfolio_drawdown", -0.1),
+            ("max_single_position_drawdown", 1.5),
+            ("max_goodwill_ratio", -0.1),
+            ("max_pledge_ratio", 1.1),
+            ("max_main_outflow_days", -1),
+            ("broad_market_drop_threshold", -1),
+        ]
+
+        for field, value in invalid_cases:
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError, field):
+                    RiskLimits(**{field: value})
+
     def test_portfolio_drawdown_15_percent_forces_liquidation(self) -> None:
         from fintech_quant.risk import RiskAction, RiskInput, evaluate_risk
 

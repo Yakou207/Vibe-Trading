@@ -75,11 +75,19 @@ python scripts/fetch_realtime_quotes.py \
 
 You can also pass `--universe universe.csv` to fetch realtime quotes for the selected research universe. Offline tests use `--source json --input quotes.json`.
 
-Evaluate realtime systemic risk from normalized quote CSVs. The script counts valid rows with `change_pct < -0.03` and feeds that count into the existing risk engine, where more than 15 names triggers a `reduce` action:
+Evaluate realtime risk from normalized quote CSVs. The script counts valid rows with `change_pct < -0.03` and feeds that count into the existing risk engine. You can also pass a small JSON object with `RiskInput` fields such as `portfolio_drawdown`, `single_position_drawdown`, `st_warning`, `goodwill_ratio`, `pledge_ratio`, `main_outflow_days`, and `index_below_annual_ma` so the same realtime check covers portfolio, stock-specific, market, and systemic warnings:
 
 ```bash
 python scripts/evaluate_realtime_risk.py \
   --quotes data/raw/realtime_quotes/a_share_realtime_quotes.csv \
+  --risk-input data/raw/realtime_risk_input.json \
+  --max-position-weight 0.08 \
+  --max-portfolio-drawdown 0.15 \
+  --max-single-position-drawdown 0.08 \
+  --max-goodwill-ratio 0.30 \
+  --max-pledge-ratio 0.50 \
+  --max-main-outflow-days 3 \
+  --broad-market-drop-threshold 15 \
   --output outputs/realtime_risk.json
 ```
 

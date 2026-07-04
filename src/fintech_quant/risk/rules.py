@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import Enum
 
@@ -28,6 +29,39 @@ class RiskLimits:
     max_pledge_ratio: float = 0.50
     max_main_outflow_days: int = 3
     broad_market_drop_threshold: int = 15
+
+    def __post_init__(self) -> None:
+        _require_positive_unit_ratio("max_position_weight", self.max_position_weight)
+        _require_positive_unit_ratio("max_portfolio_drawdown", self.max_portfolio_drawdown)
+        _require_positive_unit_ratio("max_single_position_drawdown", self.max_single_position_drawdown)
+        _require_unit_ratio("max_goodwill_ratio", self.max_goodwill_ratio)
+        _require_unit_ratio("max_pledge_ratio", self.max_pledge_ratio)
+        _require_non_negative_int("max_main_outflow_days", self.max_main_outflow_days)
+        _require_non_negative_int("broad_market_drop_threshold", self.broad_market_drop_threshold)
+
+
+def _require_unit_ratio(name: str, value: float) -> None:
+    _require_finite_number(name, value)
+    if value < 0 or value > 1:
+        raise ValueError(f"{name} must be between 0 and 1")
+
+
+def _require_positive_unit_ratio(name: str, value: float) -> None:
+    _require_finite_number(name, value)
+    if value <= 0 or value > 1:
+        raise ValueError(f"{name} must be greater than 0 and less than or equal to 1")
+
+
+def _require_finite_number(name: str, value: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ValueError(f"{name} must be a finite number")
+
+
+def _require_non_negative_int(name: str, value: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer")
+    if value < 0:
+        raise ValueError(f"{name} must be greater than or equal to 0")
 
 
 @dataclass(frozen=True)
