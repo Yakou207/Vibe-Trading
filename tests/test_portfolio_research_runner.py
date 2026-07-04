@@ -229,6 +229,29 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
 
         self.assertIn("main_outflow_days", [warning.rule for warning in result.risk_warnings])
 
+    def test_custom_risk_limits_keep_configured_position_weight_limit(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+        from fintech_quant.risk import RiskLimits
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 10.0),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            risk_limits=RiskLimits(max_main_outflow_days=2),
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+        )
+
+        self.assertNotIn("position_weight", [warning.rule for warning in result.risk_warnings])
+
     def test_portfolio_runner_does_not_false_sell_flat_default_position_after_commission(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 

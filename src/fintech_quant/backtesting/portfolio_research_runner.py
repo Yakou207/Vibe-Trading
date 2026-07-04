@@ -84,7 +84,11 @@ def run_portfolio_scored_baseline_backtest(
 
     active_strategy = strategy or ScoredBaselineStrategy()
     risk_by_key = risk_inputs or {}
-    active_risk_limits = risk_limits or RiskLimits(max_position_weight=max_position_weight)
+    active_risk_limits = (
+        replace(risk_limits, max_position_weight=max_position_weight)
+        if risk_limits
+        else RiskLimits(max_position_weight=max_position_weight)
+    )
     cash = float(initial_cash)
     positions: dict[str, _Position] = {}
     trades: list[PortfolioBacktestTrade] = []
