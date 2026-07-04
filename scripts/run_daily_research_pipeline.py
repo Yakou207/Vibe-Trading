@@ -51,6 +51,12 @@ def main() -> int:
     parser.add_argument("--rl-policy", choices=("always_hold", "buy_and_hold"), default="buy_and_hold")
     parser.add_argument("--rl-policy-symbol", default=None)
     parser.add_argument("--rl-policy-transaction-cost", type=float, default=0.0)
+    parser.add_argument("--dqn-policy-report-output", default=None)
+    parser.add_argument("--dqn-policy-symbol", default=None)
+    parser.add_argument("--dqn-epochs", type=int, default=50)
+    parser.add_argument("--dqn-learning-rate", type=float, default=0.05)
+    parser.add_argument("--dqn-gamma", type=float, default=0.0)
+    parser.add_argument("--dqn-policy-transaction-cost", type=float, default=0.0)
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
@@ -246,6 +252,29 @@ def main() -> int:
         _run(rl_policy_command)
         step_count += 1
 
+    if args.dqn_policy_report_output:
+        dqn_policy_command = [
+            "scripts/train_dqn_policy.py",
+            "--input",
+            args.rl_output,
+            "--output",
+            args.dqn_policy_report_output,
+            "--epochs",
+            str(args.dqn_epochs),
+            "--learning-rate",
+            str(args.dqn_learning_rate),
+            "--gamma",
+            str(args.dqn_gamma),
+            "--transaction-cost",
+            str(args.dqn_policy_transaction_cost),
+            "--run-id",
+            f"{args.run_id}-linear-q-dqn",
+        ]
+        if args.dqn_policy_symbol:
+            dqn_policy_command.extend(["--symbol", args.dqn_policy_symbol])
+        _run(dqn_policy_command)
+        step_count += 1
+
     _run(
         [
             "scripts/summarize_scoring_coverage.py",
@@ -306,6 +335,8 @@ def main() -> int:
     print(f"rl_output={args.rl_output}")
     if args.rl_policy_report_output:
         print(f"rl_policy_report_output={args.rl_policy_report_output}")
+    if args.dqn_policy_report_output:
+        print(f"dqn_policy_report_output={args.dqn_policy_report_output}")
     print(f"scoring_coverage_output={args.scoring_coverage_output}")
     if args.preflight_data_sources:
         print(f"data_source_health_output={args.data_source_health_output}")

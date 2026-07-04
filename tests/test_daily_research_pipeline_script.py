@@ -48,6 +48,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             market_output = root / "market_state.csv"
             rl_output = root / "rl_state.jsonl"
             rl_policy_report_output = root / "rl_policy_report.json"
+            dqn_policy_report_output = root / "dqn_policy_report.json"
             scoring_coverage_output = root / "scoring_coverage.json"
             data_source_health_output = root / "data_source_health.json"
             report_output_root = root / "reports"
@@ -146,6 +147,14 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     "000001.SZ",
                     "--rl-policy-transaction-cost",
                     "0.001",
+                    "--dqn-policy-report-output",
+                    str(dqn_policy_report_output),
+                    "--dqn-policy-symbol",
+                    "000001.SZ",
+                    "--dqn-epochs",
+                    "20",
+                    "--dqn-policy-transaction-cost",
+                    "0.001",
                     "--scoring-coverage-output",
                     str(scoring_coverage_output),
                     "--buy-threshold",
@@ -176,13 +185,15 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            self.assertIn("pipeline_steps=11", result.stdout)
+            self.assertIn("pipeline_steps=12", result.stdout)
             self.assertIn(f"classified_information_output_dir={classified_information_output_dir}", result.stdout)
+            self.assertIn(f"dqn_policy_report_output={dqn_policy_report_output}", result.stdout)
             self.assertTrue(daily_output.exists())
             self.assertTrue(feature_output.exists())
             self.assertTrue(market_output.exists())
             self.assertTrue(rl_output.exists())
             self.assertTrue(rl_policy_report_output.exists())
+            self.assertTrue(dqn_policy_report_output.exists())
             self.assertTrue(scoring_coverage_output.exists())
             self.assertTrue(data_source_health_output.exists())
             self.assertTrue((classified_information_output_dir / "manifest.json").exists())
@@ -196,6 +207,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             ]
             rl_record = json.loads(rl_output.read_text(encoding="utf-8").splitlines()[0])
             rl_policy_report = json.loads(rl_policy_report_output.read_text(encoding="utf-8"))
+            dqn_policy_report = json.loads(dqn_policy_report_output.read_text(encoding="utf-8"))
             scoring_coverage = json.loads(scoring_coverage_output.read_text(encoding="utf-8"))
             data_source_health = json.loads(data_source_health_output.read_text(encoding="utf-8"))
             classified_manifest = json.loads(
@@ -216,6 +228,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(rl_policy_report["strategy_config"]["policy"], "buy_and_hold")
         self.assertEqual(rl_policy_report["strategy_config"]["symbol"], "000001.SZ")
         self.assertEqual(rl_policy_report["summary"]["ending_equity"], 1.049)
+        self.assertEqual(dqn_policy_report["strategy_config"]["policy"], "linear_q_dqn_v0")
+        self.assertEqual(dqn_policy_report["strategy_config"]["symbol"], "000001.SZ")
+        self.assertEqual(dqn_policy_report["summary"]["ending_equity"], 1.049)
         self.assertEqual(scoring_coverage["pipeline"], "a_share_daily_factor_pipeline_v0")
         self.assertEqual(scoring_coverage["row_count"], 2)
         self.assertEqual(data_source_health["symbols"], ["000001.SZ"])

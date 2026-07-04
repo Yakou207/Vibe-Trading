@@ -48,6 +48,8 @@ python scripts/run_daily_research_pipeline.py \
   --rl-policy-report-output outputs/research_runs/rl_buy_and_hold/run_report.json \
   --rl-policy buy_and_hold \
   --rl-policy-transaction-cost 0.001 \
+  --dqn-policy-report-output outputs/research_runs/linear_q_dqn/run_report.json \
+  --dqn-policy-transaction-cost 0.001 \
   --scoring-coverage-output outputs/scoring_coverage.json
 ```
 
@@ -156,7 +158,7 @@ python scripts/run_research_baseline.py \
   --output-root outputs/research_runs
 ```
 
-The command writes `outputs/research_runs/<run_id>/run_report.json` with scores, missing fields, risk warnings, risk summary by layer/action/rule, trades, portfolio equity, drawdown, and summary metrics. Drawdown output includes both point-level rolling-peak records and episode diagnostics with start date, trough date, recovery date, depth, duration days, and recovery days. The scored baseline only buys when the score is at or above threshold and score confidence is at least 0.8, so sparse factor coverage does not create low-quality buy signals. DQN remains frozen until these baseline artifacts are stable enough for comparison.
+The command writes `outputs/research_runs/<run_id>/run_report.json` with scores, missing fields, risk warnings, risk summary by layer/action/rule, trades, portfolio equity, drawdown, and summary metrics. Drawdown output includes both point-level rolling-peak records and episode diagnostics with start date, trough date, recovery date, depth, duration days, and recovery days. The scored baseline only buys when the score is at or above threshold and score confidence is at least 0.8, so sparse factor coverage does not create low-quality buy signals.
 
 Use the explanation command when you need to inspect one stock's factor score. It outputs the 35/25/25/15 component weights, actual component scores, scoring reasons, and the raw or derived inputs used by each component:
 
@@ -222,7 +224,7 @@ python scripts/build_rl_dataset.py \
   --output data/processed/rl_state_dataset.jsonl
 ```
 
-Each row contains a stable `state_fields` list, numeric `state_vector`, and one-day forward return target. This is a data contract for RL training, not a trained DQN policy.
+Each row contains a stable `state_fields` list, numeric `state_vector`, and one-day forward return target. This is the data contract for fixed-policy evaluation and DQN-style training.
 
 The training package also exposes a lightweight daily environment for future DQN work:
 
@@ -244,7 +246,7 @@ step = env.step("buy")     # buy, sell, or hold
 
 The environment is deliberately small: one symbol per episode, one long/cash position flag, forward-return rewards, and explicit transaction cost. This keeps DQN experiments comparable with the scored baseline before adding more complex execution behavior.
 
-Before training DQN, generate a simple RL-environment policy report as a sanity baseline:
+Generate a simple RL-environment policy report as a sanity baseline:
 
 ```bash
 python scripts/evaluate_rl_policy.py \
@@ -257,6 +259,22 @@ python scripts/evaluate_rl_policy.py \
 ```
 
 The output uses the same minimal `run_report.json` fields needed by `scripts/compare_strategy_reports.py`: `run_id`, `strategy_config`, `equity_curve`, `trades`, and `summary`. Its `summary.win_rate` is based on positive reward steps, and the report records this in `summary.win_rate_basis`.
+
+Train the first lightweight DQN-style candidate policy with no neural-network dependency:
+
+```bash
+python scripts/train_dqn_policy.py \
+  --input data/processed/rl_state_dataset.jsonl \
+  --symbol 000001.SZ \
+  --epochs 50 \
+  --learning-rate 0.05 \
+  --gamma 0 \
+  --transaction-cost 0.001 \
+  --run-id linear-q-dqn \
+  --output outputs/research_runs/linear_q_dqn/run_report.json
+```
+
+This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `buy`, `sell`, and `hold`. It is intentionally small so it can be compared against the scored baseline before adding PyTorch replay-buffer DQN.
 
 ## Phase 7 Strategy Comparison
 
