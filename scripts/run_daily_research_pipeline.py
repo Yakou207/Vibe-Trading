@@ -61,6 +61,7 @@ def main() -> int:
     parser.add_argument("--strategy-comparison-output", default=None)
     parser.add_argument("--strategy-comparison-align-to-candidate", action="store_true")
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
+    parser.add_argument("--stock-analysis-output", default=None)
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
     parser.add_argument("--max-portfolio-drawdown", type=float, default=0.15)
@@ -297,6 +298,24 @@ def main() -> int:
     )
     step_count += 1
 
+    if args.stock_analysis_output:
+        _run(
+            [
+                "scripts/analyze_stock_scores.py",
+                "--features",
+                args.feature_output,
+                "--universe",
+                args.universe,
+                "--information",
+                args.information_output,
+                "--market-state",
+                args.market_output,
+                "--output",
+                args.stock_analysis_output,
+            ]
+        )
+        step_count += 1
+
     _run(
         [
             "scripts/run_research_baseline.py",
@@ -363,6 +382,8 @@ def main() -> int:
     if args.strategy_comparison_output:
         print(f"strategy_comparison_output={args.strategy_comparison_output}")
     print(f"scoring_coverage_output={args.scoring_coverage_output}")
+    if args.stock_analysis_output:
+        print(f"stock_analysis_output={args.stock_analysis_output}")
     if args.preflight_data_sources:
         print(f"data_source_health_output={args.data_source_health_output}")
     print(f"report_output_root={args.report_output_root}")

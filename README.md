@@ -53,7 +53,8 @@ python scripts/run_daily_research_pipeline.py \
   --dqn-policy-transaction-cost 0.001 \
   --strategy-comparison-output outputs/research_runs/baseline_vs_dqn.json \
   --strategy-comparison-align-to-candidate \
-  --scoring-coverage-output outputs/scoring_coverage.json
+  --scoring-coverage-output outputs/scoring_coverage.json \
+  --stock-analysis-output outputs/stock_score_analysis.json
 ```
 
 For offline testing, use `--price-source json --price-input bars.json`, `--information-source jsonl --information-input information.jsonl`, and `--market-source csv --market-input index.csv`.
@@ -186,6 +187,20 @@ python scripts/summarize_scoring_coverage.py \
   --capital-flow data/processed/capital_flow.csv \
   --output outputs/scoring_coverage.json
 ```
+
+Export per-stock, per-date multi-factor analysis when you need to inspect why a name was scored high or low:
+
+```bash
+python scripts/analyze_stock_scores.py \
+  --features data/processed/akshare_research_features.csv \
+  --universe universe.csv \
+  --information data/raw/information/information.jsonl \
+  --fundamentals data/processed/fundamentals.csv \
+  --capital-flow data/processed/capital_flow.csv \
+  --output outputs/stock_score_analysis.json
+```
+
+Each record includes total score, confidence, missing fields, and the 35/25/25/15 component scores with max score, weight, and rule-based reasons.
 
 ## Risk Matrix
 

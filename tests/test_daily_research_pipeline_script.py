@@ -51,6 +51,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             dqn_policy_report_output = root / "dqn_policy_report.json"
             strategy_comparison_output = root / "strategy_comparison.json"
             scoring_coverage_output = root / "scoring_coverage.json"
+            stock_analysis_output = root / "stock_analysis.json"
             data_source_health_output = root / "data_source_health.json"
             report_output_root = root / "reports"
 
@@ -161,6 +162,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     "--strategy-comparison-align-to-candidate",
                     "--scoring-coverage-output",
                     str(scoring_coverage_output),
+                    "--stock-analysis-output",
+                    str(stock_analysis_output),
                     "--buy-threshold",
                     "65",
                     "--min-score-confidence",
@@ -189,10 +192,11 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            self.assertIn("pipeline_steps=13", result.stdout)
+            self.assertIn("pipeline_steps=14", result.stdout)
             self.assertIn(f"classified_information_output_dir={classified_information_output_dir}", result.stdout)
             self.assertIn(f"dqn_policy_report_output={dqn_policy_report_output}", result.stdout)
             self.assertIn(f"strategy_comparison_output={strategy_comparison_output}", result.stdout)
+            self.assertIn(f"stock_analysis_output={stock_analysis_output}", result.stdout)
             self.assertTrue(daily_output.exists())
             self.assertTrue(feature_output.exists())
             self.assertTrue(market_output.exists())
@@ -201,6 +205,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             self.assertTrue(dqn_policy_report_output.exists())
             self.assertTrue(strategy_comparison_output.exists())
             self.assertTrue(scoring_coverage_output.exists())
+            self.assertTrue(stock_analysis_output.exists())
             self.assertTrue(data_source_health_output.exists())
             self.assertTrue((classified_information_output_dir / "manifest.json").exists())
             self.assertTrue((classified_information_output_dir / "text_financial_report.jsonl").exists())
@@ -216,6 +221,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             dqn_policy_report = json.loads(dqn_policy_report_output.read_text(encoding="utf-8"))
             strategy_comparison = json.loads(strategy_comparison_output.read_text(encoding="utf-8"))
             scoring_coverage = json.loads(scoring_coverage_output.read_text(encoding="utf-8"))
+            stock_analysis = json.loads(stock_analysis_output.read_text(encoding="utf-8"))
             data_source_health = json.loads(data_source_health_output.read_text(encoding="utf-8"))
             classified_manifest = json.loads(
                 (classified_information_output_dir / "manifest.json").read_text(encoding="utf-8")
@@ -249,6 +255,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertIn("excess_return", strategy_comparison)
         self.assertEqual(scoring_coverage["pipeline"], "a_share_daily_factor_pipeline_v0")
         self.assertEqual(scoring_coverage["row_count"], 2)
+        self.assertEqual(stock_analysis["pipeline"], "a_share_daily_factor_pipeline_v0")
+        self.assertEqual(stock_analysis["records"][0]["symbol"], "000001.SZ")
+        self.assertIn("component_scores", stock_analysis["records"][0])
         self.assertEqual(data_source_health["symbols"], ["000001.SZ"])
         self.assertEqual(data_source_health["summary"], {"ok": 0, "failed": 0, "skipped": 1})
         self.assertEqual(data_source_health["checks"][0]["name"], "tushare_daily")
