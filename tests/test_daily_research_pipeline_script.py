@@ -158,6 +158,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     "0.001",
                     "--strategy-comparison-output",
                     str(strategy_comparison_output),
+                    "--strategy-comparison-align-to-candidate",
                     "--scoring-coverage-output",
                     str(scoring_coverage_output),
                     "--buy-threshold",

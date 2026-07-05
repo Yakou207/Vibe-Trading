@@ -19,12 +19,14 @@ def main() -> int:
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--output", default="outputs/research_runs/comparison.json")
     parser.add_argument("--walk-forward-segments", type=int, default=4)
+    parser.add_argument("--align-to-candidate", action="store_true")
     args = parser.parse_args()
 
     comparison = compare_strategy_reports(
         _load_json(Path(args.baseline)),
         _load_json(Path(args.candidate)),
         walk_forward_segments=args.walk_forward_segments,
+        align_to_candidate=args.align_to_candidate,
     )
     output_path = Path(args.output)
     write_comparison_report(output_path, comparison)
@@ -32,6 +34,7 @@ def main() -> int:
     print(f"candidate_total_return={comparison.candidate.total_return}")
     print(f"baseline_total_return={comparison.baseline.total_return}")
     print(f"excess_return={comparison.excess_return}")
+    print(f"aligned_to_candidate={args.align_to_candidate}")
     return 0
 
 

@@ -40,6 +40,29 @@ class PerformanceComparisonTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             compare_strategy_reports(baseline, candidate)
 
+    def test_compare_strategy_reports_can_align_baseline_to_candidate_dates(self) -> None:
+        from fintech_quant.reports import compare_strategy_reports
+
+        baseline = _report("baseline", [100.0, 102.0, 104.0, 106.0])
+        candidate = _report(
+            "dqn",
+            [100.0, 105.0],
+            dates=("2026-01-03", "2026-01-04"),
+            trade_count=1,
+            win_rate=1.0,
+        )
+
+        comparison = compare_strategy_reports(baseline, candidate, align_to_candidate=True)
+
+        self.assertEqual(comparison.baseline.name, "baseline")
+        self.assertEqual(comparison.baseline.initial_equity, 104.0)
+        self.assertEqual(comparison.baseline.ending_equity, 106.0)
+        self.assertAlmostEqual(comparison.baseline.total_return, 0.019231)
+        self.assertEqual(comparison.candidate.initial_equity, 100.0)
+        self.assertEqual(comparison.candidate.ending_equity, 105.0)
+        self.assertAlmostEqual(comparison.excess_return, 0.030769)
+        self.assertEqual(comparison.walk_forward[0]["start_date"], "2026-01-03")
+
     def test_compare_strategy_reports_rejects_missing_trade_statistics(self) -> None:
         from fintech_quant.reports import compare_strategy_reports
 
@@ -96,6 +119,41 @@ class PerformanceComparisonTest(unittest.TestCase):
         self.assertIn("comparison_path=", completed.stdout)
         self.assertEqual(payload["candidate"]["name"], "dqn")
         self.assertGreater(payload["excess_return"], 0.0)
+
+    def test_compare_strategy_reports_script_can_align_to_candidate_dates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline_path = root / "baseline.json"
+            candidate_path = root / "candidate.json"
+            output_path = root / "comparison.json"
+            baseline_path.write_text(json.dumps(_report("baseline", [100.0, 102.0, 104.0, 106.0])), encoding="utf-8")
+            candidate_path.write_text(
+                json.dumps(_report("dqn", [100.0, 105.0], dates=("2026-01-03", "2026-01-04"))),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/compare_strategy_reports.py",
+                    "--baseline",
+                    str(baseline_path),
+                    "--candidate",
+                    str(candidate_path),
+                    "--output",
+                    str(output_path),
+                    "--align-to-candidate",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertIn("aligned_to_candidate=True", completed.stdout)
+        self.assertAlmostEqual(payload["baseline"]["initial_equity"], 104.0)
+        self.assertAlmostEqual(payload["excess_return"], 0.030769)
 
 
 def _report(

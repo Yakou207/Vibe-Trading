@@ -51,6 +51,7 @@ python scripts/run_daily_research_pipeline.py \
   --dqn-policy-report-output outputs/research_runs/linear_q_dqn/run_report.json \
   --dqn-policy-transaction-cost 0.001 \
   --strategy-comparison-output outputs/research_runs/baseline_vs_dqn.json \
+  --strategy-comparison-align-to-candidate \
   --scoring-coverage-output outputs/scoring_coverage.json
 ```
 
@@ -286,12 +287,13 @@ Phase 7 compares a baseline `run_report.json` against a candidate report, such a
 python scripts/compare_strategy_reports.py \
   --baseline outputs/research_runs/baseline/run_report.json \
   --candidate outputs/research_runs/dqn/run_report.json \
-  --output outputs/research_runs/comparison.json
+  --output outputs/research_runs/comparison.json \
+  --align-to-candidate
 ```
 
 The comparison includes total return, annualized return, Sharpe, max drawdown, trade count, win rate, excess return, and walk-forward segment returns.
 
-The daily pipeline can run this comparison automatically when both `--dqn-policy-report-output` and `--strategy-comparison-output` are set.
+Use `--align-to-candidate` when the candidate is an out-of-sample DQN report with a shorter date range; it compares the candidate against the baseline equity curve over the same candidate dates. The daily pipeline can run this comparison automatically when both `--dqn-policy-report-output` and `--strategy-comparison-output` are set, and `--strategy-comparison-align-to-candidate` enables the same date alignment.
 
 ## Phase 8 Multi-source Information Fetch
 

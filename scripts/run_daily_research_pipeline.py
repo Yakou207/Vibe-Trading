@@ -58,6 +58,7 @@ def main() -> int:
     parser.add_argument("--dqn-gamma", type=float, default=0.0)
     parser.add_argument("--dqn-policy-transaction-cost", type=float, default=0.0)
     parser.add_argument("--strategy-comparison-output", default=None)
+    parser.add_argument("--strategy-comparison-align-to-candidate", action="store_true")
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
@@ -330,17 +331,18 @@ def main() -> int:
 
     if args.strategy_comparison_output:
         baseline_report = Path(args.report_output_root) / args.run_id / "run_report.json"
-        _run(
-            [
-                "scripts/compare_strategy_reports.py",
-                "--baseline",
-                str(baseline_report),
-                "--candidate",
-                args.dqn_policy_report_output,
-                "--output",
-                args.strategy_comparison_output,
-            ]
-        )
+        comparison_command = [
+            "scripts/compare_strategy_reports.py",
+            "--baseline",
+            str(baseline_report),
+            "--candidate",
+            args.dqn_policy_report_output,
+            "--output",
+            args.strategy_comparison_output,
+        ]
+        if args.strategy_comparison_align_to_candidate:
+            comparison_command.append("--align-to-candidate")
+        _run(comparison_command)
         step_count += 1
 
     print(f"pipeline_steps={step_count}")

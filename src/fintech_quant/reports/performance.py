@@ -39,7 +39,10 @@ def compare_strategy_reports(
     candidate_report: Mapping[str, object],
     *,
     walk_forward_segments: int = 4,
+    align_to_candidate: bool = False,
 ) -> StrategyComparison:
+    if align_to_candidate:
+        baseline_report = _align_report_to_candidate_dates(baseline_report, candidate_report)
     baseline_curve = _equity_curve(baseline_report)
     candidate_curve = _equity_curve(candidate_report)
     _require_matching_dates(baseline_curve, candidate_curve)
@@ -51,6 +54,26 @@ def compare_strategy_reports(
         excess_return=round(candidate.total_return - baseline.total_return, 6),
         walk_forward=_walk_forward(baseline_curve, candidate_curve, walk_forward_segments),
     )
+
+
+def _align_report_to_candidate_dates(
+    baseline_report: Mapping[str, object],
+    candidate_report: Mapping[str, object],
+) -> dict[str, object]:
+    baseline_dates = {point["trade_date"] for point in _equity_curve(baseline_report)}
+    candidate_dates = [point["trade_date"] for point in _equity_curve(candidate_report)]
+    missing_dates = [trade_date for trade_date in candidate_dates if trade_date not in baseline_dates]
+    if missing_dates:
+        raise ValueError("baseline report is missing candidate equity dates")
+    candidate_date_set = set(candidate_dates)
+    aligned = dict(baseline_report)
+    raw_curve = baseline_report.get("equity_curve")
+    if not isinstance(raw_curve, list):
+        raise ValueError("report must contain a non-empty equity_curve")
+    aligned["equity_curve"] = [
+        point for point in raw_curve if _parse_date(point["trade_date"]) in candidate_date_set
+    ]
+    return aligned
 
 
 def summarize_report(report: Mapping[str, object]) -> PerformanceSummary:
