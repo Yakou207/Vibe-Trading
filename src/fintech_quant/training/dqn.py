@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 from typing import Sequence
 
+from fintech_quant.training.policy_report import SymbolPolicyEvaluation, build_policy_report, selected_symbols
 from fintech_quant.training.rl_dataset import RlStateSample, group_rl_state_samples_by_symbol
 from fintech_quant.training.rl_environment import AShareBuySellHoldEnvironment
 
@@ -129,18 +130,41 @@ def evaluate_linear_dqn_policy(
     transaction_cost: float = 0.0,
 ) -> dict[str, object]:
     episodes_by_symbol = group_rl_state_samples_by_symbol(samples)
-    if not episodes_by_symbol:
-        raise ValueError("samples must not be empty")
-    selected_symbol = symbol or sorted(episodes_by_symbol)[0]
-    if selected_symbol not in episodes_by_symbol:
-        raise ValueError(f"symbol {selected_symbol} is not present in samples")
+    selected, report_symbol = selected_symbols(episodes_by_symbol, symbol)
+    evaluations = [
+        _evaluate_symbol_linear_dqn_policy(
+            episodes_by_symbol[selected_symbol],
+            selected_symbol=selected_symbol,
+            policy=policy,
+            transaction_cost=transaction_cost,
+        )
+        for selected_symbol in selected
+    ]
+    return build_policy_report(
+        run_id=run_id,
+        strategy_config={
+            "policy": DQN_POLICY_NAME,
+            "symbol": report_symbol,
+            "transaction_cost": transaction_cost,
+        },
+        evaluations=evaluations,
+        win_rate_basis="positive_reward_steps",
+    )
 
+
+def _evaluate_symbol_linear_dqn_policy(
+    episodes: Sequence[Sequence[RlStateSample]],
+    *,
+    selected_symbol: str,
+    policy: LinearQPolicy,
+    transaction_cost: float,
+) -> SymbolPolicyEvaluation:
     equity = 1.0
     equity_curve: list[dict[str, object]] = []
     trades: list[dict[str, object]] = []
     reward_count = 0
     positive_rewards = 0
-    for episode in episodes_by_symbol[selected_symbol]:
+    for episode in episodes:
         env = AShareBuySellHoldEnvironment(episode, transaction_cost=transaction_cost)
         observation = env.reset()
         if not equity_curve or equity_curve[-1]["trade_date"] != episode[0].trade_date.isoformat():
@@ -168,25 +192,13 @@ def evaluate_linear_dqn_policy(
                 )
             equity_curve.append({"trade_date": step.info["next_trade_date"], "equity": round(equity, 6)})
             observation = step.observation or ()
-    return {
-        "run_id": run_id,
-        "strategy_config": {
-            "policy": DQN_POLICY_NAME,
-            "symbol": selected_symbol,
-            "transaction_cost": transaction_cost,
-        },
-        "equity_curve": equity_curve,
-        "trades": trades,
-        "summary": {
-            "initial_equity": 1.0,
-            "ending_equity": round(equity, 6),
-            "total_return": round(equity - 1.0, 6),
-            "trade_count": len(trades),
-            "win_rate": round(positive_rewards / reward_count, 6) if reward_count else 0.0,
-            "win_rate_basis": "positive_reward_steps",
-            "win_rate_sample_count": reward_count,
-        },
-    }
+    return SymbolPolicyEvaluation(
+        symbol=selected_symbol,
+        equity_curve=equity_curve,
+        trades=trades,
+        reward_count=reward_count,
+        positive_rewards=positive_rewards,
+    )
 
 
 def write_dqn_policy_report(path: Path, report: dict[str, object]) -> None:

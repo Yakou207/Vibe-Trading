@@ -66,6 +66,42 @@ class DqnTrainingTest(unittest.TestCase):
         self.assertEqual(report["summary"]["ending_equity"], 1.0)
         self.assertEqual(report["summary"]["trade_count"], 0)
 
+    def test_evaluate_linear_dqn_policy_defaults_to_all_symbols_equal_weight(self) -> None:
+        from fintech_quant.training import LinearQPolicy, RlStateSample, evaluate_linear_dqn_policy
+
+        policy = LinearQPolicy(
+            state_fields=("signal",),
+            weights={
+                "sell": (0.0, 0.0, 0.0),
+                "hold": (0.0, 0.0, 0.0),
+                "buy": (0.0, 0.0, 1.0),
+            },
+        )
+
+        report = evaluate_linear_dqn_policy(
+            [
+                RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("signal",), (1.0,), 0.10),
+                RlStateSample("600000.SH", _date("2026-01-01"), _date("2026-01-02"), ("signal",), (1.0,), -0.10),
+            ],
+            policy,
+            run_id="fixture-dqn-all",
+        )
+
+        self.assertEqual(report["strategy_config"]["symbol"], "ALL")
+        self.assertEqual(report["strategy_config"]["symbols"], ["000001.SZ", "600000.SH"])
+        self.assertEqual(report["strategy_config"]["symbol_count"], 2)
+        self.assertEqual(report["summary"]["ending_equity"], 1.0)
+        self.assertEqual(report["summary"]["trade_count"], 2)
+        self.assertEqual(report["summary"]["win_rate"], 0.5)
+        self.assertEqual(report["summary"]["win_rate_sample_count"], 2)
+        self.assertEqual(
+            report["equity_curve"],
+            [
+                {"trade_date": "2026-01-01", "equity": 1.0},
+                {"trade_date": "2026-01-02", "equity": 1.0},
+            ],
+        )
+
     def test_train_dqn_policy_script_reads_jsonl_and_writes_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

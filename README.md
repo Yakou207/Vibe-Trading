@@ -255,20 +255,20 @@ Generate a simple RL-environment policy report as a sanity baseline:
 python scripts/evaluate_rl_policy.py \
   --input data/processed/rl_state_dataset.jsonl \
   --policy buy_and_hold \
-  --symbol 000001.SZ \
+  --symbol ALL \
   --transaction-cost 0.001 \
   --run-id rl-buy-and-hold \
   --output outputs/research_runs/rl_buy_and_hold/run_report.json
 ```
 
-The output uses the same minimal `run_report.json` fields needed by `scripts/compare_strategy_reports.py`: `run_id`, `strategy_config`, `equity_curve`, `trades`, and `summary`. Its `summary.win_rate` is based on positive reward steps, and the report records this in `summary.win_rate_basis` plus `summary.win_rate_sample_count`.
+The output uses the same minimal `run_report.json` fields needed by `scripts/compare_strategy_reports.py`: `run_id`, `strategy_config`, `equity_curve`, `trades`, and `summary`. Use `--symbol ALL` to evaluate every symbol in the RL dataset as an equal-weight research basket, or pass one symbol for single-stock diagnostics. Its `summary.win_rate` is based on positive reward steps, and the report records this in `summary.win_rate_basis` plus `summary.win_rate_sample_count`.
 
 Train the first lightweight DQN-style candidate policy with no neural-network dependency:
 
 ```bash
 python scripts/train_dqn_policy.py \
   --input data/processed/rl_state_dataset.jsonl \
-  --symbol 000001.SZ \
+  --symbol ALL \
   --epochs 50 \
   --learning-rate 0.05 \
   --gamma 0 \
@@ -278,7 +278,7 @@ python scripts/train_dqn_policy.py \
   --output outputs/research_runs/linear_q_dqn/run_report.json
 ```
 
-This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `buy`, `sell`, and `hold`. It is intentionally small so it can be compared against the scored baseline before adding PyTorch replay-buffer DQN. When `--eval-start` is set, rows before that date train the policy and rows on or after that date produce the out-of-sample report.
+This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `buy`, `sell`, and `hold`. It is intentionally small so it can be compared against the scored baseline before adding PyTorch replay-buffer DQN. Use `--symbol ALL` for selected-universe equal-weight evaluation; omit `--symbol` to evaluate all symbols when the dataset contains more than one symbol, or pass one symbol for single-stock diagnostics. When `--eval-start` is set, rows before that date train the policy and rows on or after that date produce the out-of-sample report.
 
 ## Phase 7 Strategy Comparison
 

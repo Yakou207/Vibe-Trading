@@ -151,7 +151,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     "--dqn-policy-report-output",
                     str(dqn_policy_report_output),
                     "--dqn-policy-symbol",
-                    "000001.SZ",
+                    "ALL",
                     "--dqn-epochs",
                     "20",
                     "--dqn-policy-transaction-cost",
@@ -236,7 +236,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(rl_policy_report["strategy_config"]["symbol"], "000001.SZ")
         self.assertEqual(rl_policy_report["summary"]["ending_equity"], 1.049)
         self.assertEqual(dqn_policy_report["strategy_config"]["policy"], "linear_q_dqn_v0")
-        self.assertEqual(dqn_policy_report["strategy_config"]["symbol"], "000001.SZ")
+        self.assertEqual(dqn_policy_report["strategy_config"]["symbol"], "ALL")
+        self.assertEqual(dqn_policy_report["strategy_config"]["symbols"], ["000001.SZ"])
+        self.assertEqual(dqn_policy_report["strategy_config"]["symbol_count"], 1)
         self.assertEqual(dqn_policy_report["summary"]["ending_equity"], 1.049)
         self.assertEqual(dqn_policy_report["summary"]["win_rate_basis"], "positive_reward_steps")
         self.assertEqual(dqn_policy_report["summary"]["win_rate_sample_count"], 1)
