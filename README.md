@@ -145,7 +145,7 @@ python scripts/refresh_research_data.py \
 
 Provider mode supports `--source auto`, `--source akshare`, or `--source tushare` with `--start` and `--end`. Tests use JSON fixture mode and do not hit network providers.
 
-Generated features include moving averages, RSI, MACD, daily returns, and rolling volatility for baseline and future DQN research.
+Generated features include moving averages, 20-day selected-universe relative-strength rank (`rs_rank_20d`), RSI, MACD, daily returns, and rolling volatility for baseline and future DQN research.
 
 Daily bars are validated at the loader boundary before they enter features, risk, or DQN datasets. The normalizer rejects non-positive OHLC prices, `high < low`, open/close prices outside the `[low, high]` range, and negative volume or amount values.
 
@@ -205,7 +205,7 @@ python scripts/analyze_stock_scores.py \
   --output outputs/stock_score_analysis.json
 ```
 
-Each record includes total score, confidence, missing fields, and the 35/25/25/15 component scores with max score, weight, rule-based reasons, and the concrete input values used by each component.
+Each record includes total score, confidence, missing fields, and the 35/25/25/15 component scores with max score, weight, rule-based reasons, and the concrete input values used by each component. The technical component uses MA20, MA60, selected-universe RS rank, RSI, MACD, and volume confirmation while keeping the technical weight capped at 25%.
 
 ## Risk Matrix
 

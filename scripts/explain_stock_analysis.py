@@ -105,6 +105,7 @@ def _explanation_payload(
             "technical": {
                 "close_above_ma20": score_input.close_above_ma20,
                 "close_above_ma60": score_input.close_above_ma60,
+                "relative_strength": score_input.relative_strength,
                 "rsi": score_input.rsi,
                 "macd_positive": score_input.macd_positive,
                 "volume_confirmed": score_input.volume_confirmed,

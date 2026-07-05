@@ -16,6 +16,7 @@ class ScoringPipelineTest(unittest.TestCase):
                 growth=0.12,
                 close_above_ma20=True,
                 close_above_ma60=True,
+                relative_strength=0.8,
                 rsi=55.0,
                 macd_positive=True,
                 volume_confirmed=True,
@@ -35,6 +36,24 @@ class ScoringPipelineTest(unittest.TestCase):
         self.assertEqual(result.components["capital_flow"].max_score, 25.0)
         self.assertEqual(result.components["sentiment"].max_score, 15.0)
 
+    def test_technical_score_uses_relative_strength_rank(self) -> None:
+        from fintech_quant.features import ScoreInput, score_stock
+
+        result = score_stock(
+            ScoreInput(
+                symbol="000001",
+                close_above_ma20=True,
+                close_above_ma60=True,
+                relative_strength=0.8,
+                rsi=55.0,
+                macd_positive=True,
+                volume_confirmed=True,
+            )
+        )
+
+        self.assertEqual(result.components["technical"].score, 25.0)
+        self.assertIn("Relative strength ranks in the top 40% of the universe.", result.components["technical"].reasons)
+
     def test_missing_fields_reduce_confidence_without_fabricating_score(self) -> None:
         from fintech_quant.features import ScoreInput, score_stock
 
@@ -44,6 +63,7 @@ class ScoringPipelineTest(unittest.TestCase):
         self.assertLess(result.confidence, 1.0)
         self.assertIn("pe", result.missing_fields)
         self.assertIn("rsi", result.missing_fields)
+        self.assertIn("relative_strength", result.missing_fields)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ class ResearchScoringTest(unittest.TestCase):
                 "close_above_ma20": True,
                 "close_above_ma60": True,
                 "rsi14": 55.0,
+                "rs_rank_20d": 0.8,
                 "macd_positive": True,
                 "volume": 1000.0,
                 "return_1d": 0.01,
@@ -53,6 +54,7 @@ class ResearchScoringTest(unittest.TestCase):
         self.assertEqual(score_input.symbol, "000001.SZ")
         self.assertEqual(score_input.pe, 18.0)
         self.assertEqual(score_input.close_above_ma20, True)
+        self.assertEqual(score_input.relative_strength, 0.8)
         self.assertEqual(score_input.rsi, 55.0)
         self.assertEqual(score_input.main_outflow_days, 4)
         self.assertEqual(score_input.negative_event_count, 1)

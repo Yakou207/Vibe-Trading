@@ -78,6 +78,8 @@ class RefreshResearchDataScriptTest(unittest.TestCase):
                 "amount",
                 "source",
                 "return_1d",
+                "return_20d",
+                "rs_rank_20d",
                 "ma20",
                 "ma60",
                 "ma250",

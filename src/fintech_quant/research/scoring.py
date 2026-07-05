@@ -50,6 +50,7 @@ def build_score_input(
         growth=_float_or_none(fundamental_values.get("growth")),
         close_above_ma20=_bool_or_none(feature_values.get("close_above_ma20")),
         close_above_ma60=_bool_or_none(feature_values.get("close_above_ma60")),
+        relative_strength=_float_or_none(feature_values.get("rs_rank_20d")),
         rsi=_float_or_none(feature_values.get("rsi14")),
         macd_positive=_bool_or_none(feature_values.get("macd_positive")),
         volume_confirmed=_volume_confirmed(feature_values),

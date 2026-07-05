@@ -12,6 +12,7 @@ def enrich_daily_bars(
     ma_windows: tuple[int, ...] = (20, 60, 250),
     rsi_period: int = 14,
     volatility_window: int = 20,
+    relative_strength_window: int = 20,
 ) -> list[dict[str, object]]:
     grouped: dict[str, list[Mapping[str, object]]] = defaultdict(list)
     for row in rows:
@@ -25,9 +26,10 @@ def enrich_daily_bars(
                 ma_windows=ma_windows,
                 rsi_period=rsi_period,
                 volatility_window=volatility_window,
+                relative_strength_window=relative_strength_window,
             )
         )
-    return enriched
+    return _add_relative_strength_ranks(enriched, relative_strength_window)
 
 
 def _enrich_symbol_rows(
@@ -36,6 +38,7 @@ def _enrich_symbol_rows(
     ma_windows: tuple[int, ...],
     rsi_period: int,
     volatility_window: int,
+    relative_strength_window: int,
 ) -> list[dict[str, object]]:
     closes: list[float] = []
     returns: list[float] = []
@@ -62,6 +65,8 @@ def _enrich_symbol_rows(
 
         enriched = dict(row)
         enriched["return_1d"] = _round_or_none(return_1d)
+        return_window = _window_return(closes, relative_strength_window)
+        enriched[f"return_{relative_strength_window}d"] = _round_or_none(return_window)
         for window in ma_windows:
             ma_value = mean(closes[-window:]) if len(closes) >= window else None
             enriched[f"ma{window}"] = _round_or_none(ma_value)
@@ -84,6 +89,35 @@ def _enrich_symbol_rows(
         result.append(enriched)
 
     return result
+
+
+def _add_relative_strength_ranks(rows: list[dict[str, object]], window: int) -> list[dict[str, object]]:
+    grouped_by_date: dict[str, list[dict[str, object]]] = defaultdict(list)
+    return_field = f"return_{window}d"
+    rank_field = f"rs_rank_{window}d"
+    for row in rows:
+        row[rank_field] = None
+        grouped_by_date[str(row["trade_date"])].append(row)
+    for date_rows in grouped_by_date.values():
+        ranked_rows = [row for row in date_rows if row.get(return_field) is not None]
+        if len(ranked_rows) < 2:
+            continue
+        ranked_rows.sort(key=lambda row: (float(row[return_field]), str(row["symbol"])))
+        denominator = len(ranked_rows) - 1
+        for index, row in enumerate(ranked_rows):
+            row[rank_field] = round(index / denominator, 6)
+    return rows
+
+
+def _window_return(closes: list[float], window: int) -> float | None:
+    if window <= 0:
+        raise ValueError("relative_strength_window must be positive")
+    if len(closes) <= window:
+        return None
+    base = closes[-window - 1]
+    if base <= 0:
+        return None
+    return (closes[-1] / base) - 1.0
 
 
 def _ema(value: float, previous: float | None, span: int) -> float:

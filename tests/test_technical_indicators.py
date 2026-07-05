@@ -52,6 +52,30 @@ class TechnicalIndicatorsTest(unittest.TestCase):
         self.assertAlmostEqual(by_symbol_date[("000001.SZ", "2026-01-02")]["ma2"], 11.0)
         self.assertAlmostEqual(by_symbol_date[("600000.SH", "2026-01-02")]["ma2"], 19.0)
 
+    def test_enrich_daily_bars_adds_relative_strength_rank_across_universe(self) -> None:
+        from fintech_quant.features import enrich_daily_bars
+
+        rows = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000002.SZ", "2026-01-01", 10.0),
+            _bar("600000.SH", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 11.0),
+            _bar("000002.SZ", "2026-01-02", 10.5),
+            _bar("600000.SH", "2026-01-02", 9.0),
+            _bar("000001.SZ", "2026-01-03", 12.0),
+            _bar("000002.SZ", "2026-01-03", 11.0),
+            _bar("600000.SH", "2026-01-03", 9.5),
+        ]
+
+        enriched = enrich_daily_bars(rows, relative_strength_window=2)
+        by_symbol_date = {(row["symbol"], row["trade_date"]): row for row in enriched}
+
+        self.assertIsNone(by_symbol_date[("000001.SZ", "2026-01-02")]["return_2d"])
+        self.assertAlmostEqual(by_symbol_date[("000001.SZ", "2026-01-03")]["return_2d"], 0.2)
+        self.assertAlmostEqual(by_symbol_date[("000001.SZ", "2026-01-03")]["rs_rank_2d"], 1.0)
+        self.assertAlmostEqual(by_symbol_date[("000002.SZ", "2026-01-03")]["rs_rank_2d"], 0.5)
+        self.assertAlmostEqual(by_symbol_date[("600000.SH", "2026-01-03")]["rs_rank_2d"], 0.0)
+
     def test_enrich_daily_bars_treats_flat_rsi_window_as_neutral(self) -> None:
         from fintech_quant.features import enrich_daily_bars
 

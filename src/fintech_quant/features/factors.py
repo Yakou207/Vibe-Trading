@@ -14,6 +14,7 @@ class ScoreInput:
     growth: float | None = None
     close_above_ma20: bool | None = None
     close_above_ma60: bool | None = None
+    relative_strength: float | None = None
     rsi: float | None = None
     macd_positive: bool | None = None
     volume_confirmed: bool | None = None
@@ -55,7 +56,7 @@ def score_stock(score_input: ScoreInput) -> StockScore:
         "sentiment": _sentiment_score(score_input, missing),
     }
     total = round(sum(component.score for component in components.values()), 4)
-    expected_fields = 15
+    expected_fields = 16
     confidence = round((expected_fields - len(set(missing))) / expected_fields, 4)
     return StockScore(
         symbol=normalize_a_share_symbol(score_input.symbol),
@@ -98,33 +99,38 @@ def _technical_score(score_input: ScoreInput, missing: list[str]) -> ComponentSc
     score += _bool_points(
         score_input.close_above_ma20,
         "close_above_ma20",
-        5.0,
+        4.0,
         missing,
         reasons,
     )
     score += _bool_points(
         score_input.close_above_ma60,
         "close_above_ma60",
-        5.0,
+        4.0,
         missing,
         reasons,
     )
+    if score_input.relative_strength is None:
+        missing.append("relative_strength")
+    elif score_input.relative_strength >= 0.6:
+        score += 5.0
+        reasons.append("Relative strength ranks in the top 40% of the universe.")
     if score_input.rsi is None:
         missing.append("rsi")
     elif 45 <= score_input.rsi <= 65:
-        score += 5.0
+        score += 4.0
         reasons.append("RSI is in a healthy trend range.")
     score += _bool_points(
         score_input.macd_positive,
         "macd_positive",
-        5.0,
+        4.0,
         missing,
         reasons,
     )
     score += _bool_points(
         score_input.volume_confirmed,
         "volume_confirmed",
-        5.0,
+        4.0,
         missing,
         reasons,
     )

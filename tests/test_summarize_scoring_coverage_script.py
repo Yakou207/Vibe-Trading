@@ -28,12 +28,12 @@ class SummarizeScoringCoverageScriptTest(unittest.TestCase):
                 encoding="utf-8",
             )
             features_path.write_text(
-                "symbol,trade_date,open,high,low,close,volume,amount,source,return_1d,ma20,ma60,ma250,"
+                "symbol,trade_date,open,high,low,close,volume,amount,source,return_1d,return_20d,rs_rank_20d,ma20,ma60,ma250,"
                 "close_above_ma20,close_above_ma60,close_above_ma250,rsi14,macd_line,macd_signal,macd_hist,"
                 "macd_positive,volatility20,limit_up_streak\n"
-                "000001,2026-01-02,10,10,10,10,1000,10000,fixture,0.01,9,8,7,"
+                "000001,2026-01-02,10,10,10,10,1000,10000,fixture,0.01,0.12,0.8,9,8,7,"
                 "true,true,true,55,0.1,0.05,0.05,true,0.02,1\n"
-                "000002,2026-01-02,20,20,20,20,0,20000,fixture,-0.02,21,22,23,"
+                "000002,2026-01-02,20,20,20,20,0,20000,fixture,-0.02,-0.03,0.2,21,22,23,"
                 "false,false,false,,0.0,0.05,-0.05,false,0.03,\n",
                 encoding="utf-8",
             )
@@ -86,7 +86,7 @@ class SummarizeScoringCoverageScriptTest(unittest.TestCase):
         self.assertEqual(payload["missing_field_counts"]["rsi"], 1)
         self.assertEqual(payload["missing_field_counts"]["main_net_inflow"], 1)
         self.assertEqual(payload["missing_field_rates"]["pe"], 0.5)
-        self.assertEqual(payload["confidence_average"], 0.6333)
+        self.assertEqual(payload["confidence_average"], 0.6562)
 
 
 if __name__ == "__main__":

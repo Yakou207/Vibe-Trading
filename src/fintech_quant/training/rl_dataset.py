@@ -12,6 +12,8 @@ from fintech_quant.research.scoring import build_score_input, build_stock_scores
 
 DEFAULT_RL_STATE_FIELDS = (
     "return_1d",
+    "return_20d",
+    "rs_rank_20d",
     "close_above_ma20",
     "close_above_ma60",
     "close_above_ma250",

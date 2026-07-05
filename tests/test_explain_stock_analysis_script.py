@@ -26,10 +26,10 @@ class ExplainStockAnalysisScriptTest(unittest.TestCase):
 
             universe_path.write_text("symbol,name,sector\n000001,平安银行,银行\n", encoding="utf-8")
             features_path.write_text(
-                "symbol,trade_date,open,high,low,close,volume,amount,source,return_1d,ma20,ma60,ma250,"
+                "symbol,trade_date,open,high,low,close,volume,amount,source,return_1d,return_20d,rs_rank_20d,ma20,ma60,ma250,"
                 "close_above_ma20,close_above_ma60,close_above_ma250,rsi14,macd_line,macd_signal,macd_hist,"
                 "macd_positive,volatility20,limit_up_streak\n"
-                "000001,2026-01-02,10,10,10,10,1000,10000,fixture,0.01,9,8,7,"
+                "000001,2026-01-02,10,10,10,10,1000,10000,fixture,0.01,0.12,0.8,9,8,7,"
                 "true,true,true,55,0.1,0.05,0.05,true,0.02,1\n",
                 encoding="utf-8",
             )
@@ -102,6 +102,7 @@ class ExplainStockAnalysisScriptTest(unittest.TestCase):
         self.assertEqual(payload["components"]["sentiment"]["max_score"], 15.0)
         self.assertEqual(payload["components"]["sentiment"]["weight_pct"], 15.0)
         self.assertEqual(payload["inputs"]["fundamental"]["pe"], 18.0)
+        self.assertEqual(payload["inputs"]["technical"]["relative_strength"], 0.8)
         self.assertEqual(payload["inputs"]["technical"]["rsi"], 55.0)
         self.assertEqual(payload["inputs"]["capital_flow"]["main_net_inflow"], 1000.0)
         self.assertEqual(payload["inputs"]["sentiment"]["limit_up_streak"], 1)
