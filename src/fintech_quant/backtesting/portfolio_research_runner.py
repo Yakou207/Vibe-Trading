@@ -24,6 +24,7 @@ class PortfolioBacktestTrade:
     cash: float
     position: int
     reason: str
+    realized_pnl: float | None = None
 
 
 @dataclass(frozen=True)
@@ -301,6 +302,7 @@ def _sell_position(
     sell_price = round(close * (1.0 - slippage_rate), 6)
     notional = round(position.shares * sell_price, 6)
     commission = round(notional * commission_rate, 6)
+    realized_pnl = round((sell_price - position.cost_basis) * position.shares - commission, 6)
     next_cash = cash + notional - commission
     trade = PortfolioBacktestTrade(
         trade_date=trade_date,
@@ -313,8 +315,9 @@ def _sell_position(
         cash=round(next_cash, 6),
         position=0,
         reason=reason,
+        realized_pnl=realized_pnl,
     )
-    return trade, next_cash, notional, sell_price > position.cost_basis
+    return trade, next_cash, notional, realized_pnl > 0
 
 
 def _merge_risk_inputs(left: RiskInput, right: RiskInput) -> RiskInput:

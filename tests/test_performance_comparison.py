@@ -44,6 +44,9 @@ class PerformanceComparisonTest(unittest.TestCase):
         from fintech_quant.reports import compare_strategy_reports
 
         baseline = _report("baseline", [100.0, 102.0, 104.0, 106.0])
+        baseline["trades"] = [
+            {"trade_date": "2026-01-03", "symbol": "000001", "action": "SELL", "realized_pnl": 1.0}
+        ]
         candidate = _report(
             "dqn",
             [100.0, 105.0],
@@ -62,6 +65,64 @@ class PerformanceComparisonTest(unittest.TestCase):
         self.assertEqual(comparison.candidate.ending_equity, 105.0)
         self.assertAlmostEqual(comparison.excess_return, 0.030769)
         self.assertEqual(comparison.walk_forward[0]["start_date"], "2026-01-03")
+
+    def test_compare_strategy_reports_aligns_baseline_trade_count_to_candidate_dates(self) -> None:
+        from fintech_quant.reports import compare_strategy_reports
+
+        baseline = _report("baseline", [100.0, 102.0, 104.0, 106.0], trade_count=3, win_rate=0.67)
+        baseline["trades"] = [
+            {"trade_date": "2026-01-01", "symbol": "000001", "action": "BUY"},
+            {"trade_date": "2026-01-03", "symbol": "000001", "action": "SELL"},
+            {"trade_date": "2026-01-04", "symbol": "000002", "action": "BUY"},
+        ]
+        candidate = _report(
+            "dqn",
+            [100.0, 105.0],
+            dates=("2026-01-03", "2026-01-04"),
+            trade_count=1,
+            win_rate=1.0,
+        )
+
+        comparison = compare_strategy_reports(baseline, candidate, align_to_candidate=True)
+
+        self.assertEqual(comparison.baseline.trade_count, 2)
+        self.assertEqual(comparison.baseline.win_rate, 0.0)
+
+    def test_compare_strategy_reports_recomputes_aligned_baseline_win_rate_from_realized_pnl(self) -> None:
+        from fintech_quant.reports import compare_strategy_reports
+
+        baseline = _report("baseline", [100.0, 102.0, 104.0, 106.0], trade_count=3, win_rate=1.0)
+        baseline["trades"] = [
+            {"trade_date": "2026-01-01", "symbol": "000001", "action": "BUY"},
+            {"trade_date": "2026-01-03", "symbol": "000003", "action": "BUY"},
+            {"trade_date": "2026-01-03", "symbol": "000001", "action": "SELL", "realized_pnl": 2.0},
+            {"trade_date": "2026-01-04", "symbol": "000002", "action": "SELL", "realized_pnl": -1.0},
+        ]
+        candidate = _report(
+            "dqn",
+            [100.0, 105.0],
+            dates=("2026-01-03", "2026-01-04"),
+            trade_count=1,
+            win_rate=1.0,
+        )
+
+        comparison = compare_strategy_reports(baseline, candidate, align_to_candidate=True)
+
+        self.assertEqual(comparison.baseline.trade_count, 3)
+        self.assertEqual(comparison.baseline.win_rate, 0.5)
+
+    def test_compare_strategy_reports_requires_baseline_trades_when_aligning(self) -> None:
+        from fintech_quant.reports import compare_strategy_reports
+
+        baseline = _report("baseline", [100.0, 102.0, 104.0, 106.0])
+        candidate = _report(
+            "dqn",
+            [100.0, 105.0],
+            dates=("2026-01-03", "2026-01-04"),
+        )
+
+        with self.assertRaisesRegex(ValueError, "baseline report trades are required"):
+            compare_strategy_reports(baseline, candidate, align_to_candidate=True)
 
     def test_compare_strategy_reports_rejects_missing_trade_statistics(self) -> None:
         from fintech_quant.reports import compare_strategy_reports
@@ -126,7 +187,12 @@ class PerformanceComparisonTest(unittest.TestCase):
             baseline_path = root / "baseline.json"
             candidate_path = root / "candidate.json"
             output_path = root / "comparison.json"
-            baseline_path.write_text(json.dumps(_report("baseline", [100.0, 102.0, 104.0, 106.0])), encoding="utf-8")
+            baseline = _report("baseline", [100.0, 102.0, 104.0, 106.0])
+            baseline["trades"] = [
+                {"trade_date": "2026-01-03", "symbol": "000001", "action": "SELL", "realized_pnl": 1.0},
+                {"trade_date": "2026-01-04", "symbol": "000002", "action": "SELL", "realized_pnl": -1.0},
+            ]
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
             candidate_path.write_text(
                 json.dumps(_report("dqn", [100.0, 105.0], dates=("2026-01-03", "2026-01-04"))),
                 encoding="utf-8",
@@ -153,6 +219,8 @@ class PerformanceComparisonTest(unittest.TestCase):
 
         self.assertIn("aligned_to_candidate=True", completed.stdout)
         self.assertAlmostEqual(payload["baseline"]["initial_equity"], 104.0)
+        self.assertEqual(payload["baseline"]["trade_count"], 2)
+        self.assertEqual(payload["baseline"]["win_rate"], 0.5)
         self.assertAlmostEqual(payload["excess_return"], 0.030769)
 
 

@@ -165,6 +165,8 @@ class ResearchRunTest(unittest.TestCase):
         self.assertGreaterEqual(report.risk_summary["by_action"]["reduce"], 1)
         self.assertEqual(written_risk_summary, report.risk_summary)
         self.assertEqual(trade_actions, ["buy", "sell"])
+        self.assertIn("realized_pnl", report.trades[1])
+        self.assertLess(report.trades[1]["realized_pnl"], 0.0)
         self.assertGreater(len(report.equity_curve), 0)
         self.assertGreater(report.drawdown["max_drawdown"], 0.0)
         self.assertEqual(report.drawdown["max_drawdown"], report.summary["max_drawdown"])

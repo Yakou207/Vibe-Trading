@@ -333,7 +333,7 @@ def _count_by(rows: list[dict[str, object]], field: str) -> dict[str, int]:
 
 def _trade_to_json(trade: object) -> dict[str, object]:
     action = trade.action.value if isinstance(trade.action, TradeAction) else str(trade.action)
-    return {
+    row = {
         "trade_date": trade.trade_date.isoformat(),
         "symbol": trade.symbol,
         "action": action,
@@ -345,6 +345,10 @@ def _trade_to_json(trade: object) -> dict[str, object]:
         "position": trade.position,
         "reason": trade.reason,
     }
+    realized_pnl = getattr(trade, "realized_pnl", None)
+    if realized_pnl is not None:
+        row["realized_pnl"] = realized_pnl
+    return row
 
 
 def _equity_to_json(point: object) -> dict[str, object]:

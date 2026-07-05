@@ -127,6 +127,33 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
         self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
 
+    def test_portfolio_runner_records_realized_pnl_on_sell_trades(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 12.0),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+        risk_inputs = {(date(2026, 1, 2), "000001.SZ"): RiskInput(portfolio_drawdown=0.15)}
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            risk_inputs=risk_inputs,
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+            commission_rate=0.0,
+        )
+
+        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL])
+        self.assertIsNone(result.trades[0].realized_pnl)
+        self.assertEqual(result.trades[1].realized_pnl, 2000.0)
+        self.assertEqual(result.summary["win_rate"], 1.0)
+
     def test_portfolio_runner_does_not_sell_suspended_stock(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 

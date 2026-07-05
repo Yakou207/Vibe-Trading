@@ -73,6 +73,12 @@ def _align_report_to_candidate_dates(
     aligned["equity_curve"] = [
         point for point in raw_curve if _parse_date(point["trade_date"]) in candidate_date_set
     ]
+    aligned_trades = _align_trades_to_dates(baseline_report.get("trades"), candidate_date_set)
+    aligned["trades"] = aligned_trades
+    summary = dict(_summary(aligned))
+    summary["trade_count"] = len(aligned_trades)
+    summary["win_rate"] = _win_rate_from_realized_pnl(aligned_trades)
+    aligned["summary"] = summary
     return aligned
 
 
@@ -122,6 +128,35 @@ def _summary(report: Mapping[str, object]) -> Mapping[str, object]:
     if not isinstance(raw_summary, Mapping):
         raise ValueError("report summary must be an object")
     return raw_summary
+
+
+def _align_trades_to_dates(
+    raw_trades: object,
+    trade_dates: set[date],
+) -> list[Mapping[str, object]]:
+    if not isinstance(raw_trades, list):
+        raise ValueError("baseline report trades are required when aligning to candidate dates")
+    aligned: list[Mapping[str, object]] = []
+    for trade in raw_trades:
+        if not isinstance(trade, Mapping):
+            raise ValueError("report trades must contain objects")
+        if "trade_date" not in trade:
+            raise ValueError("report trades must contain trade_date")
+        if _parse_date(trade["trade_date"]) in trade_dates:
+            aligned.append(trade)
+    return aligned
+
+
+def _win_rate_from_realized_pnl(trades: Sequence[Mapping[str, object]]) -> float:
+    pnl_values: list[float] = []
+    for trade in trades:
+        for field in ("realized_pnl", "pnl", "profit"):
+            if field in trade:
+                pnl_values.append(float(trade[field]))
+                break
+    if not pnl_values:
+        return 0.0
+    return round(sum(1 for value in pnl_values if value > 0) / len(pnl_values), 6)
 
 
 def _require_summary_fields(summary: Mapping[str, object], fields: Sequence[str]) -> None:
