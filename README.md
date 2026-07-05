@@ -75,6 +75,8 @@ python scripts/check_data_sources.py \
 
 The daily pipeline does not run live smoke checks by default. Add `--preflight-data-sources` when you want the pipeline to run `check_data_sources.py` first across the selected universe and write `--data-source-health-output`; add `--preflight-data-source-strict` in CI or a formal daily job when skipped/failed checks should stop the pipeline.
 
+For information-side monitoring, add `--preflight-information-sources` to the daily pipeline. It runs `check_information_sources.py` across the selected universe's stock symbols and sectors before repository fetches, then writes `--information-source-health-output` with per-source record counts, categories, and errors.
+
 Fetch realtime A-share quotes for intraday monitoring or ad-hoc risk checks:
 
 ```bash
@@ -334,7 +336,7 @@ Before a daily run, use the source health check to see per-source record counts 
 ```bash
 python scripts/check_information_sources.py \
   --sources akshare_notice,akshare_policy,akshare_fundamental,akshare_financial_statement \
-  --symbol 000001 \
+  --universe universe.csv \
   --start 2026-01-01 \
   --end 2026-06-30 \
   --output outputs/information_source_health.json

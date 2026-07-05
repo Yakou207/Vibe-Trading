@@ -12,12 +12,14 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 import fetch_information  # noqa: E402
+from fintech_quant.data import load_universe_csv  # noqa: E402
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check information source health without writing repository records.")
     parser.add_argument("--sources", default="akshare_multi")
     parser.add_argument("--input", default=None)
+    parser.add_argument("--universe", default=None, help="Optional selected-universe CSV for symbol and sector checks.")
     parser.add_argument("--symbol", default=None)
     parser.add_argument("--sector", default=None)
     parser.add_argument("--start", required=True)
@@ -30,18 +32,26 @@ def main() -> int:
 
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end)
-    source_rows = [
-        _check_source(source.strip(), args, start, end)
-        for source in args.sources.split(",")
-        if source.strip()
+    source_names = [source.strip() for source in args.sources.split(",") if source.strip()]
+    scope_rows = [
+        {
+            "symbol": symbol,
+            "sector": sector,
+            "sources": [_check_source(source, args, start, end, symbol=symbol, sector=sector) for source in source_names],
+        }
+        for symbol, sector in _health_scopes(args)
     ]
+    source_rows = [source_row for scope in scope_rows for source_row in scope["sources"]]
     payload = {
         "symbol": args.symbol,
         "sector": args.sector,
+        "universe": args.universe,
         "start": args.start,
         "end": args.end,
         "sources": source_rows,
+        "scopes": scope_rows,
         "summary": {
+            "total_scopes": len(scope_rows),
             "total_sources": len(source_rows),
             "ok_sources": sum(1 for row in source_rows if row["status"] == "ok"),
             "error_sources": sum(1 for row in source_rows if row["status"] == "error"),
@@ -57,7 +67,24 @@ def main() -> int:
     return 0
 
 
-def _check_source(source: str, args: argparse.Namespace, start: date, end: date) -> dict[str, object]:
+def _health_scopes(args: argparse.Namespace) -> list[tuple[str | None, str | None]]:
+    if not args.universe:
+        return [(args.symbol, args.sector)]
+    universe = load_universe_csv(Path(args.universe))
+    symbol_scopes = [(member.symbol, None) for member in universe]
+    sector_scopes = [(None, sector) for sector in sorted({member.sector for member in universe if member.sector})]
+    return symbol_scopes + sector_scopes
+
+
+def _check_source(
+    source: str,
+    args: argparse.Namespace,
+    start: date,
+    end: date,
+    *,
+    symbol: str | None,
+    sector: str | None,
+) -> dict[str, object]:
     source_args = argparse.Namespace(
         source=source,
         input=args.input,
@@ -66,10 +93,12 @@ def _check_source(source: str, args: argparse.Namespace, start: date, end: date)
         recent_pages=args.recent_pages,
     )
     try:
-        records = fetch_information._build_fetcher(source_args).fetch(args.symbol, args.sector, start, end)
+        records = fetch_information._build_fetcher(source_args).fetch(symbol, sector, start, end)
     except Exception as exc:
         return {
             "source": source,
+            "symbol": symbol,
+            "sector": sector,
             "status": "error",
             "record_count": 0,
             "error": str(exc),
@@ -77,6 +106,8 @@ def _check_source(source: str, args: argparse.Namespace, start: date, end: date)
         }
     return {
         "source": source,
+        "symbol": symbol,
+        "sector": sector,
         "status": "ok",
         "record_count": len(records),
         "categories": sorted({record.category.value for record in records}),

@@ -79,6 +79,8 @@ def main() -> int:
     )
     parser.add_argument("--data-source-health-output", default="outputs/data_source_health.json")
     parser.add_argument("--preflight-data-source-strict", action="store_true")
+    parser.add_argument("--preflight-information-sources", action="store_true")
+    parser.add_argument("--information-source-health-output", default="outputs/information_source_health.json")
     parser.add_argument("--run-id", default="daily-pipeline-baseline")
     parser.add_argument("--report-output-root", default="outputs/research_runs")
     parser.add_argument("--index-symbol", default="sh000001")
@@ -109,6 +111,31 @@ def main() -> int:
         if args.preflight_data_source_strict:
             preflight_command.append("--strict")
         _run(preflight_command)
+        step_count += 1
+
+    if args.preflight_information_sources:
+        information_health_command = [
+            "scripts/check_information_sources.py",
+            "--sources",
+            args.information_source,
+            "--universe",
+            args.universe,
+            "--start",
+            args.start,
+            "--end",
+            args.end,
+            "--output",
+            args.information_source_health_output,
+            "--report-type",
+            args.report_type,
+            "--recent-page",
+            str(args.recent_page),
+            "--recent-pages",
+            str(args.recent_pages),
+        ]
+        if args.information_input:
+            information_health_command.extend(["--input", args.information_input])
+        _run(information_health_command)
         step_count += 1
 
     for member in universe:
@@ -404,6 +431,8 @@ def main() -> int:
         print(f"stock_analysis_output={args.stock_analysis_output}")
     if args.preflight_data_sources:
         print(f"data_source_health_output={args.data_source_health_output}")
+    if args.preflight_information_sources:
+        print(f"information_source_health_output={args.information_source_health_output}")
     print(f"report_output_root={args.report_output_root}")
     return 0
 

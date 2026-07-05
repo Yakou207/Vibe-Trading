@@ -54,6 +54,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             scoring_coverage_output = root / "scoring_coverage.json"
             stock_analysis_output = root / "stock_analysis.json"
             data_source_health_output = root / "data_source_health.json"
+            information_source_health_output = root / "information_source_health.json"
             report_output_root = root / "reports"
 
             universe_path.write_text("symbol,name,sector\n000001,平安银行,银行\n", encoding="utf-8")
@@ -180,6 +181,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     "tushare_daily",
                     "--data-source-health-output",
                     str(data_source_health_output),
+                    "--preflight-information-sources",
+                    "--information-source-health-output",
+                    str(information_source_health_output),
                     "--run-id",
                     "fixture-pipeline",
                     "--report-output-root",
@@ -195,12 +199,13 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            self.assertIn("pipeline_steps=15", result.stdout)
+            self.assertIn("pipeline_steps=16", result.stdout)
             self.assertIn(f"classified_information_output_dir={classified_information_output_dir}", result.stdout)
             self.assertIn(f"information_summary_output={information_summary_output}", result.stdout)
             self.assertIn(f"dqn_policy_report_output={dqn_policy_report_output}", result.stdout)
             self.assertIn(f"strategy_comparison_output={strategy_comparison_output}", result.stdout)
             self.assertIn(f"stock_analysis_output={stock_analysis_output}", result.stdout)
+            self.assertIn(f"information_source_health_output={information_source_health_output}", result.stdout)
             self.assertTrue(daily_output.exists())
             self.assertTrue(feature_output.exists())
             self.assertTrue(market_output.exists())
@@ -211,6 +216,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             self.assertTrue(scoring_coverage_output.exists())
             self.assertTrue(stock_analysis_output.exists())
             self.assertTrue(data_source_health_output.exists())
+            self.assertTrue(information_source_health_output.exists())
             self.assertTrue((classified_information_output_dir / "manifest.json").exists())
             self.assertTrue((classified_information_output_dir / "text_financial_report.jsonl").exists())
             self.assertTrue((classified_information_output_dir / "selected_universe_stock_data.jsonl").exists())
@@ -228,6 +234,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             scoring_coverage = json.loads(scoring_coverage_output.read_text(encoding="utf-8"))
             stock_analysis = json.loads(stock_analysis_output.read_text(encoding="utf-8"))
             data_source_health = json.loads(data_source_health_output.read_text(encoding="utf-8"))
+            information_source_health = json.loads(information_source_health_output.read_text(encoding="utf-8"))
             classified_manifest = json.loads(
                 (classified_information_output_dir / "manifest.json").read_text(encoding="utf-8")
             )
@@ -267,6 +274,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(data_source_health["symbols"], ["000001.SZ"])
         self.assertEqual(data_source_health["summary"], {"ok": 0, "failed": 0, "skipped": 1})
         self.assertEqual(data_source_health["checks"][0]["name"], "tushare_daily")
+        self.assertEqual(information_source_health["summary"]["total_scopes"], 2)
+        self.assertEqual(information_source_health["summary"]["ok_sources"], 2)
         self.assertEqual(classified_manifest["classes"]["text_financial_report"]["record_count"], 2)
         self.assertEqual(information_summary["by_symbol"]["000001.SZ"]["recent_negative_record_count"], 1)
         self.assertEqual(information_summary["by_sector"]["银行"]["latest_policy_at"], "2026-01-02")
