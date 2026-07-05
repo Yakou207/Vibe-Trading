@@ -42,6 +42,8 @@ def main() -> int:
     parser.add_argument("--market-input", default=None, help="CSV input when --market-source csv.")
     parser.add_argument("--information-output", default="data/raw/information/information.jsonl")
     parser.add_argument("--classified-information-output-dir", default="data/raw/information/classified")
+    parser.add_argument("--information-summary-output", default="outputs/information_repository_summary.json")
+    parser.add_argument("--information-summary-recent-days", type=int, default=30)
     parser.add_argument("--document-root", default="data/raw/information/financial_reports")
     parser.add_argument("--daily-output", default="data/processed/akshare_research_daily.csv")
     parser.add_argument("--feature-output", default="data/processed/akshare_research_features.csv")
@@ -178,6 +180,21 @@ def main() -> int:
             args.information_output,
             "--output-dir",
             args.classified_information_output_dir,
+        ]
+    )
+    step_count += 1
+
+    _run(
+        [
+            "scripts/summarize_information_repository.py",
+            "--input",
+            args.information_output,
+            "--as-of",
+            args.end,
+            "--recent-days",
+            str(args.information_summary_recent_days),
+            "--output",
+            args.information_summary_output,
         ]
     )
     step_count += 1
@@ -370,6 +387,7 @@ def main() -> int:
     print(f"pipeline_steps={step_count}")
     print(f"information_output={args.information_output}")
     print(f"classified_information_output_dir={args.classified_information_output_dir}")
+    print(f"information_summary_output={args.information_summary_output}")
     print(f"feature_output={args.feature_output}")
     print(f"market_output={args.market_output}")
     print(f"rl_output={args.rl_output}")

@@ -26,7 +26,7 @@ Phase 1 implementation notes and system assessment are documented in `docs/phase
 
 ## Daily Pipeline
 
-Use the daily pipeline command to run the practical research loop from one selected-universe file. It fetches/updates the information repository, archives financial-report documents, applies dictionary sentiment tags, refreshes daily bars and features, builds market-state risk input, writes the RL state dataset, reports scoring coverage, and produces a baseline run report:
+Use the daily pipeline command to run the practical research loop from one selected-universe file. It fetches/updates the information repository, archives financial-report documents, applies dictionary sentiment tags, exports classified repository files, writes an information summary, refreshes daily bars and features, builds market-state risk input, writes the RL state dataset, reports scoring coverage, and produces a baseline run report:
 
 ```bash
 python scripts/run_daily_research_pipeline.py \
@@ -37,6 +37,7 @@ python scripts/run_daily_research_pipeline.py \
   --information-source akshare_multi \
   --market-source akshare \
   --classified-information-output-dir data/raw/information/classified \
+  --information-summary-output outputs/information_repository_summary.json \
   --buy-threshold 70 \
   --min-score-confidence 0.8 \
   --max-portfolio-drawdown 0.15 \
@@ -101,7 +102,7 @@ python scripts/evaluate_realtime_risk.py \
   --output outputs/realtime_risk.json
 ```
 
-Summarize the information warehouse after a fetch to review category coverage, stock-data retention, risk tags, source mix, and recent negative records:
+Summarize the information warehouse after a fetch to review category coverage, stock-data retention, risk tags, source mix, per-symbol/per-sector coverage, latest financial-report/policy/stock-data dates, and recent negative records:
 
 ```bash
 python scripts/summarize_information_repository.py \
@@ -119,7 +120,7 @@ python scripts/export_information_repository.py \
   --output-dir data/raw/information/classified
 ```
 
-This writes `text_financial_report.jsonl`, `selected_universe_stock_data.jsonl`, and `manifest.json`. The daily pipeline runs this export after sentiment analysis, so the classified files include updated risk tags and text-sentiment metadata.
+This writes `text_financial_report.jsonl`, `selected_universe_stock_data.jsonl`, and `manifest.json`. The daily pipeline runs this export after sentiment analysis, so the classified files include updated risk tags and text-sentiment metadata. It also writes `outputs/information_repository_summary.json` by default.
 
 ## Phase 2 Baseline Runner
 

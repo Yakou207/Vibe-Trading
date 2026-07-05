@@ -43,6 +43,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             market_input = root / "index.csv"
             information_output = root / "information.jsonl"
             classified_information_output_dir = root / "classified_information"
+            information_summary_output = root / "information_summary.json"
             daily_output = root / "daily.csv"
             feature_output = root / "features.csv"
             market_output = root / "market_state.csv"
@@ -133,6 +134,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     str(information_output),
                     "--classified-information-output-dir",
                     str(classified_information_output_dir),
+                    "--information-summary-output",
+                    str(information_summary_output),
                     "--daily-output",
                     str(daily_output),
                     "--feature-output",
@@ -192,8 +195,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             )
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
-            self.assertIn("pipeline_steps=14", result.stdout)
+            self.assertIn("pipeline_steps=15", result.stdout)
             self.assertIn(f"classified_information_output_dir={classified_information_output_dir}", result.stdout)
+            self.assertIn(f"information_summary_output={information_summary_output}", result.stdout)
             self.assertIn(f"dqn_policy_report_output={dqn_policy_report_output}", result.stdout)
             self.assertIn(f"strategy_comparison_output={strategy_comparison_output}", result.stdout)
             self.assertIn(f"stock_analysis_output={stock_analysis_output}", result.stdout)
@@ -210,6 +214,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             self.assertTrue((classified_information_output_dir / "manifest.json").exists())
             self.assertTrue((classified_information_output_dir / "text_financial_report.jsonl").exists())
             self.assertTrue((classified_information_output_dir / "selected_universe_stock_data.jsonl").exists())
+            self.assertTrue(information_summary_output.exists())
             self.assertTrue((report_output_root / "fixture-pipeline" / "run_report.json").exists())
             information_records = [
                 json.loads(line)
@@ -226,6 +231,7 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             classified_manifest = json.loads(
                 (classified_information_output_dir / "manifest.json").read_text(encoding="utf-8")
             )
+            information_summary = json.loads(information_summary_output.read_text(encoding="utf-8"))
             run_report = json.loads(
                 (report_output_root / "fixture-pipeline" / "run_report.json").read_text(encoding="utf-8")
             )
@@ -262,6 +268,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(data_source_health["summary"], {"ok": 0, "failed": 0, "skipped": 1})
         self.assertEqual(data_source_health["checks"][0]["name"], "tushare_daily")
         self.assertEqual(classified_manifest["classes"]["text_financial_report"]["record_count"], 2)
+        self.assertEqual(information_summary["by_symbol"]["000001.SZ"]["recent_negative_record_count"], 1)
+        self.assertEqual(information_summary["by_sector"]["银行"]["latest_policy_at"], "2026-01-02")
         self.assertEqual(run_report["strategy_config"]["buy_threshold"], 65.0)
         self.assertEqual(run_report["strategy_config"]["min_confidence"], 0.75)
         self.assertEqual(run_report["risk_limits"]["max_main_outflow_days"], 2)

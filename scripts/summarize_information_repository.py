@@ -6,6 +6,7 @@ import sys
 from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -80,8 +81,93 @@ def _build_summary(records: list[InformationRecord], *, as_of: date, recent_days
         "source_counts": dict(Counter(record.source for record in ordered_records)),
         "archive_summary": _archive_summary(ordered_records),
         "keyword_counts": _keyword_counts(ordered_records),
+        "retention_class_summary": _retention_class_summary(
+            ordered_records,
+            recent_cutoff=recent_cutoff,
+            as_of=as_of,
+        ),
+        "by_symbol": _grouped_entity_summary(
+            ordered_records,
+            key_fn=lambda record: record.normalized_symbol,
+            recent_cutoff=recent_cutoff,
+            as_of=as_of,
+        ),
+        "by_sector": _grouped_entity_summary(
+            ordered_records,
+            key_fn=lambda record: record.sector,
+            recent_cutoff=recent_cutoff,
+            as_of=as_of,
+        ),
         "recent_negative_records": [_record_to_summary(record) for record in recent_negative_records[-20:]],
     }
+
+
+def _retention_class_summary(
+    records: list[InformationRecord],
+    *,
+    recent_cutoff: date,
+    as_of: date,
+) -> dict[str, dict[str, object]]:
+    grouped: dict[str, list[InformationRecord]] = {}
+    for record in records:
+        grouped.setdefault(record.retention_class.value, []).append(record)
+    return {
+        retention_class: _entity_summary(class_records, recent_cutoff=recent_cutoff, as_of=as_of)
+        for retention_class, class_records in sorted(grouped.items())
+    }
+
+
+def _grouped_entity_summary(
+    records: list[InformationRecord],
+    *,
+    key_fn: Callable[[InformationRecord], str | None],
+    recent_cutoff: date,
+    as_of: date,
+) -> dict[str, dict[str, object]]:
+    grouped: dict[str, list[InformationRecord]] = {}
+    for record in records:
+        key = key_fn(record)
+        if key:
+            grouped.setdefault(key, []).append(record)
+    return {
+        key: _entity_summary(entity_records, recent_cutoff=recent_cutoff, as_of=as_of)
+        for key, entity_records in sorted(grouped.items())
+    }
+
+
+def _entity_summary(
+    records: list[InformationRecord],
+    *,
+    recent_cutoff: date,
+    as_of: date,
+) -> dict[str, object]:
+    ordered_records = sorted(records, key=lambda record: (record.published_at, record.normalized_symbol or "", record.title))
+    negative_records = [record for record in ordered_records if any(tag in NEGATIVE_RISK_TAGS for tag in record.risk_tags)]
+    recent_negative_records = [
+        record for record in negative_records if recent_cutoff <= record.published_at <= as_of
+    ]
+    return {
+        "record_count": len(ordered_records),
+        "negative_record_count": len(negative_records),
+        "recent_negative_record_count": len(recent_negative_records),
+        "category_counts": dict(Counter(record.category.value for record in ordered_records)),
+        "retention_counts": dict(Counter(record.retention_class.value for record in ordered_records)),
+        "risk_tag_counts": dict(Counter(tag for record in ordered_records for tag in record.risk_tags)),
+        "source_counts": dict(Counter(record.source for record in ordered_records)),
+        "symbols": sorted({record.normalized_symbol for record in ordered_records if record.normalized_symbol}),
+        "sectors": sorted({record.sector for record in ordered_records if record.sector}),
+        "oldest_published_at": ordered_records[0].published_at.isoformat() if ordered_records else None,
+        "newest_published_at": ordered_records[-1].published_at.isoformat() if ordered_records else None,
+        "latest_financial_report_at": _latest_category_date(ordered_records, "financial_report"),
+        "latest_stock_data_at": _latest_category_date(ordered_records, "stock_data"),
+        "latest_policy_at": _latest_category_date(ordered_records, "regulatory_policy"),
+        "recent_negative_titles": [record.title for record in recent_negative_records[-10:]],
+    }
+
+
+def _latest_category_date(records: list[InformationRecord], category: str) -> str | None:
+    dates = [record.published_at for record in records if record.category.value == category]
+    return max(dates).isoformat() if dates else None
 
 
 def _archive_summary(records: list[InformationRecord]) -> dict[str, int]:
