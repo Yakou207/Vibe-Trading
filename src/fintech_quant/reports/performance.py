@@ -24,6 +24,8 @@ class PerformanceSummary:
     max_drawdown: float
     trade_count: int
     win_rate: float
+    win_rate_basis: str = "reported_win_rate"
+    win_rate_sample_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -77,7 +79,10 @@ def _align_report_to_candidate_dates(
     aligned["trades"] = aligned_trades
     summary = dict(_summary(aligned))
     summary["trade_count"] = len(aligned_trades)
-    summary["win_rate"] = _win_rate_from_realized_pnl(aligned_trades)
+    win_rate, win_rate_sample_count = _win_rate_from_realized_pnl(aligned_trades)
+    summary["win_rate"] = win_rate
+    summary["win_rate_basis"] = "closed_trades_realized_pnl"
+    summary["win_rate_sample_count"] = win_rate_sample_count
     aligned["summary"] = summary
     return aligned
 
@@ -101,6 +106,8 @@ def summarize_report(report: Mapping[str, object]) -> PerformanceSummary:
         max_drawdown=round(drawdown.max_drawdown, 6),
         trade_count=int(summary["trade_count"]),
         win_rate=round(float(summary["win_rate"]), 6),
+        win_rate_basis=str(summary.get("win_rate_basis", "reported_win_rate")),
+        win_rate_sample_count=_optional_int(summary.get("win_rate_sample_count")),
     )
 
 
@@ -147,16 +154,20 @@ def _align_trades_to_dates(
     return aligned
 
 
-def _win_rate_from_realized_pnl(trades: Sequence[Mapping[str, object]]) -> float:
+def _win_rate_from_realized_pnl(trades: Sequence[Mapping[str, object]]) -> tuple[float, int]:
     pnl_values: list[float] = []
     for trade in trades:
-        for field in ("realized_pnl", "pnl", "profit"):
-            if field in trade:
-                pnl_values.append(float(trade[field]))
-                break
+        if "realized_pnl" in trade:
+            pnl_values.append(float(trade["realized_pnl"]))
     if not pnl_values:
-        return 0.0
-    return round(sum(1 for value in pnl_values if value > 0) / len(pnl_values), 6)
+        return 0.0, 0
+    return round(sum(1 for value in pnl_values if value > 0) / len(pnl_values), 6), len(pnl_values)
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    return int(value)
 
 
 def _require_summary_fields(summary: Mapping[str, object], fields: Sequence[str]) -> None:
@@ -263,4 +274,6 @@ def _summary_to_json(summary: PerformanceSummary) -> dict[str, object]:
         "max_drawdown": summary.max_drawdown,
         "trade_count": summary.trade_count,
         "win_rate": summary.win_rate,
+        "win_rate_basis": summary.win_rate_basis,
+        "win_rate_sample_count": summary.win_rate_sample_count,
     }

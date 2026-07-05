@@ -153,6 +153,8 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertIsNone(result.trades[0].realized_pnl)
         self.assertEqual(result.trades[1].realized_pnl, 2000.0)
         self.assertEqual(result.summary["win_rate"], 1.0)
+        self.assertEqual(result.summary["win_rate_basis"], "closed_trades_realized_pnl")
+        self.assertEqual(result.summary["win_rate_sample_count"], 1)
 
     def test_portfolio_runner_does_not_sell_suspended_stock(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest

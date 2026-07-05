@@ -29,6 +29,7 @@ class RlPolicyEvaluationTest(unittest.TestCase):
         self.assertEqual(report["summary"]["trade_count"], 1)
         self.assertEqual(report["summary"]["win_rate"], 0.5)
         self.assertEqual(report["summary"]["win_rate_basis"], "positive_reward_steps")
+        self.assertEqual(report["summary"]["win_rate_sample_count"], 2)
         self.assertEqual(
             report["equity_curve"],
             [
@@ -58,6 +59,8 @@ class RlPolicyEvaluationTest(unittest.TestCase):
         self.assertEqual(summary.name, "rl-buy-hold")
         self.assertEqual(summary.trade_count, 1)
         self.assertEqual(summary.win_rate, 0.5)
+        self.assertEqual(summary.win_rate_basis, "positive_reward_steps")
+        self.assertEqual(summary.win_rate_sample_count, 2)
         self.assertEqual(summary.ending_equity, 1.04405)
 
     def test_evaluate_policy_selects_requested_symbol(self) -> None:

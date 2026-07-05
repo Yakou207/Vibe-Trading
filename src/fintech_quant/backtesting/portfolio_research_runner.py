@@ -51,7 +51,7 @@ class PortfolioBacktestResult:
     equity_curve: list[PortfolioDailyEquity]
     risk_warnings: list[PortfolioDatedRiskWarning]
     drawdown: DrawdownResult
-    summary: dict[str, float | int]
+    summary: dict[str, float | int | str]
 
 
 @dataclass
@@ -227,6 +227,8 @@ def run_portfolio_scored_baseline_backtest(
             "risk_warning_count": len(warnings),
             "turnover": round(total_turnover / initial_cash, 6),
             "win_rate": round(closed_wins / closed_count, 6) if closed_count else 0.0,
+            "win_rate_basis": "closed_trades_realized_pnl",
+            "win_rate_sample_count": closed_count,
         },
     )
 

@@ -26,6 +26,8 @@ class PerformanceComparisonTest(unittest.TestCase):
         self.assertGreater(comparison.candidate.sharpe, 0.0)
         self.assertEqual(comparison.candidate.trade_count, 3)
         self.assertEqual(comparison.candidate.win_rate, 0.67)
+        self.assertEqual(comparison.candidate.win_rate_basis, "reported_win_rate")
+        self.assertIsNone(comparison.candidate.win_rate_sample_count)
         self.assertEqual(len(comparison.walk_forward), 2)
         self.assertEqual(comparison.walk_forward[0]["segment"], 1)
         self.assertIn("candidate_return", comparison.walk_forward[0])
@@ -110,6 +112,8 @@ class PerformanceComparisonTest(unittest.TestCase):
 
         self.assertEqual(comparison.baseline.trade_count, 3)
         self.assertEqual(comparison.baseline.win_rate, 0.5)
+        self.assertEqual(comparison.baseline.win_rate_basis, "closed_trades_realized_pnl")
+        self.assertEqual(comparison.baseline.win_rate_sample_count, 2)
 
     def test_compare_strategy_reports_requires_baseline_trades_when_aligning(self) -> None:
         from fintech_quant.reports import compare_strategy_reports
@@ -147,6 +151,8 @@ class PerformanceComparisonTest(unittest.TestCase):
 
         self.assertEqual(payload["baseline"]["name"], "baseline")
         self.assertEqual(payload["candidate"]["name"], "dqn")
+        self.assertEqual(payload["baseline"]["win_rate_basis"], "reported_win_rate")
+        self.assertIsNone(payload["baseline"]["win_rate_sample_count"])
         self.assertIn("excess_return", payload)
         self.assertIn("walk_forward", payload)
 
@@ -221,6 +227,8 @@ class PerformanceComparisonTest(unittest.TestCase):
         self.assertAlmostEqual(payload["baseline"]["initial_equity"], 104.0)
         self.assertEqual(payload["baseline"]["trade_count"], 2)
         self.assertEqual(payload["baseline"]["win_rate"], 0.5)
+        self.assertEqual(payload["baseline"]["win_rate_basis"], "closed_trades_realized_pnl")
+        self.assertEqual(payload["baseline"]["win_rate_sample_count"], 2)
         self.assertAlmostEqual(payload["excess_return"], 0.030769)
 
 

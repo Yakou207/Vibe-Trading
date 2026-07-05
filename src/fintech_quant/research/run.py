@@ -69,7 +69,7 @@ class ResearchRunReport:
     trades: list[dict[str, object]]
     equity_curve: list[dict[str, object]]
     drawdown: dict[str, object]
-    summary: dict[str, float | int]
+    summary: dict[str, float | int | str]
 
 
 def _require_positive(name: str, value: float) -> None:

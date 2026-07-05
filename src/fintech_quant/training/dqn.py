@@ -184,6 +184,7 @@ def evaluate_linear_dqn_policy(
             "trade_count": len(trades),
             "win_rate": round(positive_rewards / reward_count, 6) if reward_count else 0.0,
             "win_rate_basis": "positive_reward_steps",
+            "win_rate_sample_count": reward_count,
         },
     }
 

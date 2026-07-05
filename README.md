@@ -261,7 +261,7 @@ python scripts/evaluate_rl_policy.py \
   --output outputs/research_runs/rl_buy_and_hold/run_report.json
 ```
 
-The output uses the same minimal `run_report.json` fields needed by `scripts/compare_strategy_reports.py`: `run_id`, `strategy_config`, `equity_curve`, `trades`, and `summary`. Its `summary.win_rate` is based on positive reward steps, and the report records this in `summary.win_rate_basis`.
+The output uses the same minimal `run_report.json` fields needed by `scripts/compare_strategy_reports.py`: `run_id`, `strategy_config`, `equity_curve`, `trades`, and `summary`. Its `summary.win_rate` is based on positive reward steps, and the report records this in `summary.win_rate_basis` plus `summary.win_rate_sample_count`.
 
 Train the first lightweight DQN-style candidate policy with no neural-network dependency:
 
@@ -294,7 +294,7 @@ python scripts/compare_strategy_reports.py \
 
 The comparison includes total return, annualized return, Sharpe, max drawdown, trade count, win rate, excess return, and walk-forward segment returns.
 
-Use `--align-to-candidate` when the candidate is an out-of-sample DQN report with a shorter date range; it compares the candidate against the baseline equity curve over the same candidate dates. The daily pipeline can run this comparison automatically when both `--dqn-policy-report-output` and `--strategy-comparison-output` are set, and `--strategy-comparison-align-to-candidate` enables the same date alignment.
+Use `--align-to-candidate` when the candidate is an out-of-sample DQN report with a shorter date range; it compares the candidate against the baseline equity curve over the same candidate dates. The aligned baseline trade count is also filtered to the candidate window, while baseline `win_rate_basis=closed_trades_realized_pnl` remains distinct from DQN `win_rate_basis=positive_reward_steps`. The daily pipeline can run this comparison automatically when both `--dqn-policy-report-output` and `--strategy-comparison-output` are set, and `--strategy-comparison-align-to-candidate` enables the same date alignment.
 
 ## Phase 8 Multi-source Information Fetch
 

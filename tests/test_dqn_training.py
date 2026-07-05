@@ -33,6 +33,8 @@ class DqnTrainingTest(unittest.TestCase):
         self.assertEqual(report["strategy_config"]["policy"], "linear_q_dqn_v0")
         self.assertEqual(report["strategy_config"]["symbol"], "000001.SZ")
         self.assertEqual(report["summary"]["ending_equity"], 1.155)
+        self.assertEqual(report["summary"]["win_rate_basis"], "positive_reward_steps")
+        self.assertEqual(report["summary"]["win_rate_sample_count"], 3)
         self.assertEqual([trade["action"] for trade in report["trades"]], ["buy", "sell", "buy"])
         self.assertIn("weights", report["model"])
 
