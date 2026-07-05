@@ -29,6 +29,7 @@ def normalize_daily_bar(symbol: str, row: Mapping[str, object], source: str) -> 
         "amount": _require_float(row, "amount", ("amount", "成交额")),
         "source": source,
     }
+    _validate_daily_bar_prices(normalized)
     optional_flags = {
         "is_suspended": ("is_suspended", "suspended", "停牌"),
         "limit_up": ("limit_up", "is_limit_up", "涨停"),
@@ -39,6 +40,33 @@ def normalize_daily_bar(symbol: str, row: Mapping[str, object], source: str) -> 
         if value is not None:
             normalized[field] = value
     return normalized
+
+
+def _validate_daily_bar_prices(row: Mapping[str, object]) -> None:
+    open_price = float(row["open"])
+    high_price = float(row["high"])
+    low_price = float(row["low"])
+    close_price = float(row["close"])
+    volume = float(row["volume"])
+    amount = float(row["amount"])
+    for field_name, value in (
+        ("open", open_price),
+        ("high", high_price),
+        ("low", low_price),
+        ("close", close_price),
+    ):
+        if value <= 0:
+            raise ValueError(f"Daily bar field {field_name} must be positive")
+    if volume < 0:
+        raise ValueError("Daily bar field volume must be non-negative")
+    if amount < 0:
+        raise ValueError("Daily bar field amount must be non-negative")
+    if high_price < low_price:
+        raise ValueError("Daily bar high must be greater than or equal to low")
+    if not low_price <= open_price <= high_price:
+        raise ValueError("Daily bar open must be between low and high")
+    if not low_price <= close_price <= high_price:
+        raise ValueError("Daily bar close must be between low and high")
 
 
 def _first_present(row: Mapping[str, object], keys: tuple[str, ...]) -> object | None:

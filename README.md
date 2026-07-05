@@ -145,6 +145,8 @@ Provider mode supports `--source auto`, `--source akshare`, or `--source tushare
 
 Generated features include moving averages, RSI, MACD, daily returns, and rolling volatility for baseline and future DQN research.
 
+Daily bars are validated at the loader boundary before they enter features, risk, or DQN datasets. The normalizer rejects non-positive OHLC prices, `high < low`, open/close prices outside the `[low, high]` range, and negative volume or amount values.
+
 ## Phase 4 Research Run
 
 Phase 4 connects local features, optional fundamentals, capital-flow rows, and information records into a reproducible baseline run:

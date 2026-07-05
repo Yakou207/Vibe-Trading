@@ -129,6 +129,33 @@ class DataLayerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "volume"):
             normalize_daily_bar("000001", row, "akshare")
 
+    def test_normalize_daily_bar_rejects_invalid_ohlc_relationships(self) -> None:
+        from fintech_quant.data.base import normalize_daily_bar
+
+        base_row = {
+            "trade_date": "2026-06-03",
+            "open": "10.2",
+            "high": "10.6",
+            "low": "10.0",
+            "close": "10.4",
+            "volume": "54321",
+            "amount": "76543.2",
+        }
+        cases = [
+            ({"high": "9.9"}, "high must be greater than or equal to low"),
+            ({"open": "10.8"}, "open must be between low and high"),
+            ({"close": "9.8"}, "close must be between low and high"),
+            ({"low": "0"}, "low must be positive"),
+            ({"volume": "-1"}, "volume must be non-negative"),
+            ({"amount": "-1"}, "amount must be non-negative"),
+        ]
+
+        for override, expected_error in cases:
+            with self.subTest(override=override):
+                row = {**base_row, **override}
+                with self.assertRaisesRegex(ValueError, expected_error):
+                    normalize_daily_bar("000001", row, "akshare")
+
     def test_provider_registry_auto_routes_a_share_to_akshare(self) -> None:
         from fintech_quant.data.base import MarketDataProvider
         from fintech_quant.data.registry import ProviderRegistry
