@@ -219,6 +219,8 @@ The risk engine exposes an auditable `RISK_RULE_CATALOG` and evaluates warnings 
 | broad_market_abnormal | index_below_annual_ma | broad index below 250-day moving average | watch |
 | systemic_risk | broad_market_drop_gt_3pct_count | more than 15 tracked names fall over 3% | reduce |
 
+Risk warnings in run reports and realtime risk output include `observed_value` and `threshold_value`, so each alert shows the actual trigger value beside the configured threshold.
+
 ## Phase 5 A-share Execution Constraints
 
 Phase 5 wires practical A-share constraints into the multi-symbol portfolio runner:

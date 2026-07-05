@@ -169,6 +169,8 @@ class RiskWarning:
     rule: str
     action: RiskAction
     message: str
+    observed_value: object | None = None
+    threshold_value: object | None = None
 
 
 @dataclass(frozen=True)
@@ -184,34 +186,42 @@ def evaluate_risk(
     warnings: list[RiskWarning] = []
 
     if risk_input.position_weight > limits.max_position_weight:
-        warnings.append(_warning("position_weight"))
+        warnings.append(_warning("position_weight", risk_input.position_weight, limits.max_position_weight))
 
     if risk_input.portfolio_drawdown >= limits.max_portfolio_drawdown:
-        warnings.append(_warning("portfolio_drawdown"))
+        warnings.append(_warning("portfolio_drawdown", risk_input.portfolio_drawdown, limits.max_portfolio_drawdown))
 
     if risk_input.single_position_drawdown > limits.max_single_position_drawdown:
-        warnings.append(_warning("single_position_drawdown"))
+        warnings.append(
+            _warning("single_position_drawdown", risk_input.single_position_drawdown, limits.max_single_position_drawdown)
+        )
 
     if risk_input.st_warning:
-        warnings.append(_warning("st_warning"))
+        warnings.append(_warning("st_warning", risk_input.st_warning, True))
 
     if risk_input.negative_event_count > 0:
-        warnings.append(_warning("negative_event_count"))
+        warnings.append(_warning("negative_event_count", risk_input.negative_event_count, 0))
 
     if risk_input.goodwill_ratio > limits.max_goodwill_ratio:
-        warnings.append(_warning("goodwill_ratio"))
+        warnings.append(_warning("goodwill_ratio", risk_input.goodwill_ratio, limits.max_goodwill_ratio))
 
     if risk_input.pledge_ratio > limits.max_pledge_ratio:
-        warnings.append(_warning("pledge_ratio"))
+        warnings.append(_warning("pledge_ratio", risk_input.pledge_ratio, limits.max_pledge_ratio))
 
     if risk_input.main_outflow_days > limits.max_main_outflow_days:
-        warnings.append(_warning("main_outflow_days"))
+        warnings.append(_warning("main_outflow_days", risk_input.main_outflow_days, limits.max_main_outflow_days))
 
     if risk_input.index_below_annual_ma:
-        warnings.append(_warning("index_below_annual_ma"))
+        warnings.append(_warning("index_below_annual_ma", risk_input.index_below_annual_ma, True))
 
     if risk_input.broad_market_drop_gt_3pct_count > limits.broad_market_drop_threshold:
-        warnings.append(_warning("broad_market_drop_gt_3pct_count"))
+        warnings.append(
+            _warning(
+                "broad_market_drop_gt_3pct_count",
+                risk_input.broad_market_drop_gt_3pct_count,
+                limits.broad_market_drop_threshold,
+            )
+        )
 
     action = _strictest_action([warning.action for warning in warnings])
     return RiskEvaluation(action=action, warnings=warnings)
@@ -223,11 +233,13 @@ def _strictest_action(actions: list[RiskAction]) -> RiskAction:
     return max(actions, key=lambda action: _ACTION_RANK[action])
 
 
-def _warning(rule: str) -> RiskWarning:
+def _warning(rule: str, observed_value: object, threshold_value: object) -> RiskWarning:
     item = _RISK_RULES_BY_NAME[rule]
     return RiskWarning(
         layer=item.layer,
         rule=item.rule,
         action=item.action,
         message=item.message,
+        observed_value=observed_value,
+        threshold_value=threshold_value,
     )

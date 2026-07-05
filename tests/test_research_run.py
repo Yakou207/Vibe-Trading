@@ -152,6 +152,7 @@ class ResearchRunTest(unittest.TestCase):
         scores_by_date = {row["trade_date"]: row for row in report.scores}
         second_day_sentiment = scores_by_date["2026-01-02"]["components"]["sentiment"]
         warning_rules = {row["rule"] for row in report.risk_warnings}
+        warnings_by_rule = {row["rule"]: row for row in report.risk_warnings}
         trade_actions = [row["action"] for row in report.trades]
 
         self.assertLess(second_day_sentiment["score"], scores_by_date["2026-01-01"]["components"]["sentiment"]["score"])
@@ -164,6 +165,10 @@ class ResearchRunTest(unittest.TestCase):
         self.assertEqual(report.risk_summary["by_rule"]["main_outflow_days"], 1)
         self.assertGreaterEqual(report.risk_summary["by_action"]["reduce"], 1)
         self.assertEqual(written_risk_summary, report.risk_summary)
+        self.assertEqual(warnings_by_rule["main_outflow_days"]["observed_value"], 4)
+        self.assertEqual(warnings_by_rule["main_outflow_days"]["threshold_value"], 3)
+        self.assertEqual(warnings_by_rule["broad_market_drop_gt_3pct_count"]["observed_value"], 16)
+        self.assertEqual(warnings_by_rule["broad_market_drop_gt_3pct_count"]["threshold_value"], 15)
         self.assertEqual(trade_actions, ["buy", "sell"])
         self.assertIn("realized_pnl", report.trades[1])
         self.assertLess(report.trades[1]["realized_pnl"], 0.0)

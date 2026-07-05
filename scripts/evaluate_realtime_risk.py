@@ -76,6 +76,8 @@ def main() -> int:
                 "rule": warning.rule,
                 "action": warning.action.value,
                 "message": warning.message,
+                "observed_value": warning.observed_value,
+                "threshold_value": warning.threshold_value,
             }
             for warning in evaluation.warnings
         ],

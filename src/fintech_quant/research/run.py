@@ -287,6 +287,8 @@ def _risk_warning_to_json(warning: object) -> dict[str, object]:
         "rule": warning.rule,
         "action": warning.action,
         "message": warning.message,
+        "observed_value": warning.observed_value,
+        "threshold_value": warning.threshold_value,
     }
 
 

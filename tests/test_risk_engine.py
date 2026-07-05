@@ -29,6 +29,9 @@ class RiskEngineTest(unittest.TestCase):
 
         self.assertEqual(result.action, RiskAction.LIQUIDATE)
         self.assertIn("portfolio_drawdown", {warning.rule for warning in result.warnings})
+        warning = next(warning for warning in result.warnings if warning.rule == "portfolio_drawdown")
+        self.assertEqual(warning.observed_value, 0.15)
+        self.assertEqual(warning.threshold_value, 0.15)
 
     def test_single_stock_and_event_risks_emit_reduce_or_watch(self) -> None:
         from fintech_quant.risk import RiskAction, RiskInput, evaluate_risk
@@ -58,6 +61,11 @@ class RiskEngineTest(unittest.TestCase):
                 "negative_event_count",
             },
         )
+        warning_by_rule = {warning.rule: warning for warning in result.warnings}
+        self.assertEqual(warning_by_rule["goodwill_ratio"].observed_value, 0.31)
+        self.assertEqual(warning_by_rule["goodwill_ratio"].threshold_value, 0.30)
+        self.assertEqual(warning_by_rule["st_warning"].observed_value, True)
+        self.assertEqual(warning_by_rule["st_warning"].threshold_value, True)
 
     def test_market_and_systemic_risks_emit_expected_actions(self) -> None:
         from fintech_quant.risk import RiskAction, RiskInput, evaluate_risk

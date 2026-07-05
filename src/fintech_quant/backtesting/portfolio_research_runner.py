@@ -43,6 +43,8 @@ class PortfolioDatedRiskWarning:
     rule: str
     action: str
     message: str
+    observed_value: object | None = None
+    threshold_value: object | None = None
 
 
 @dataclass(frozen=True)
@@ -373,6 +375,8 @@ def _dated_warnings(
             rule=warning.rule,
             action=warning.action.value,
             message=warning.message,
+            observed_value=warning.observed_value,
+            threshold_value=warning.threshold_value,
         )
         for warning in risk_warnings
     ]

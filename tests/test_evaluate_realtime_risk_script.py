@@ -67,6 +67,8 @@ class EvaluateRealtimeRiskScriptTest(unittest.TestCase):
         self.assertIn("evaluated_at", payload["metadata"])
         self.assertEqual(payload["action"], "reduce")
         self.assertEqual(payload["warnings"][0]["rule"], "broad_market_drop_gt_3pct_count")
+        self.assertEqual(payload["warnings"][0]["observed_value"], 16)
+        self.assertEqual(payload["warnings"][0]["threshold_value"], 15)
 
     def test_realtime_risk_script_merges_risk_input_json_with_quote_drop_count(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
@@ -134,6 +136,11 @@ class EvaluateRealtimeRiskScriptTest(unittest.TestCase):
         self.assertIn("pledge_ratio", warning_rules)
         self.assertIn("main_outflow_days", warning_rules)
         self.assertIn("index_below_annual_ma", warning_rules)
+        warnings_by_rule = {warning["rule"]: warning for warning in payload["warnings"]}
+        self.assertEqual(warnings_by_rule["portfolio_drawdown"]["observed_value"], 0.16)
+        self.assertEqual(warnings_by_rule["portfolio_drawdown"]["threshold_value"], 0.15)
+        self.assertEqual(warnings_by_rule["st_warning"]["observed_value"], True)
+        self.assertEqual(warnings_by_rule["st_warning"]["threshold_value"], True)
 
     def test_realtime_risk_script_uses_custom_limits(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
