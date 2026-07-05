@@ -40,6 +40,9 @@ class DrawdownResult:
     max_drawdown_end: date | None = None
     recovery_date: date | None = None
     episodes: list[DrawdownEpisode] | None = None
+    current_drawdown: float = 0.0
+    current_drawdown_start: date | None = None
+    current_underwater_days: int = 0
 
 
 def calculate_drawdown(
@@ -135,6 +138,8 @@ def calculate_drawdown(
             )
         )
 
+    last_point = drawdown_points[-1]
+    current_drawdown_start = active_episode_start if last_point.drawdown > 0 else None
     return DrawdownResult(
         points=drawdown_points,
         max_drawdown=max_drawdown,
@@ -143,6 +148,13 @@ def calculate_drawdown(
         max_drawdown_end=max_drawdown_end,
         recovery_date=recovery_date,
         episodes=episodes,
+        current_drawdown=last_point.drawdown,
+        current_drawdown_start=current_drawdown_start,
+        current_underwater_days=(
+            (last_point.trade_date - current_drawdown_start).days + 1
+            if current_drawdown_start is not None
+            else 0
+        ),
     )
 
 

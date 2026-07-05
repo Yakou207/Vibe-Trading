@@ -178,6 +178,8 @@ class ResearchRunTest(unittest.TestCase):
         self.assertEqual(report.drawdown["max_drawdown_start"], "2026-01-01")
         self.assertEqual(report.drawdown["max_drawdown_end"], "2026-01-02")
         self.assertIsNone(report.drawdown["recovery_date"])
+        self.assertEqual(report.drawdown["current_drawdown_start"], "2026-01-01")
+        self.assertEqual(report.drawdown["current_underwater_days"], 2)
         self.assertEqual(
             report.drawdown["points"],
             [

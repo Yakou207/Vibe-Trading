@@ -68,6 +68,37 @@ class DrawdownEngineTest(unittest.TestCase):
         self.assertEqual(result.episodes[1].trough_date, date(2026, 1, 4))
         self.assertEqual(result.episodes[1].recovery_date, date(2026, 1, 5))
 
+    def test_reports_current_underwater_state_for_unrecovered_drawdown(self) -> None:
+        from fintech_quant.backtesting.drawdown import EquityPoint, calculate_drawdown
+
+        result = calculate_drawdown(
+            [
+                EquityPoint(date(2026, 1, 1), 100.0),
+                EquityPoint(date(2026, 1, 2), 120.0),
+                EquityPoint(date(2026, 1, 3), 114.0),
+                EquityPoint(date(2026, 1, 5), 108.0),
+            ]
+        )
+
+        self.assertEqual(result.current_drawdown_start, date(2026, 1, 2))
+        self.assertAlmostEqual(result.current_drawdown, 0.1)
+        self.assertEqual(result.current_underwater_days, 4)
+
+    def test_current_underwater_state_resets_after_recovery(self) -> None:
+        from fintech_quant.backtesting.drawdown import EquityPoint, calculate_drawdown
+
+        result = calculate_drawdown(
+            [
+                EquityPoint(date(2026, 1, 1), 100.0),
+                EquityPoint(date(2026, 1, 2), 90.0),
+                EquityPoint(date(2026, 1, 3), 101.0),
+            ]
+        )
+
+        self.assertEqual(result.current_drawdown, 0.0)
+        self.assertIsNone(result.current_drawdown_start)
+        self.assertEqual(result.current_underwater_days, 0)
+
     def test_rejects_empty_equity_curve(self) -> None:
         from fintech_quant.backtesting.drawdown import calculate_drawdown
 

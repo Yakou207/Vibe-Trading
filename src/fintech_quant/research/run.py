@@ -247,6 +247,11 @@ def _report_from_result(
             ),
             "recovery_date": result.drawdown.recovery_date.isoformat() if result.drawdown.recovery_date else None,
             "liquidation_date": result.drawdown.liquidation_date.isoformat() if result.drawdown.liquidation_date else None,
+            "current_drawdown": round(result.drawdown.current_drawdown, 6),
+            "current_drawdown_start": (
+                result.drawdown.current_drawdown_start.isoformat() if result.drawdown.current_drawdown_start else None
+            ),
+            "current_underwater_days": result.drawdown.current_underwater_days,
             "points": [_drawdown_point_to_json(point) for point in result.drawdown.points],
             "episodes": [_drawdown_episode_to_json(episode) for episode in (result.drawdown.episodes or [])],
         },
