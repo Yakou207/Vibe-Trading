@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Sequence
 
@@ -67,16 +68,18 @@ def train_linear_dqn_policy_report(
     learning_rate: float = 0.05,
     gamma: float = 0.0,
     transaction_cost: float = 0.0,
+    eval_start: date | None = None,
 ) -> dict[str, object]:
+    train_samples, eval_samples = _train_eval_split(samples, eval_start)
     policy = train_linear_dqn_policy(
-        samples,
+        train_samples,
         epochs=epochs,
         learning_rate=learning_rate,
         gamma=gamma,
         transaction_cost=transaction_cost,
     )
     report = evaluate_linear_dqn_policy(
-        samples,
+        eval_samples,
         policy,
         run_id=run_id,
         symbol=symbol,
@@ -87,6 +90,9 @@ def train_linear_dqn_policy_report(
             "epochs": epochs,
             "learning_rate": learning_rate,
             "gamma": gamma,
+            "eval_start": eval_start.isoformat() if eval_start else None,
+            "train_sample_count": len(train_samples),
+            "eval_sample_count": len(eval_samples),
         }
     )
     report["model"] = {
@@ -96,6 +102,22 @@ def train_linear_dqn_policy_report(
         "weights": {action: list(values) for action, values in sorted(policy.weights.items())},
     }
     return report
+
+
+def _train_eval_split(
+    samples: Sequence[RlStateSample],
+    eval_start: date | None,
+) -> tuple[list[RlStateSample], list[RlStateSample]]:
+    if eval_start is None:
+        sample_list = list(samples)
+        return sample_list, sample_list
+    train_samples = [sample for sample in samples if sample.trade_date < eval_start]
+    eval_samples = [sample for sample in samples if sample.trade_date >= eval_start]
+    if not train_samples:
+        raise ValueError("eval_start leaves no training samples")
+    if not eval_samples:
+        raise ValueError("eval_start leaves no evaluation samples")
+    return train_samples, eval_samples
 
 
 def evaluate_linear_dqn_policy(

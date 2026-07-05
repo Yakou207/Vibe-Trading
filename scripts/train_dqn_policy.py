@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +26,7 @@ def main() -> int:
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--gamma", type=float, default=0.0)
     parser.add_argument("--transaction-cost", type=float, default=0.0)
+    parser.add_argument("--eval-start", default=None, help="First trade date used for out-of-sample evaluation.")
     parser.add_argument("--run-id", default="linear-q-dqn")
     args = parser.parse_args()
 
@@ -37,6 +39,7 @@ def main() -> int:
             learning_rate=args.learning_rate,
             gamma=args.gamma,
             transaction_cost=args.transaction_cost,
+            eval_start=date.fromisoformat(args.eval_start) if args.eval_start else None,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
@@ -46,6 +49,9 @@ def main() -> int:
     print(f"report_path={output_path}")
     print(f"policy={report['strategy_config']['policy']}")
     print(f"symbol={report['strategy_config']['symbol']}")
+    print(f"eval_start={report['strategy_config']['eval_start']}")
+    print(f"train_sample_count={report['strategy_config']['train_sample_count']}")
+    print(f"eval_sample_count={report['strategy_config']['eval_sample_count']}")
     print(f"ending_equity={report['summary']['ending_equity']}")
     print(f"total_return={report['summary']['total_return']}")
     return 0

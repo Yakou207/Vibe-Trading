@@ -270,12 +270,13 @@ python scripts/train_dqn_policy.py \
   --epochs 50 \
   --learning-rate 0.05 \
   --gamma 0 \
+  --eval-start 2026-05-01 \
   --transaction-cost 0.001 \
   --run-id linear-q-dqn \
   --output outputs/research_runs/linear_q_dqn/run_report.json
 ```
 
-This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `buy`, `sell`, and `hold`. It is intentionally small so it can be compared against the scored baseline before adding PyTorch replay-buffer DQN.
+This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `buy`, `sell`, and `hold`. It is intentionally small so it can be compared against the scored baseline before adding PyTorch replay-buffer DQN. When `--eval-start` is set, rows before that date train the policy and rows on or after that date produce the out-of-sample report.
 
 ## Phase 7 Strategy Comparison
 
