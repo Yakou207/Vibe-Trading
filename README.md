@@ -200,7 +200,7 @@ python scripts/analyze_stock_scores.py \
   --output outputs/stock_score_analysis.json
 ```
 
-Each record includes total score, confidence, missing fields, and the 35/25/25/15 component scores with max score, weight, and rule-based reasons.
+Each record includes total score, confidence, missing fields, and the 35/25/25/15 component scores with max score, weight, rule-based reasons, and the concrete input values used by each component.
 
 ## Risk Matrix
 

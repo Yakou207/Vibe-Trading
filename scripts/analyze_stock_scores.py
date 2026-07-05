@@ -10,8 +10,8 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from fintech_quant.reports import build_factor_analysis_report, write_factor_analysis_report  # noqa: E402
-from fintech_quant.research.dataset import load_research_dataset  # noqa: E402
-from fintech_quant.research.scoring import build_stock_scores  # noqa: E402
+from fintech_quant.research.dataset import ResearchDataset, load_research_dataset  # noqa: E402
+from fintech_quant.research.scoring import build_score_input, build_stock_scores  # noqa: E402
 
 
 def main() -> int:
@@ -33,7 +33,17 @@ def main() -> int:
         capital_flow_path=_optional_path(args.capital_flow),
         market_state_path=_optional_path(args.market_state),
     )
-    report = build_factor_analysis_report(build_stock_scores(dataset))
+    scores = build_stock_scores(dataset)
+    score_inputs = {
+        (row.trade_date, row.symbol): build_score_input(
+            row,
+            _supplement_for(dataset, "fundamentals", row.symbol, row.trade_date),
+            _supplement_for(dataset, "capital_flow", row.symbol, row.trade_date),
+            dataset.information_records,
+        )
+        for row in dataset.features
+    }
+    report = build_factor_analysis_report(scores, score_inputs)
     output_path = Path(args.output)
     write_factor_analysis_report(output_path, report)
     print(f"analysis_path={output_path}")
@@ -43,6 +53,11 @@ def main() -> int:
 
 def _optional_path(value: str | None) -> Path | None:
     return Path(value) if value else None
+
+
+def _supplement_for(dataset: ResearchDataset, kind: str, symbol: str, trade_date: object) -> object | None:
+    rows = dataset.fundamentals if kind == "fundamentals" else dataset.capital_flow
+    return rows.get((symbol, trade_date)) or rows.get((symbol, None))
 
 
 if __name__ == "__main__":
