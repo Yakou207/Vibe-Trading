@@ -292,6 +292,115 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--dqn-policy-report-output is required", result.stderr)
 
+    def test_daily_pipeline_passes_dqn_eval_start_and_compares_candidate_dates(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        env.pop("TUSHARE_TOKEN", None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            bars_path = root / "bars.json"
+            information_input = root / "seed_information.jsonl"
+            market_input = root / "index.csv"
+            dqn_policy_report_output = root / "dqn_policy_report.json"
+            strategy_comparison_output = root / "strategy_comparison.json"
+            report_output_root = root / "reports"
+
+            universe_path.write_text("symbol,name,sector\n000001,平安银行,银行\n", encoding="utf-8")
+            bars_path.write_text(
+                json.dumps(
+                    [
+                        _bar("000001", "2026-01-01", 10.0),
+                        _bar("000001", "2026-01-02", 10.5),
+                        _bar("000001", "2026-01-03", 10.4),
+                    ],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            information_input.write_text(
+                json.dumps(
+                    {
+                        "symbol": "000001",
+                        "sector": None,
+                        "published_at": "2026-01-02",
+                        "source": "fixture",
+                        "category": "company_announcement",
+                        "title": "普通公告",
+                        "url": "",
+                        "summary": "普通公告。",
+                        "risk_tags": [],
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            market_input.write_text("date,close\n2026-01-01,100\n2026-01-02,101\n2026-01-03,102\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_daily_research_pipeline.py",
+                    "--universe",
+                    str(universe_path),
+                    "--start",
+                    "2026-01-01",
+                    "--end",
+                    "2026-01-03",
+                    "--price-source",
+                    "json",
+                    "--price-input",
+                    str(bars_path),
+                    "--information-source",
+                    "jsonl",
+                    "--information-input",
+                    str(information_input),
+                    "--market-source",
+                    "csv",
+                    "--market-input",
+                    str(market_input),
+                    "--dqn-policy-report-output",
+                    str(dqn_policy_report_output),
+                    "--dqn-policy-symbol",
+                    "000001.SZ",
+                    "--dqn-epochs",
+                    "20",
+                    "--dqn-eval-start",
+                    "2026-01-02",
+                    "--strategy-comparison-output",
+                    str(strategy_comparison_output),
+                    "--strategy-comparison-align-to-candidate",
+                    "--run-id",
+                    "fixture-pipeline-oos",
+                    "--report-output-root",
+                    str(report_output_root),
+                    "--ma-window",
+                    "2",
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            dqn_report = json.loads(dqn_policy_report_output.read_text(encoding="utf-8"))
+            strategy_comparison = json.loads(strategy_comparison_output.read_text(encoding="utf-8"))
+
+        self.assertIn("dqn_eval_start=2026-01-02", result.stdout)
+        self.assertEqual(dqn_report["strategy_config"]["eval_start"], "2026-01-02")
+        self.assertEqual(dqn_report["strategy_config"]["train_sample_count"], 1)
+        self.assertEqual(dqn_report["strategy_config"]["eval_sample_count"], 1)
+        self.assertEqual(dqn_report["equity_curve"][0]["trade_date"], "2026-01-02")
+        self.assertEqual(strategy_comparison["baseline"]["name"], "fixture-pipeline-oos")
+        self.assertEqual(strategy_comparison["candidate"]["name"], "fixture-pipeline-oos-linear-q-dqn")
+        self.assertEqual(strategy_comparison["walk_forward"][0]["start_date"], "2026-01-02")
+
 
 def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:
     row: dict[str, object] = {

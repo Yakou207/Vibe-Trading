@@ -49,6 +49,7 @@ python scripts/run_daily_research_pipeline.py \
   --rl-policy buy_and_hold \
   --rl-policy-transaction-cost 0.001 \
   --dqn-policy-report-output outputs/research_runs/linear_q_dqn/run_report.json \
+  --dqn-eval-start 2026-05-01 \
   --dqn-policy-transaction-cost 0.001 \
   --strategy-comparison-output outputs/research_runs/baseline_vs_dqn.json \
   --strategy-comparison-align-to-candidate \

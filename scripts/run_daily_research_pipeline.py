@@ -57,6 +57,7 @@ def main() -> int:
     parser.add_argument("--dqn-learning-rate", type=float, default=0.05)
     parser.add_argument("--dqn-gamma", type=float, default=0.0)
     parser.add_argument("--dqn-policy-transaction-cost", type=float, default=0.0)
+    parser.add_argument("--dqn-eval-start", default=None)
     parser.add_argument("--strategy-comparison-output", default=None)
     parser.add_argument("--strategy-comparison-align-to-candidate", action="store_true")
     parser.add_argument("--scoring-coverage-output", default="outputs/scoring_coverage.json")
@@ -274,6 +275,8 @@ def main() -> int:
         ]
         if args.dqn_policy_symbol:
             dqn_policy_command.extend(["--symbol", args.dqn_policy_symbol])
+        if args.dqn_eval_start:
+            dqn_policy_command.extend(["--eval-start", args.dqn_eval_start])
         _run(dqn_policy_command)
         step_count += 1
 
@@ -355,6 +358,8 @@ def main() -> int:
         print(f"rl_policy_report_output={args.rl_policy_report_output}")
     if args.dqn_policy_report_output:
         print(f"dqn_policy_report_output={args.dqn_policy_report_output}")
+    if args.dqn_eval_start:
+        print(f"dqn_eval_start={args.dqn_eval_start}")
     if args.strategy_comparison_output:
         print(f"strategy_comparison_output={args.strategy_comparison_output}")
     print(f"scoring_coverage_output={args.scoring_coverage_output}")
