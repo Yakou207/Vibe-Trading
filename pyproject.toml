@@ -21,6 +21,7 @@ research = [
 ]
 rl = [
     "gymnasium",
+    "torch",
 ]
 
 [tool.ruff]

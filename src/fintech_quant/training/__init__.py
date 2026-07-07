@@ -18,6 +18,15 @@ from fintech_quant.training.rl_dataset import (
     load_rl_state_jsonl,
     write_rl_state_jsonl,
 )
+from fintech_quant.training.torch_dqn import (
+    TORCH_DQN_POLICY_NAME,
+    TorchDQNConfig,
+    TorchDQNPolicy,
+    evaluate_torch_dqn_policy,
+    train_torch_dqn_policy,
+    train_torch_dqn_policy_report,
+    write_torch_dqn_policy_report,
+)
 
 __all__ = [
     "AShareBuySellHoldEnvironment",
@@ -26,14 +35,21 @@ __all__ = [
     "LinearQPolicy",
     "RlEnvironmentStep",
     "RlStateSample",
+    "TORCH_DQN_POLICY_NAME",
+    "TorchDQNConfig",
+    "TorchDQNPolicy",
     "build_rl_state_samples",
     "evaluate_linear_dqn_policy",
     "evaluate_rl_policy",
+    "evaluate_torch_dqn_policy",
     "group_rl_state_samples_by_symbol",
     "load_rl_state_jsonl",
     "train_linear_dqn_policy",
     "train_linear_dqn_policy_report",
+    "train_torch_dqn_policy",
+    "train_torch_dqn_policy_report",
     "write_dqn_policy_report",
     "write_rl_policy_report",
     "write_rl_state_jsonl",
+    "write_torch_dqn_policy_report",
 ]
