@@ -304,6 +304,23 @@ python scripts/train_dqn_policy.py \
 
 This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `buy`, `sell`, and `hold`. It is intentionally small so it can be compared against the scored baseline before adding PyTorch replay-buffer DQN. Use `--symbol ALL` for selected-universe equal-weight evaluation; omit `--symbol` to evaluate all symbols when the dataset contains more than one symbol, or pass one symbol for single-stock diagnostics. When `--eval-start` is set, rows before that date train the policy and rows on or after that date produce the out-of-sample report. `--drawdown-penalty` subtracts an extra penalty from held losing steps during training, leaving evaluation returns unchanged.
 
+For the PyTorch DQN backend, install the optional RL dependencies and run rolling walk-forward validation on the same RL state JSONL:
+
+```bash
+python scripts/run_dqn_walk_forward.py \
+  --input data/processed/rl_state_dataset.jsonl \
+  --symbol ALL \
+  --train-years 2 \
+  --eval-years 1 \
+  --episodes 5 \
+  --batch-size 64 \
+  --transaction-cost 0.001 \
+  --drawdown-penalty 0.5 \
+  --output outputs/research_runs/torch_dqn_walk_forward/report.json
+```
+
+This trains `torch_dqn_v1` separately inside each train window and evaluates only on the later held-out window. The Q-learning branch history is merged, but the main research path exposes only DQN training commands.
+
 ## Phase 7 Strategy Comparison
 
 Phase 7 compares a baseline `run_report.json` against a candidate report, such as the linear Q DQN-style run:

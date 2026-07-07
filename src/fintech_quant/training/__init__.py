@@ -8,6 +8,13 @@ from fintech_quant.training.dqn import (
     train_linear_dqn_policy_report,
     write_dqn_policy_report,
 )
+from fintech_quant.training.dqn_walk_forward import (
+    DqnWalkForwardWindow,
+    rolling_dqn_windows,
+    run_torch_dqn_walk_forward_report,
+    slice_dqn_window,
+    write_dqn_walk_forward_report,
+)
 from fintech_quant.training.rl_environment import AShareBuySellHoldEnvironment, RlEnvironmentStep
 from fintech_quant.training.rl_policy_eval import evaluate_rl_policy, write_rl_policy_report
 from fintech_quant.training.rl_dataset import (
@@ -32,6 +39,7 @@ __all__ = [
     "AShareBuySellHoldEnvironment",
     "DQN_POLICY_NAME",
     "DEFAULT_RL_STATE_FIELDS",
+    "DqnWalkForwardWindow",
     "LinearQPolicy",
     "RlEnvironmentStep",
     "RlStateSample",
@@ -44,11 +52,15 @@ __all__ = [
     "evaluate_torch_dqn_policy",
     "group_rl_state_samples_by_symbol",
     "load_rl_state_jsonl",
+    "rolling_dqn_windows",
+    "run_torch_dqn_walk_forward_report",
+    "slice_dqn_window",
     "train_linear_dqn_policy",
     "train_linear_dqn_policy_report",
     "train_torch_dqn_policy",
     "train_torch_dqn_policy_report",
     "write_dqn_policy_report",
+    "write_dqn_walk_forward_report",
     "write_rl_policy_report",
     "write_rl_state_jsonl",
     "write_torch_dqn_policy_report",
