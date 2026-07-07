@@ -39,6 +39,7 @@ def train_linear_dqn_policy(
     learning_rate: float = 0.05,
     gamma: float = 0.0,
     transaction_cost: float = 0.0,
+    drawdown_penalty: float = 0.0,
 ) -> LinearQPolicy:
     if not samples:
         raise ValueError("samples must not be empty")
@@ -47,6 +48,8 @@ def train_linear_dqn_policy(
     _require_unit_ratio("gamma", gamma)
     if transaction_cost < 0:
         raise ValueError("transaction_cost must be greater than or equal to 0")
+    if drawdown_penalty < 0:
+        raise ValueError("drawdown_penalty must be greater than or equal to 0")
 
     episodes_by_symbol = group_rl_state_samples_by_symbol(samples)
     first_episode = next(iter(episodes_by_symbol.values()))[0]
@@ -56,7 +59,7 @@ def train_linear_dqn_policy(
     for _epoch in range(epochs):
         for episodes in episodes_by_symbol.values():
             for episode in episodes:
-                weights = _train_episode(weights, episode, learning_rate, gamma, transaction_cost)
+                weights = _train_episode(weights, episode, learning_rate, gamma, transaction_cost, drawdown_penalty)
     return LinearQPolicy(first_sample.state_fields, weights)
 
 
@@ -69,6 +72,7 @@ def train_linear_dqn_policy_report(
     learning_rate: float = 0.05,
     gamma: float = 0.0,
     transaction_cost: float = 0.0,
+    drawdown_penalty: float = 0.0,
     eval_start: date | None = None,
 ) -> dict[str, object]:
     train_samples, eval_samples = _train_eval_split(samples, eval_start)
@@ -78,6 +82,7 @@ def train_linear_dqn_policy_report(
         learning_rate=learning_rate,
         gamma=gamma,
         transaction_cost=transaction_cost,
+        drawdown_penalty=drawdown_penalty,
     )
     report = evaluate_linear_dqn_policy(
         eval_samples,
@@ -91,6 +96,7 @@ def train_linear_dqn_policy_report(
             "epochs": epochs,
             "learning_rate": learning_rate,
             "gamma": gamma,
+            "drawdown_penalty": drawdown_penalty,
             "eval_start": eval_start.isoformat() if eval_start else None,
             "train_sample_count": len(train_samples),
             "eval_sample_count": len(eval_samples),
@@ -100,6 +106,10 @@ def train_linear_dqn_policy_report(
         "type": DQN_POLICY_NAME,
         "observation_fields": list(policy.observation_fields),
         "actions": list(DQN_ACTIONS),
+        "reward_config": {
+            "transaction_cost": transaction_cost,
+            "drawdown_penalty": drawdown_penalty,
+        },
         "weights": {action: list(values) for action, values in sorted(policy.weights.items())},
     }
     return report
@@ -212,6 +222,7 @@ def _train_episode(
     learning_rate: float,
     gamma: float,
     transaction_cost: float,
+    drawdown_penalty: float,
 ) -> dict[str, tuple[float, ...]]:
     updated = dict(weights)
     for index, sample in enumerate(episode):
@@ -220,7 +231,11 @@ def _train_episode(
             features = _features(observation)
             for action in DQN_ACTIONS:
                 next_position = _next_position(position, action)
-                reward = next_position * sample.forward_return_1d
+                reward = _risk_adjusted_reward(
+                    next_position,
+                    sample.forward_return_1d,
+                    drawdown_penalty,
+                )
                 if next_position != position:
                     reward -= transaction_cost
                 target = reward
@@ -237,6 +252,13 @@ def _train_episode(
                     for weight, feature in zip(updated[action], features, strict=True)
                 )
     return updated
+
+
+def _risk_adjusted_reward(next_position: int, forward_return: float, drawdown_penalty: float) -> float:
+    reward = next_position * forward_return
+    if drawdown_penalty <= 0 or next_position == 0 or forward_return >= 0:
+        return reward
+    return reward - (abs(forward_return) * drawdown_penalty)
 
 
 def _features(observation: Sequence[float]) -> tuple[float, ...]:

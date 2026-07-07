@@ -26,6 +26,7 @@ def main() -> int:
     parser.add_argument("--learning-rate", type=float, default=0.05)
     parser.add_argument("--gamma", type=float, default=0.0)
     parser.add_argument("--transaction-cost", type=float, default=0.0)
+    parser.add_argument("--drawdown-penalty", type=float, default=0.0)
     parser.add_argument("--eval-start", default=None, help="First trade date used for out-of-sample evaluation.")
     parser.add_argument("--run-id", default="linear-q-dqn")
     args = parser.parse_args()
@@ -39,6 +40,7 @@ def main() -> int:
             learning_rate=args.learning_rate,
             gamma=args.gamma,
             transaction_cost=args.transaction_cost,
+            drawdown_penalty=args.drawdown_penalty,
             eval_start=date.fromisoformat(args.eval_start) if args.eval_start else None,
         )
     except ValueError as exc:
@@ -50,6 +52,7 @@ def main() -> int:
     print(f"policy={report['strategy_config']['policy']}")
     print(f"symbol={report['strategy_config']['symbol']}")
     print(f"eval_start={report['strategy_config']['eval_start']}")
+    print(f"drawdown_penalty={report['strategy_config']['drawdown_penalty']}")
     print(f"train_sample_count={report['strategy_config']['train_sample_count']}")
     print(f"eval_sample_count={report['strategy_config']['eval_sample_count']}")
     print(f"ending_equity={report['summary']['ending_equity']}")

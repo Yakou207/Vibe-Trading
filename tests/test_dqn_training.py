@@ -66,6 +66,29 @@ class DqnTrainingTest(unittest.TestCase):
         self.assertEqual(report["summary"]["ending_equity"], 1.0)
         self.assertEqual(report["summary"]["trade_count"], 0)
 
+    def test_train_linear_dqn_policy_report_records_drawdown_penalty(self) -> None:
+        from fintech_quant.training import RlStateSample, train_linear_dqn_policy_report
+
+        samples = [
+            RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("signal",), (1.0,), -0.10),
+            RlStateSample("000001.SZ", _date("2026-01-02"), _date("2026-01-03"), ("signal",), (1.0,), -0.10),
+            RlStateSample("000001.SZ", _date("2026-01-03"), _date("2026-01-04"), ("signal",), (1.0,), -0.10),
+        ]
+
+        report = train_linear_dqn_policy_report(
+            samples,
+            run_id="fixture-dqn-risk-aware",
+            symbol="000001.SZ",
+            epochs=40,
+            learning_rate=0.05,
+            gamma=0.0,
+            transaction_cost=0.0,
+            drawdown_penalty=0.5,
+        )
+
+        self.assertEqual(report["strategy_config"]["drawdown_penalty"], 0.5)
+        self.assertEqual(report["model"]["reward_config"]["drawdown_penalty"], 0.5)
+
     def test_evaluate_linear_dqn_policy_defaults_to_all_symbols_equal_weight(self) -> None:
         from fintech_quant.training import LinearQPolicy, RlStateSample, evaluate_linear_dqn_policy
 
@@ -178,6 +201,8 @@ class DqnTrainingTest(unittest.TestCase):
                     "0.05",
                     "--gamma",
                     "0",
+                    "--drawdown-penalty",
+                    "0.5",
                     "--eval-start",
                     "2026-01-04",
                     "--run-id",
@@ -192,7 +217,9 @@ class DqnTrainingTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("eval_start=2026-01-04", result.stdout)
+        self.assertIn("drawdown_penalty=0.5", result.stdout)
         self.assertEqual(payload["strategy_config"]["eval_sample_count"], 1)
+        self.assertEqual(payload["strategy_config"]["drawdown_penalty"], 0.5)
         self.assertEqual(payload["equity_curve"][0]["trade_date"], "2026-01-04")
 
 

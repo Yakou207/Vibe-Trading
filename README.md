@@ -52,6 +52,7 @@ python scripts/run_daily_research_pipeline.py \
   --dqn-policy-report-output outputs/research_runs/linear_q_dqn/run_report.json \
   --dqn-eval-start 2026-05-01 \
   --dqn-policy-transaction-cost 0.001 \
+  --dqn-drawdown-penalty 0.5 \
   --strategy-comparison-output outputs/research_runs/baseline_vs_dqn.json \
   --strategy-comparison-align-to-candidate \
   --scoring-coverage-output outputs/scoring_coverage.json \
@@ -269,7 +270,7 @@ observation = env.reset()  # state_vector plus current position
 step = env.step("buy")     # buy, sell, or hold
 ```
 
-The environment is deliberately small: one symbol per episode, one long/cash position flag, forward-return rewards, and explicit transaction cost. This keeps DQN experiments comparable with the scored baseline before adding more complex execution behavior.
+The environment is deliberately small: one symbol per episode, one long/cash position flag, forward-return rewards, explicit transaction cost, and an optional drawdown penalty. This keeps DQN experiments comparable with the scored baseline before adding more complex execution behavior.
 
 Generate a simple RL-environment policy report as a sanity baseline:
 
@@ -296,11 +297,12 @@ python scripts/train_dqn_policy.py \
   --gamma 0 \
   --eval-start 2026-05-01 \
   --transaction-cost 0.001 \
+  --drawdown-penalty 0.5 \
   --run-id linear-q-dqn \
   --output outputs/research_runs/linear_q_dqn/run_report.json
 ```
 
-This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `buy`, `sell`, and `hold`. It is intentionally small so it can be compared against the scored baseline before adding PyTorch replay-buffer DQN. Use `--symbol ALL` for selected-universe equal-weight evaluation; omit `--symbol` to evaluate all symbols when the dataset contains more than one symbol, or pass one symbol for single-stock diagnostics. When `--eval-start` is set, rows before that date train the policy and rows on or after that date produce the out-of-sample report.
+This trains `linear_q_dqn_v0`, a deterministic linear action-value policy for `buy`, `sell`, and `hold`. It is intentionally small so it can be compared against the scored baseline before adding PyTorch replay-buffer DQN. Use `--symbol ALL` for selected-universe equal-weight evaluation; omit `--symbol` to evaluate all symbols when the dataset contains more than one symbol, or pass one symbol for single-stock diagnostics. When `--eval-start` is set, rows before that date train the policy and rows on or after that date produce the out-of-sample report. `--drawdown-penalty` subtracts an extra penalty from held losing steps during training, leaving evaluation returns unchanged.
 
 ## Phase 7 Strategy Comparison
 

@@ -59,6 +59,7 @@ def main() -> int:
     parser.add_argument("--dqn-learning-rate", type=float, default=0.05)
     parser.add_argument("--dqn-gamma", type=float, default=0.0)
     parser.add_argument("--dqn-policy-transaction-cost", type=float, default=0.0)
+    parser.add_argument("--dqn-drawdown-penalty", type=float, default=0.0)
     parser.add_argument("--dqn-eval-start", default=None)
     parser.add_argument("--strategy-comparison-output", default=None)
     parser.add_argument("--strategy-comparison-align-to-candidate", action="store_true")
@@ -315,6 +316,8 @@ def main() -> int:
             str(args.dqn_gamma),
             "--transaction-cost",
             str(args.dqn_policy_transaction_cost),
+            "--drawdown-penalty",
+            str(args.dqn_drawdown_penalty),
             "--run-id",
             f"{args.run_id}-linear-q-dqn",
         ]
