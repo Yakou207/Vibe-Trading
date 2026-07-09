@@ -76,14 +76,33 @@ def _bars_from_akshare(index_symbol: str, start: date, end: date) -> list[IndexB
             end_date=end.strftime("%Y%m%d"),
         ).to_dict(orient="records")
     except Exception as exc:
-        raise ProviderFetchError(f"akshare index daily fetch failed for {index_symbol!r}") from exc
+        rows = _fallback_index_rows(ak, index_symbol, start, end)
+        if rows is None:
+            raise ProviderFetchError(f"akshare index daily fetch failed for {index_symbol!r}") from exc
     return sorted((_bar_from_row(row) for row in rows), key=lambda bar: bar.trade_date)
+
+
+def _fallback_index_rows(ak: object, index_symbol: str, start: date, end: date) -> list[dict[str, object]] | None:
+    if _normalized_index_code(index_symbol) != "000300":
+        return None
+    try:
+        return ak.stock_zh_index_hist_csindex(
+            symbol="000300",
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+        ).to_dict(orient="records")
+    except Exception:
+        return None
+
+
+def _normalized_index_code(index_symbol: str) -> str:
+    return index_symbol.removeprefix("sh").removeprefix("sz")
 
 
 def _bar_from_row(row: Mapping[str, object]) -> IndexBar:
     return IndexBar(
         trade_date=_parse_date(_first_value(row, "date", "日期", "trade_date")),
-        close=_float(_first_value(row, "close", "收盘", "收盘价", "最新价")),
+        close=_float(_first_value(row, "close", "收盘", "收盘价", "最新价", "index_close")),
     )
 
 
