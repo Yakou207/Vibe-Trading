@@ -91,6 +91,93 @@ class DailyPaperTradingScriptTest(unittest.TestCase):
         self.assertEqual(account_payload["positions"]["000002.SZ"]["shares"], 500)
         self.assertEqual(paper_payload["nav"]["equity"], 100000.0)
 
+    def test_daily_paper_trading_can_use_dqn_report_as_overlay(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            research_report = root / "run_report.json"
+            features = root / "features.csv"
+            dqn_report = root / "dqn_report.json"
+            account = root / "account.json"
+            targets = root / "targets.csv"
+            paper_report = root / "paper_report.json"
+            research_report.write_text(
+                json.dumps(
+                    {
+                        "scores": [
+                            _score("2026-01-02", "000001.SZ", 82.0, 1.0),
+                            _score("2026-01-02", "000002.SZ", 78.0, 1.0),
+                            _score("2026-01-02", "000003.SZ", 75.0, 1.0),
+                        ],
+                        "risk_warnings": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            features.write_text(
+                "symbol,trade_date,close,limit_up,limit_down,is_suspended\n"
+                "000001.SZ,2026-01-02,10,false,false,false\n"
+                "000002.SZ,2026-01-02,20,false,false,false\n"
+                "000003.SZ,2026-01-02,10,false,false,false\n",
+                encoding="utf-8",
+            )
+            dqn_report.write_text(
+                json.dumps(
+                    {
+                        "strategy_config": {"symbols": ["000001.SZ", "000002.SZ", "000003.SZ"]},
+                        "trades": [
+                            {"trade_date": "2026-01-01", "symbol": "000001.SZ", "action": "buy", "position": 1},
+                            {"trade_date": "2026-01-02", "symbol": "000002.SZ", "action": "sell", "position": 0},
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_daily_paper_trading.py",
+                    "--research-report",
+                    str(research_report),
+                    "--features",
+                    str(features),
+                    "--as-of",
+                    "2026-01-02",
+                    "--account",
+                    str(account),
+                    "--targets-output",
+                    str(targets),
+                    "--paper-report",
+                    str(paper_report),
+                    "--dqn-report",
+                    str(dqn_report),
+                    "--buy-threshold",
+                    "70",
+                    "--min-score-confidence",
+                    "0.8",
+                    "--max-position-weight",
+                    "0.10",
+                    "--initial-cash",
+                    "100000",
+                    "--commission-rate",
+                    "0",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            with targets.open(encoding="utf-8", newline="") as handle:
+                target_rows = list(csv.DictReader(handle))
+
+        self.assertIn("target_count=3", completed.stdout)
+        self.assertEqual(
+            [(row["symbol"], row["target_weight"], row["rl_action"]) for row in target_rows],
+            [("000001.SZ", "0.1", "buy"), ("000002.SZ", "0.05", "hold"), ("000003.SZ", "0.05", "hold")],
+        )
+
 
 def _score(trade_date: str, symbol: str, total: float, confidence: float) -> dict[str, object]:
     return {
