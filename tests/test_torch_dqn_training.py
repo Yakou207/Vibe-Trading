@@ -1,15 +1,38 @@
 from __future__ import annotations
 
+import importlib.util
 import unittest
 from datetime import date
 
 
 class TorchDqnTrainingTest(unittest.TestCase):
-    def test_torch_dqn_imports_and_reports_missing_dependency_cleanly(self) -> None:
+    def test_torch_dqn_imports_and_trains_when_dependency_is_available(self) -> None:
         from fintech_quant.training import RlStateSample
         from fintech_quant.training.torch_dqn import TORCH_DQN_POLICY_NAME, TorchDQNConfig, train_torch_dqn_policy
 
         self.assertEqual(TORCH_DQN_POLICY_NAME, "torch_dqn_v1")
+
+        samples = [
+            RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("signal",), (1.0,), 0.10),
+            RlStateSample("000001.SZ", _date("2026-01-02"), _date("2026-01-03"), ("signal",), (-1.0,), -0.10),
+        ]
+
+        if importlib.util.find_spec("torch") is None:
+            with self.assertRaisesRegex(RuntimeError, "PyTorch is required"):
+                train_torch_dqn_policy(samples, TorchDQNConfig(episodes=1, batch_size=2))
+            return
+
+        policy = train_torch_dqn_policy(samples, TorchDQNConfig(episodes=1, batch_size=1))
+
+        self.assertEqual(policy.diagnostics()["type"], "torch_dqn_v1")
+        self.assertEqual(policy.diagnostics()["training_steps"], 2)
+
+    def test_torch_dqn_reports_missing_dependency_cleanly(self) -> None:
+        if importlib.util.find_spec("torch") is not None:
+            self.skipTest("torch is installed")
+
+        from fintech_quant.training import RlStateSample
+        from fintech_quant.training.torch_dqn import TorchDQNConfig, train_torch_dqn_policy
 
         samples = [
             RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("signal",), (1.0,), 0.10),
