@@ -324,6 +324,161 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--dqn-policy-report-output is required", result.stderr)
 
+    def test_daily_pipeline_can_build_universe_from_index_constituents(self) -> None:
+        worktree = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        env.pop("TUSHARE_TOKEN", None)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            constituents_path = root / "constituents.csv"
+            universe_path = root / "csi800_universe.csv"
+            bars_path = root / "bars.json"
+            information_input = root / "seed_information.jsonl"
+            market_input = root / "index.csv"
+            information_output = root / "information.jsonl"
+            classified_information_output_dir = root / "classified_information"
+            information_summary_output = root / "information_summary.json"
+            daily_output = root / "daily.csv"
+            feature_output = root / "features.csv"
+            market_output = root / "market_state.csv"
+            rl_output = root / "rl_state.jsonl"
+            scoring_coverage_output = root / "scoring_coverage.json"
+            report_output_root = root / "reports"
+
+            constituents_path.write_text(
+                "日期,指数代码,指数名称,成分券代码,成分券名称,交易所,权重\n"
+                "2026-06-30,000906,中证800,000001,平安银行,深圳证券交易所,0.246\n"
+                "2026-06-30,000906,中证800,600000,浦发银行,上海证券交易所,0.215\n",
+                encoding="utf-8",
+            )
+            bars_path.write_text(
+                json.dumps(
+                    [
+                        _bar("000001.SZ", "2026-01-01", 10.0),
+                        _bar("000001.SZ", "2026-01-02", 10.5),
+                        _bar("600000.SH", "2026-01-01", 8.0),
+                        _bar("600000.SH", "2026-01-02", 8.2),
+                    ],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                encoding="utf-8",
+            )
+            information_input.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "symbol": "000001.SZ",
+                                "sector": None,
+                                "published_at": "2026-01-02",
+                                "source": "fixture",
+                                "category": "company_announcement",
+                                "title": "平安银行公告",
+                                "url": "",
+                                "summary": "普通公告。",
+                                "risk_tags": [],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                        json.dumps(
+                            {
+                                "symbol": "600000.SH",
+                                "sector": None,
+                                "published_at": "2026-01-02",
+                                "source": "fixture",
+                                "category": "company_announcement",
+                                "title": "浦发银行公告",
+                                "url": "",
+                                "summary": "普通公告。",
+                                "risk_tags": [],
+                            },
+                            ensure_ascii=False,
+                            sort_keys=True,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            market_input.write_text("date,close\n2026-01-01,100\n2026-01-02,101\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_daily_research_pipeline.py",
+                    "--index-universe-code",
+                    "000906",
+                    "--index-universe-source",
+                    "csv",
+                    "--index-universe-input",
+                    str(constituents_path),
+                    "--index-universe-output",
+                    str(universe_path),
+                    "--start",
+                    "2026-01-01",
+                    "--end",
+                    "2026-01-02",
+                    "--price-source",
+                    "json",
+                    "--price-input",
+                    str(bars_path),
+                    "--information-source",
+                    "jsonl",
+                    "--information-input",
+                    str(information_input),
+                    "--market-source",
+                    "csv",
+                    "--market-input",
+                    str(market_input),
+                    "--information-output",
+                    str(information_output),
+                    "--classified-information-output-dir",
+                    str(classified_information_output_dir),
+                    "--information-summary-output",
+                    str(information_summary_output),
+                    "--daily-output",
+                    str(daily_output),
+                    "--feature-output",
+                    str(feature_output),
+                    "--market-output",
+                    str(market_output),
+                    "--rl-output",
+                    str(rl_output),
+                    "--scoring-coverage-output",
+                    str(scoring_coverage_output),
+                    "--run-id",
+                    "index-universe-pipeline",
+                    "--report-output-root",
+                    str(report_output_root),
+                    "--ma-window",
+                    "2",
+                ],
+                cwd=worktree,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr)
+            universe_text = universe_path.read_text(encoding="utf-8")
+            scoring_coverage = json.loads(scoring_coverage_output.read_text(encoding="utf-8"))
+            rl_symbols = {
+                json.loads(line)["symbol"]
+                for line in rl_output.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            }
+
+        self.assertIn("index_universe_output=", result.stdout)
+        self.assertIn("000001.SZ", universe_text)
+        self.assertIn("600000.SH", universe_text)
+        self.assertEqual(scoring_coverage["row_count"], 4)
+        self.assertEqual(rl_symbols, {"000001.SZ", "600000.SH"})
+
     def test_daily_pipeline_passes_dqn_eval_start_and_compares_candidate_dates(self) -> None:
         worktree = Path(__file__).resolve().parents[1]
         env = dict(os.environ)

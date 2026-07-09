@@ -16,7 +16,12 @@ from fintech_quant.data import UniverseMember, load_universe_csv  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the daily A-share research data pipeline.")
-    parser.add_argument("--universe", required=True, help="CSV with selected A-share symbols.")
+    parser.add_argument("--universe", default=None, help="CSV with selected A-share symbols.")
+    parser.add_argument("--index-universe-code", default=None, help="CSI index code used to build the universe CSV first.")
+    parser.add_argument("--index-universe-source", choices=("akshare", "csv"), default="akshare")
+    parser.add_argument("--index-universe-input", default=None, help="CSV constituent fixture when --index-universe-source csv.")
+    parser.add_argument("--index-universe-output", default=None, help="Generated index universe CSV path.")
+    parser.add_argument("--index-universe-max-members", type=int, default=None)
     parser.add_argument("--start", required=True, help="Pipeline start date, YYYY-MM-DD.")
     parser.add_argument("--end", required=True, help="Pipeline end date, YYYY-MM-DD.")
     parser.add_argument("--price-source", choices=("json", "auto", "akshare", "tushare"), default="akshare")
@@ -92,16 +97,35 @@ def main() -> int:
     args = parser.parse_args()
 
     _validate_args(args)
-    universe = load_universe_csv(Path(args.universe))
+    universe_path = _resolve_universe_path(args)
 
     step_count = 0
+    if args.index_universe_code:
+        index_universe_command = [
+            "scripts/fetch_index_universe.py",
+            "--source",
+            args.index_universe_source,
+            "--index-code",
+            args.index_universe_code,
+            "--output",
+            universe_path,
+        ]
+        if args.index_universe_input:
+            index_universe_command.extend(["--input", args.index_universe_input])
+        if args.index_universe_max_members is not None:
+            index_universe_command.extend(["--max-members", str(args.index_universe_max_members)])
+        _run(index_universe_command)
+        step_count += 1
+
+    universe = load_universe_csv(Path(universe_path))
+
     if args.preflight_data_sources:
         preflight_command = [
             "scripts/check_data_sources.py",
             "--checks",
             args.preflight_data_source_checks,
             "--universe",
-            args.universe,
+            universe_path,
             "--start",
             args.start,
             "--end",
@@ -120,7 +144,7 @@ def main() -> int:
             "--sources",
             args.information_source,
             "--universe",
-            args.universe,
+            universe_path,
             "--start",
             args.start,
             "--end",
@@ -232,7 +256,7 @@ def main() -> int:
         "--source",
         args.price_source,
         "--universe",
-        args.universe,
+        universe_path,
         "--daily-output",
         args.daily_output,
         "--feature-output",
@@ -271,7 +295,7 @@ def main() -> int:
             "--features",
             args.feature_output,
             "--universe",
-            args.universe,
+            universe_path,
             "--information",
             args.information_output,
             "--market-state",
@@ -334,7 +358,7 @@ def main() -> int:
             "--features",
             args.feature_output,
             "--universe",
-            args.universe,
+            universe_path,
             "--information",
             args.information_output,
             "--market-state",
@@ -352,7 +376,7 @@ def main() -> int:
                 "--features",
                 args.feature_output,
                 "--universe",
-                args.universe,
+                universe_path,
                 "--information",
                 args.information_output,
                 "--market-state",
@@ -371,7 +395,7 @@ def main() -> int:
             "--features",
             args.feature_output,
             "--universe",
-            args.universe,
+            universe_path,
             "--information",
             args.information_output,
             "--market-state",
@@ -415,6 +439,8 @@ def main() -> int:
         step_count += 1
 
     print(f"pipeline_steps={step_count}")
+    if args.index_universe_code:
+        print(f"index_universe_output={universe_path}")
     print(f"information_output={args.information_output}")
     print(f"classified_information_output_dir={args.classified_information_output_dir}")
     print(f"information_summary_output={args.information_summary_output}")
@@ -441,6 +467,10 @@ def main() -> int:
 
 
 def _validate_args(args: argparse.Namespace) -> None:
+    if not args.universe and not args.index_universe_code:
+        raise SystemExit("--universe or --index-universe-code is required")
+    if args.index_universe_source == "csv" and args.index_universe_code and not args.index_universe_input:
+        raise SystemExit("--index-universe-input is required when --index-universe-source csv")
     if args.price_source == "json" and not args.price_input:
         raise SystemExit("--price-input is required when --price-source json")
     if args.information_source == "jsonl" and not args.information_input:
@@ -449,6 +479,14 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--market-input is required when --market-source csv")
     if args.strategy_comparison_output and not args.dqn_policy_report_output:
         raise SystemExit("--dqn-policy-report-output is required when --strategy-comparison-output is set")
+
+
+def _resolve_universe_path(args: argparse.Namespace) -> str:
+    if not args.index_universe_code:
+        return str(args.universe)
+    if args.index_universe_output:
+        return str(args.index_universe_output)
+    return f"data/processed/index_universe_{args.index_universe_code}.csv"
 
 
 def _universe_sectors(universe: Sequence[UniverseMember]) -> list[str]:
