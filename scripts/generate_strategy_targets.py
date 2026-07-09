@@ -30,9 +30,9 @@ def main() -> int:
         min_score_confidence=args.min_score_confidence,
         max_position_weight=args.max_position_weight,
         max_targets=args.max_targets,
-        rl_signals=_load_rl_signals(Path(args.rl_signals), args.as_of) if args.rl_signals else {},
+        rl_signals=load_rl_signals(Path(args.rl_signals), args.as_of) if args.rl_signals else {},
     )
-    _write_targets(Path(args.output), targets)
+    write_targets(Path(args.output), targets)
     print(f"target_count={len(targets)}")
     print(f"output={args.output}")
     return 0
@@ -101,7 +101,7 @@ def _overlay_weight(max_position_weight: float, rl_action: str) -> float:
     raise ValueError(f"unsupported rl_action: {rl_action!r}")
 
 
-def _load_rl_signals(path: Path, as_of: str) -> dict[str, str]:
+def load_rl_signals(path: Path, as_of: str) -> dict[str, str]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         return {
             str(row["symbol"]): str(row["rl_action"])
@@ -110,7 +110,7 @@ def _load_rl_signals(path: Path, as_of: str) -> dict[str, str]:
         }
 
 
-def _write_targets(path: Path, targets: list[dict[str, object]]) -> None:
+def write_targets(path: Path, targets: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=FIELDS)
