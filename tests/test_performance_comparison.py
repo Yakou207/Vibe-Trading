@@ -33,6 +33,27 @@ class PerformanceComparisonTest(unittest.TestCase):
         self.assertIn("candidate_return", comparison.walk_forward[0])
         self.assertIn("excess_return", comparison.walk_forward[0])
 
+    def test_compare_strategy_reports_outputs_benchmark_relative_metrics(self) -> None:
+        from fintech_quant.reports import compare_strategy_reports
+
+        baseline = _report("baseline", [100.0, 102.0, 101.0, 104.0])
+        candidate = _report("dqn", [100.0, 103.0, 105.0, 108.0], trade_count=3, win_rate=0.67)
+        benchmark = _benchmark([100.0, 101.0, 99.0, 102.0])
+
+        comparison = compare_strategy_reports(
+            baseline,
+            candidate,
+            walk_forward_segments=2,
+            benchmark_curves={"sse": benchmark},
+        )
+
+        self.assertAlmostEqual(comparison.benchmarks["sse"].total_return, 0.02)
+        self.assertAlmostEqual(comparison.candidate_vs_benchmark["sse"]["excess_return"], 0.06)
+        self.assertIn("tracking_max_drawdown", comparison.candidate_vs_benchmark["sse"])
+        self.assertIn("candidate_benchmark_excess_return", comparison.walk_forward[0])
+        self.assertAlmostEqual(comparison.walk_forward[0]["benchmark_return"], -0.01)
+        self.assertAlmostEqual(comparison.walk_forward[0]["candidate_benchmark_excess_return"], 0.06)
+
     def test_compare_strategy_reports_rejects_mismatched_equity_dates(self) -> None:
         from fintech_quant.reports import compare_strategy_reports
 
@@ -231,6 +252,45 @@ class PerformanceComparisonTest(unittest.TestCase):
         self.assertEqual(payload["baseline"]["win_rate_sample_count"], 2)
         self.assertAlmostEqual(payload["excess_return"], 0.030769)
 
+    def test_compare_strategy_reports_script_writes_benchmark_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            baseline_path = root / "baseline.json"
+            candidate_path = root / "candidate.json"
+            benchmark_path = root / "sse.csv"
+            output_path = root / "comparison.json"
+            baseline_path.write_text(json.dumps(_report("baseline", [100.0, 102.0, 104.0])), encoding="utf-8")
+            candidate_path.write_text(json.dumps(_report("dqn", [100.0, 103.0, 106.0])), encoding="utf-8")
+            benchmark_path.write_text(
+                "trade_date,index_close\n2026-01-01,100\n2026-01-02,101\n2026-01-03,102\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/compare_strategy_reports.py",
+                    "--baseline",
+                    str(baseline_path),
+                    "--candidate",
+                    str(candidate_path),
+                    "--benchmark",
+                    f"sse={benchmark_path}",
+                    "--output",
+                    str(output_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertIn("benchmark=sse", completed.stdout)
+        self.assertIn("sse", payload["benchmarks"])
+        self.assertAlmostEqual(payload["candidate_vs_benchmark"]["sse"]["excess_return"], 0.04)
+        self.assertIn("tracking_max_drawdown", payload["candidate_vs_benchmark"]["sse"])
+
 
 def _report(
     run_id: str,
@@ -255,6 +315,14 @@ def _report(
             "win_rate": win_rate,
         },
     }
+
+
+def _benchmark(index_closes: list[float]) -> list[dict[str, object]]:
+    dates = ("2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04")
+    return [
+        {"trade_date": trade_date, "index_close": close}
+        for trade_date, close in zip(dates, index_closes, strict=True)
+    ]
 
 
 if __name__ == "__main__":

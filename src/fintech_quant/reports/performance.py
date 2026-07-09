@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -29,11 +29,23 @@ class PerformanceSummary:
 
 
 @dataclass(frozen=True)
+class BenchmarkSummary:
+    name: str
+    initial_equity: float
+    ending_equity: float
+    total_return: float
+    max_drawdown: float
+
+
+@dataclass(frozen=True)
 class StrategyComparison:
     baseline: PerformanceSummary
     candidate: PerformanceSummary
     excess_return: float
-    walk_forward: list[dict[str, float | int | str]]
+    walk_forward: list[dict[str, object]]
+    benchmarks: dict[str, BenchmarkSummary] = field(default_factory=dict)
+    baseline_vs_benchmark: dict[str, dict[str, float]] = field(default_factory=dict)
+    candidate_vs_benchmark: dict[str, dict[str, float]] = field(default_factory=dict)
 
 
 def compare_strategy_reports(
@@ -42,6 +54,7 @@ def compare_strategy_reports(
     *,
     walk_forward_segments: int = 4,
     align_to_candidate: bool = False,
+    benchmark_curves: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
 ) -> StrategyComparison:
     if align_to_candidate:
         baseline_report = _align_report_to_candidate_dates(baseline_report, candidate_report)
@@ -50,11 +63,29 @@ def compare_strategy_reports(
     _require_matching_dates(baseline_curve, candidate_curve)
     baseline = summarize_report(baseline_report)
     candidate = summarize_report(candidate_report)
+    aligned_benchmarks = _aligned_benchmark_curves(benchmark_curves or {}, baseline_curve)
     return StrategyComparison(
         baseline=baseline,
         candidate=candidate,
         excess_return=round(candidate.total_return - baseline.total_return, 6),
-        walk_forward=_walk_forward(baseline_curve, candidate_curve, walk_forward_segments),
+        walk_forward=_walk_forward(
+            baseline_curve,
+            candidate_curve,
+            walk_forward_segments,
+            aligned_benchmarks,
+        ),
+        benchmarks={
+            name: _summarize_benchmark(name, curve)
+            for name, curve in aligned_benchmarks.items()
+        },
+        baseline_vs_benchmark={
+            name: _benchmark_relative_metrics(baseline_curve, curve)
+            for name, curve in aligned_benchmarks.items()
+        },
+        candidate_vs_benchmark={
+            name: _benchmark_relative_metrics(candidate_curve, curve)
+            for name, curve in aligned_benchmarks.items()
+        },
     )
 
 
@@ -128,6 +159,63 @@ def _equity_curve(report: Mapping[str, object]) -> list[dict[str, object]]:
         for point in raw_curve
     ]
     return sorted(curve, key=lambda point: point["trade_date"])
+
+
+def _benchmark_curve(name: str, rows: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    if not rows:
+        raise ValueError(f"benchmark {name} must contain at least one row")
+    raw_curve = [
+        {
+            "trade_date": _parse_date(row["trade_date"]),
+            "equity": _benchmark_value(row),
+        }
+        for row in rows
+    ]
+    sorted_curve = sorted(raw_curve, key=lambda point: point["trade_date"])
+    initial = float(sorted_curve[0]["equity"])
+    if initial <= 0:
+        raise ValueError(f"benchmark {name} initial value must be positive")
+    return [
+        {
+            "trade_date": point["trade_date"],
+            "equity": round(float(point["equity"]) / initial, 10),
+        }
+        for point in sorted_curve
+    ]
+
+
+def _benchmark_value(row: Mapping[str, object]) -> float:
+    for key in ("index_close", "close", "equity"):
+        value = row.get(key)
+        if value not in (None, ""):
+            return float(str(value).replace(",", "").strip())
+    raise ValueError("benchmark row must contain index_close, close, or equity")
+
+
+def _aligned_benchmark_curves(
+    benchmark_curves: Mapping[str, Sequence[Mapping[str, object]]],
+    strategy_curve: Sequence[Mapping[str, object]],
+) -> dict[str, list[dict[str, object]]]:
+    return {
+        name: _align_curve_to_dates(_benchmark_curve(name, rows), _curve_dates(strategy_curve), f"benchmark {name}")
+        for name, rows in benchmark_curves.items()
+    }
+
+
+def _align_curve_to_dates(
+    curve: Sequence[Mapping[str, object]],
+    dates: Sequence[date],
+    name: str,
+) -> list[dict[str, object]]:
+    by_date = {point["trade_date"]: point for point in curve}
+    missing = [trade_date for trade_date in dates if trade_date not in by_date]
+    if missing:
+        raise ValueError(f"{name} is missing strategy equity dates")
+    return [dict(by_date[trade_date]) for trade_date in dates]
+
+
+def _curve_dates(curve: Sequence[Mapping[str, object]]) -> list[date]:
+    return [_parse_date(point["trade_date"]) for point in curve]
 
 
 def _summary(report: Mapping[str, object]) -> Mapping[str, object]:
@@ -216,7 +304,8 @@ def _walk_forward(
     baseline_curve: Sequence[Mapping[str, object]],
     candidate_curve: Sequence[Mapping[str, object]],
     segments: int,
-) -> list[dict[str, float | int | str]]:
+    benchmark_curves: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
+) -> list[dict[str, object]]:
     if segments <= 0:
         raise ValueError("walk_forward_segments must be positive")
     interval_count = len(baseline_curve) - 1
@@ -229,23 +318,90 @@ def _walk_forward(
         end = round((index + 1) * interval_count / actual_segments)
         baseline_return = _segment_return(baseline_curve, start, end)
         candidate_return = _segment_return(candidate_curve, start, end)
-        rows.append(
-            {
-                "segment": index + 1,
-                "start_date": baseline_curve[start]["trade_date"].isoformat(),
-                "end_date": baseline_curve[end]["trade_date"].isoformat(),
-                "baseline_return": baseline_return,
-                "candidate_return": candidate_return,
-                "excess_return": round(candidate_return - baseline_return, 6),
-            }
-        )
+        row: dict[str, object] = {
+            "segment": index + 1,
+            "start_date": baseline_curve[start]["trade_date"].isoformat(),
+            "end_date": baseline_curve[end]["trade_date"].isoformat(),
+            "baseline_return": baseline_return,
+            "candidate_return": candidate_return,
+            "excess_return": round(candidate_return - baseline_return, 6),
+        }
+        _add_benchmark_segment_metrics(row, baseline_return, candidate_return, benchmark_curves or {}, start, end)
+        rows.append(row)
     return rows
+
+
+def _add_benchmark_segment_metrics(
+    row: dict[str, object],
+    baseline_return: float,
+    candidate_return: float,
+    benchmark_curves: Mapping[str, Sequence[Mapping[str, object]]],
+    start: int,
+    end: int,
+) -> None:
+    if not benchmark_curves:
+        return
+    for name, curve in benchmark_curves.items():
+        benchmark_return = _segment_return(curve, start, end)
+        row[f"{name}_benchmark_return"] = benchmark_return
+        row[f"{name}_baseline_benchmark_excess_return"] = round(baseline_return - benchmark_return, 6)
+        row[f"{name}_candidate_benchmark_excess_return"] = round(candidate_return - benchmark_return, 6)
+        if len(benchmark_curves) == 1:
+            row["benchmark_return"] = benchmark_return
+            row["baseline_benchmark_excess_return"] = round(baseline_return - benchmark_return, 6)
+            row["candidate_benchmark_excess_return"] = round(candidate_return - benchmark_return, 6)
 
 
 def _segment_return(curve: Sequence[Mapping[str, object]], start: int, end: int) -> float:
     start_equity = float(curve[start]["equity"])
     end_equity = float(curve[end]["equity"])
     return round((end_equity - start_equity) / start_equity, 6) if start_equity else 0.0
+
+
+def _summarize_benchmark(name: str, curve: Sequence[Mapping[str, object]]) -> BenchmarkSummary:
+    drawdown = calculate_drawdown([EquityPoint(point["trade_date"], point["equity"]) for point in curve])
+    initial = float(curve[0]["equity"])
+    ending = float(curve[-1]["equity"])
+    return BenchmarkSummary(
+        name=name,
+        initial_equity=round(initial, 6),
+        ending_equity=round(ending, 6),
+        total_return=round((ending - initial) / initial, 6) if initial else 0.0,
+        max_drawdown=round(drawdown.max_drawdown, 6),
+    )
+
+
+def _benchmark_relative_metrics(
+    strategy_curve: Sequence[Mapping[str, object]],
+    benchmark_curve: Sequence[Mapping[str, object]],
+) -> dict[str, float]:
+    strategy_return = _segment_return(strategy_curve, 0, len(strategy_curve) - 1)
+    benchmark_return = _segment_return(benchmark_curve, 0, len(benchmark_curve) - 1)
+    return {
+        "strategy_total_return": strategy_return,
+        "benchmark_total_return": benchmark_return,
+        "excess_return": round(strategy_return - benchmark_return, 6),
+        "tracking_max_drawdown": _tracking_max_drawdown(strategy_curve, benchmark_curve),
+    }
+
+
+def _tracking_max_drawdown(
+    strategy_curve: Sequence[Mapping[str, object]],
+    benchmark_curve: Sequence[Mapping[str, object]],
+) -> float:
+    relative_curve = []
+    strategy_initial = float(strategy_curve[0]["equity"])
+    benchmark_initial = float(benchmark_curve[0]["equity"])
+    for strategy_point, benchmark_point in zip(strategy_curve, benchmark_curve, strict=True):
+        strategy_net = float(strategy_point["equity"]) / strategy_initial if strategy_initial else 0.0
+        benchmark_net = float(benchmark_point["equity"]) / benchmark_initial if benchmark_initial else 0.0
+        relative_curve.append(
+            EquityPoint(
+                _parse_date(strategy_point["trade_date"]),
+                strategy_net / benchmark_net if benchmark_net else 0.0,
+            )
+        )
+    return round(calculate_drawdown(relative_curve).max_drawdown, 6)
 
 
 def _parse_date(value: object) -> date:
@@ -259,7 +415,23 @@ def _comparison_to_json(comparison: StrategyComparison) -> dict[str, object]:
         "baseline": _summary_to_json(comparison.baseline),
         "candidate": _summary_to_json(comparison.candidate),
         "excess_return": comparison.excess_return,
+        "benchmarks": {
+            name: _benchmark_summary_to_json(summary)
+            for name, summary in comparison.benchmarks.items()
+        },
+        "baseline_vs_benchmark": comparison.baseline_vs_benchmark,
+        "candidate_vs_benchmark": comparison.candidate_vs_benchmark,
         "walk_forward": comparison.walk_forward,
+    }
+
+
+def _benchmark_summary_to_json(summary: BenchmarkSummary) -> dict[str, object]:
+    return {
+        "name": summary.name,
+        "initial_equity": summary.initial_equity,
+        "ending_equity": summary.ending_equity,
+        "total_return": summary.total_return,
+        "max_drawdown": summary.max_drawdown,
     }
 
 
