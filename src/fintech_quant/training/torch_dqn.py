@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from collections import deque
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from random import Random
 from typing import Any, Deque, NamedTuple, Sequence
@@ -100,10 +100,29 @@ class TorchDQNPolicy:
         }
 
 
+@dataclass
+class TorchDQNTrainingRun:
+    policy: TorchDQNPolicy
+    target_network: Any
+    optimizer_state: dict[str, object]
+    replay: Deque[Transition]
+    episodes_trained: int
+    metadata: dict[str, object] = field(default_factory=dict)
+    metrics: dict[str, object] = field(default_factory=dict)
+
+
 def train_torch_dqn_policy(
     samples: Sequence[RlStateSample],
     config: TorchDQNConfig | None = None,
 ) -> TorchDQNPolicy:
+    return train_torch_dqn_policy_run(samples, config).policy
+
+
+def train_torch_dqn_policy_run(
+    samples: Sequence[RlStateSample],
+    config: TorchDQNConfig | None = None,
+    initial_run: TorchDQNTrainingRun | None = None,
+) -> TorchDQNTrainingRun:
     torch = _load_torch()
     nn = torch.nn
     config = config or TorchDQNConfig()
@@ -114,20 +133,40 @@ def train_torch_dqn_policy(
     episodes_by_symbol = group_rl_state_samples_by_symbol(samples)
     first_episode = next(iter(episodes_by_symbol.values()))[0]
     first_sample = first_episode[0]
-    scaler = FeatureScaler.fit(samples)
-    input_size = len(first_sample.state_fields) + 1
-    network = _build_network(nn, input_size, config.hidden_layers, len(DQN_ACTIONS))
-    target_network = _build_network(nn, input_size, config.hidden_layers, len(DQN_ACTIONS))
-    target_network.load_state_dict(network.state_dict())
-    optimizer = torch.optim.Adam(network.parameters(), lr=config.learning_rate)
-    loss_fn = nn.MSELoss()
-    replay: Deque[Transition] = deque(maxlen=config.replay_capacity)
     rng = Random(config.seed)
     torch.manual_seed(config.seed)
-    training_steps = 0
+    if initial_run is None:
+        scaler = FeatureScaler.fit(samples)
+        state_fields = first_sample.state_fields
+        input_size = len(state_fields) + 1
+        network = _build_network(nn, input_size, config.hidden_layers, len(DQN_ACTIONS))
+        target_network = _build_network(nn, input_size, config.hidden_layers, len(DQN_ACTIONS))
+        target_network.load_state_dict(network.state_dict())
+        replay: Deque[Transition] = deque(maxlen=config.replay_capacity)
+        training_steps = 0
+        episodes_trained = 0
+        metadata: dict[str, object] = {}
+        metrics: dict[str, object] = {}
+    else:
+        scaler = initial_run.policy.scaler
+        state_fields = initial_run.policy.state_fields
+        if len(first_sample.state_fields) != len(state_fields):
+            raise ValueError("initial DQN checkpoint state width does not match training samples")
+        network = initial_run.policy.network
+        target_network = initial_run.target_network
+        replay = deque(initial_run.replay, maxlen=config.replay_capacity)
+        training_steps = initial_run.policy.training_steps
+        episodes_trained = initial_run.episodes_trained
+        metadata = dict(initial_run.metadata)
+        metrics = dict(initial_run.metrics)
+
+    optimizer = torch.optim.Adam(network.parameters(), lr=config.learning_rate)
+    if initial_run is not None:
+        optimizer.load_state_dict(initial_run.optimizer_state)
+    loss_fn = nn.MSELoss()
 
     for episode_index in range(config.episodes):
-        epsilon = config.exploration_rate(episode_index)
+        epsilon = config.exploration_rate(episodes_trained + episode_index)
         for episodes in episodes_by_symbol.values():
             for episode in episodes:
                 position = 0
@@ -178,12 +217,28 @@ def train_torch_dqn_policy(
                     equity = next_equity
 
     target_network.load_state_dict(network.state_dict())
-    return TorchDQNPolicy(
+    policy = TorchDQNPolicy(
         network=network,
         scaler=scaler,
-        state_fields=first_sample.state_fields,
+        state_fields=state_fields,
         config=config,
         training_steps=training_steps,
+    )
+    metrics.update(
+        {
+            "episodes_trained": episodes_trained + config.episodes,
+            "training_steps": training_steps,
+            "replay_size": len(replay),
+        }
+    )
+    return TorchDQNTrainingRun(
+        policy=policy,
+        target_network=target_network,
+        optimizer_state=optimizer.state_dict(),
+        replay=replay,
+        episodes_trained=episodes_trained + config.episodes,
+        metadata=metadata,
+        metrics=metrics,
     )
 
 
