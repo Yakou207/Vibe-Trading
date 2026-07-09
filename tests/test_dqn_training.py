@@ -89,6 +89,18 @@ class DqnTrainingTest(unittest.TestCase):
         self.assertEqual(report["strategy_config"]["drawdown_penalty"], 0.5)
         self.assertEqual(report["model"]["reward_config"]["drawdown_penalty"], 0.5)
 
+    def test_linear_dqn_reward_uses_benchmark_relative_excess_return(self) -> None:
+        from fintech_quant.training.dqn import _risk_adjusted_reward
+
+        reward = _risk_adjusted_reward(
+            next_position=1,
+            forward_return=0.04,
+            benchmark_return=0.06,
+            drawdown_penalty=0.0,
+        )
+
+        self.assertEqual(reward, -0.02)
+
     def test_evaluate_linear_dqn_policy_defaults_to_all_symbols_equal_weight(self) -> None:
         from fintech_quant.training import LinearQPolicy, RlStateSample, evaluate_linear_dqn_policy
 

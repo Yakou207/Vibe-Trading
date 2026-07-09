@@ -66,6 +66,21 @@ class TorchDqnTrainingTest(unittest.TestCase):
         self.assertEqual(resumed.episodes_trained, loaded.episodes_trained + 1)
         self.assertGreaterEqual(resumed.policy.training_steps, loaded.policy.training_steps)
 
+    def test_torch_dqn_reward_uses_benchmark_relative_excess_return(self) -> None:
+        from fintech_quant.training.torch_dqn import _reward
+
+        reward = _reward(
+            next_position=1,
+            forward_return=0.04,
+            benchmark_return=0.06,
+            changed_position=False,
+            transaction_cost=0.0,
+            drawdown=0.0,
+            drawdown_penalty=0.0,
+        )
+
+        self.assertEqual(reward, -0.02)
+
     def test_torch_dqn_reports_missing_dependency_cleanly(self) -> None:
         if importlib.util.find_spec("torch") is not None:
             self.skipTest("torch is installed")

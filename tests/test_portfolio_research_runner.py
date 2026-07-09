@@ -24,6 +24,30 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertLessEqual(buy.notional, 8000.0)
         self.assertEqual(result.summary["trade_count"], 1)
 
+    def test_portfolio_runner_scales_new_position_by_decision_confidence(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+        from fintech_quant.strategies.scored_baseline import ScoredBaselineStrategy, ScoredRlOverlayStrategy
+
+        bars = [_bar("000001.SZ", "2026-01-01", 10.0)]
+        scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
+        strategy = ScoredRlOverlayStrategy(
+            base_strategy=ScoredBaselineStrategy(),
+            buy_weight_multiplier=0.5,
+        )
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=100000.0,
+            max_position_weight=0.08,
+            strategy=strategy,
+            strategy_state_overlays={(date(2026, 1, 1), "000001.SZ"): {"rl_action": "buy"}},
+        )
+
+        self.assertEqual(result.trades[0].action, TradeAction.BUY)
+        self.assertEqual(result.trades[0].shares, 400)
+        self.assertEqual(result.trades[0].notional, 4000.0)
+
     def test_portfolio_runner_does_not_sell_same_day_as_buy(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 

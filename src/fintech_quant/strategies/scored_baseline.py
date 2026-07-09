@@ -46,3 +46,56 @@ class ScoredBaselineStrategy(Strategy):
             confidence=score.confidence,
             reason=f"Score {score.total} is below buy threshold {self.buy_threshold}.",
         )
+
+
+@dataclass(frozen=True)
+class ScoredRlOverlayStrategy(Strategy):
+    base_strategy: ScoredBaselineStrategy
+    name: str = "scored_rl_overlay_v0"
+    buy_weight_multiplier: float = 1.0
+    hold_weight_multiplier: float = 0.5
+
+    def decide(self, state: dict[str, Any]) -> TradeDecision:
+        base_decision = self.base_strategy.decide(state)
+        if base_decision.action is TradeAction.SELL:
+            return base_decision
+
+        rl_action = _rl_action(state.get("rl_action"))
+        if rl_action is None:
+            return base_decision
+
+        position_quantity = int(state.get("position_quantity", 0) or 0)
+        if base_decision.action is TradeAction.BUY:
+            if rl_action == "sell":
+                return TradeDecision(
+                    action=TradeAction.HOLD,
+                    confidence=0.0,
+                    reason=f"RL overlay vetoes scored buy. Base reason: {base_decision.reason}",
+                )
+            multiplier = self.buy_weight_multiplier if rl_action == "buy" else self.hold_weight_multiplier
+            return TradeDecision(
+                action=TradeAction.BUY,
+                confidence=_clamp_confidence(base_decision.confidence * multiplier),
+                reason=f"RL overlay {rl_action} scales scored buy. Base reason: {base_decision.reason}",
+            )
+
+        if base_decision.action is TradeAction.HOLD and rl_action == "sell" and position_quantity > 0:
+            return TradeDecision(
+                action=TradeAction.SELL,
+                confidence=1.0,
+                reason=f"RL overlay exit signal while scored baseline is holding. Base reason: {base_decision.reason}",
+            )
+        return base_decision
+
+
+def _rl_action(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"buy", "hold", "sell"}:
+        return text
+    raise ValueError(f"Unsupported rl_action: {value!r}")
+
+
+def _clamp_confidence(value: float) -> float:
+    return min(1.0, max(0.0, round(float(value), 6)))

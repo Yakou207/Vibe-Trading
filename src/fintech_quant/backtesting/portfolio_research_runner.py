@@ -9,6 +9,7 @@ from fintech_quant.backtesting.drawdown import DrawdownResult, EquityPoint, calc
 from fintech_quant.features import StockScore
 from fintech_quant.risk import RiskAction, RiskInput, RiskLimits, RiskWarning, evaluate_risk
 from fintech_quant.strategies.scored_baseline import ScoredBaselineStrategy
+from fintech_quant.strategies.base import Strategy
 from fintech_quant.trading import TradeAction
 
 
@@ -73,7 +74,8 @@ def run_portfolio_scored_baseline_backtest(
     commission_rate: float = 0.0003,
     slippage_rate: float = 0.0,
     constraints: AShareTradingConstraints | None = None,
-    strategy: ScoredBaselineStrategy | None = None,
+    strategy: Strategy | None = None,
+    strategy_state_overlays: Mapping[tuple[date, str], Mapping[str, object]] | None = None,
     risk_limits: RiskLimits | None = None,
 ) -> PortfolioBacktestResult:
     if initial_cash <= 0:
@@ -87,6 +89,7 @@ def run_portfolio_scored_baseline_backtest(
 
     active_strategy = strategy or ScoredBaselineStrategy()
     risk_by_key = risk_inputs or {}
+    overlays_by_key = strategy_state_overlays or {}
     active_risk_limits = (
         replace(risk_limits, max_position_weight=max_position_weight)
         if risk_limits
@@ -144,7 +147,14 @@ def run_portfolio_scored_baseline_backtest(
                     positions.pop(symbol, None)
                 continue
 
-            decision = active_strategy.decide({"score": score, "risk_action": risk.action})
+            overlay_state = overlays_by_key.get((trade_date, symbol), {})
+            state = {
+                "score": score,
+                "risk_action": risk.action,
+                "position_quantity": position.shares,
+            }
+            state.update(overlay_state)
+            decision = active_strategy.decide(state)
 
             if decision.action is TradeAction.SELL and position.shares > 0 and _can_sell(bar, active_constraints, symbol in bought_today):
                 trade, cash, notional, closed_win = _sell_position(
@@ -172,7 +182,10 @@ def run_portfolio_scored_baseline_backtest(
                 and risk.action not in {RiskAction.REDUCE, RiskAction.LIQUIDATE}
             ):
                 buy_price = round(close * (1.0 + slippage_rate), 6)
-                max_notional = min(cash, starting_equity * max_position_weight)
+                target_weight = max_position_weight
+                if overlay_state:
+                    target_weight *= _decision_weight(decision.confidence)
+                max_notional = min(cash, starting_equity * target_weight)
                 shares = _round_lot(int(max_notional // buy_price), active_constraints.lot_size)
                 if shares <= 0:
                     continue
@@ -344,6 +357,10 @@ def _merge_risk_inputs(left: RiskInput, right: RiskInput) -> RiskInput:
 
 def _round_lot(shares: int, lot_size: int) -> int:
     return (shares // lot_size) * lot_size
+
+
+def _decision_weight(confidence: float) -> float:
+    return min(1.0, max(0.0, float(confidence)))
 
 
 def _bar_date(bar: Mapping[str, object]) -> date:

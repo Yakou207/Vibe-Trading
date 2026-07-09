@@ -109,6 +109,7 @@ def train_linear_dqn_policy_report(
         "reward_config": {
             "transaction_cost": transaction_cost,
             "drawdown_penalty": drawdown_penalty,
+            "reward_basis": "benchmark_relative_excess_return",
         },
         "weights": {action: list(values) for action, values in sorted(policy.weights.items())},
     }
@@ -234,6 +235,7 @@ def _train_episode(
                 reward = _risk_adjusted_reward(
                     next_position,
                     sample.forward_return_1d,
+                    sample.benchmark_return_1d,
                     drawdown_penalty,
                 )
                 if next_position != position:
@@ -254,8 +256,14 @@ def _train_episode(
     return updated
 
 
-def _risk_adjusted_reward(next_position: int, forward_return: float, drawdown_penalty: float) -> float:
-    reward = next_position * forward_return
+def _risk_adjusted_reward(
+    next_position: int,
+    forward_return: float,
+    benchmark_return: float,
+    drawdown_penalty: float,
+) -> float:
+    excess_return = round(forward_return - benchmark_return, 12)
+    reward = next_position * excess_return
     if drawdown_penalty <= 0 or next_position == 0 or forward_return >= 0:
         return reward
     return reward - (abs(forward_return) * drawdown_penalty)

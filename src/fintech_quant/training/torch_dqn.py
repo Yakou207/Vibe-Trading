@@ -183,6 +183,7 @@ def train_torch_dqn_policy_run(
                     reward = _reward(
                         next_position,
                         sample.forward_return_1d,
+                        benchmark_return=sample.benchmark_return_1d,
                         changed_position=next_position != position,
                         transaction_cost=config.transaction_cost,
                         drawdown=drawdown,
@@ -275,6 +276,7 @@ def evaluate_torch_dqn_policy(
             "symbol": report_symbol,
             "transaction_cost": policy.config.transaction_cost,
             "drawdown_penalty": policy.config.drawdown_penalty,
+            "reward_basis": "benchmark_relative_excess_return",
         },
         evaluations=evaluations,
         win_rate_basis="positive_reward_steps",
@@ -384,12 +386,14 @@ def _reward(
     next_position: int,
     forward_return: float,
     *,
+    benchmark_return: float,
     changed_position: bool,
     transaction_cost: float,
     drawdown: float,
     drawdown_penalty: float,
 ) -> float:
-    reward = next_position * forward_return
+    excess_return = round(forward_return - benchmark_return, 12)
+    reward = next_position * excess_return
     if changed_position:
         reward -= transaction_cost
     if next_position and drawdown_penalty > 0:

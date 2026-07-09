@@ -65,6 +65,33 @@ class RlDatasetTest(unittest.TestCase):
 
         self.assertEqual(state["main_net_inflow"], 1000.0)
 
+    def test_build_rl_state_samples_includes_benchmark_forward_return(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+        from fintech_quant.training import build_rl_state_samples
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = _write_fixture_inputs(root)
+            market_state = root / "market_state.csv"
+            market_state.write_text(
+                "trade_date,index_symbol,index_close,index_ma250,index_below_annual_ma\n"
+                "2026-01-01,sh000001,100,100,false\n"
+                "2026-01-02,sh000001,102,100,false\n",
+                encoding="utf-8",
+            )
+            dataset = load_research_dataset(
+                paths["features"],
+                paths["universe"],
+                fundamentals_path=paths["fundamentals"],
+                capital_flow_path=paths["capital_flow"],
+                market_state_path=market_state,
+            )
+
+        sample = build_rl_state_samples(dataset)[0]
+
+        self.assertAlmostEqual(sample.forward_return_1d, 0.1)
+        self.assertAlmostEqual(sample.benchmark_return_1d, 0.02)
+
     def test_build_rl_state_samples_uses_dragon_tiger_information(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
         from fintech_quant.training import build_rl_state_samples
@@ -117,11 +144,13 @@ class RlDatasetTest(unittest.TestCase):
         self.assertEqual(rows[0]["trade_date"], "2026-01-01")
         self.assertEqual(rows[0]["next_trade_date"], "2026-01-02")
         self.assertEqual(rows[0]["forward_return_1d"], 0.1)
+        self.assertEqual(rows[0]["benchmark_return_1d"], 0.0)
         self.assertIsInstance(rows[0]["state_vector"], list)
         self.assertEqual(len(loaded_samples), 1)
         self.assertEqual(loaded_samples[0].symbol, "000001.SZ")
         self.assertEqual(loaded_samples[0].trade_date.isoformat(), "2026-01-01")
         self.assertEqual(loaded_samples[0].state_vector, tuple(rows[0]["state_vector"]))
+        self.assertEqual(loaded_samples[0].benchmark_return_1d, 0.0)
 
     def test_group_rl_state_samples_by_symbol_marks_episode_terminals(self) -> None:
         from fintech_quant.training import RlStateSample, group_rl_state_samples_by_symbol
