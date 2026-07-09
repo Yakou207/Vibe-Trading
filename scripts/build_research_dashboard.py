@@ -17,6 +17,9 @@ def main() -> int:
     parser.add_argument("--comparison", required=True)
     parser.add_argument("--walk-forward", default=None)
     parser.add_argument("--paper-report", default=None)
+    parser.add_argument("--run-report", default=None)
+    parser.add_argument("--data-health", default=None)
+    parser.add_argument("--information-health", default=None)
     parser.add_argument("--output", default="outputs/research_dashboard.html")
     args = parser.parse_args()
 
@@ -24,6 +27,9 @@ def main() -> int:
         comparison=load_json(Path(args.comparison)),
         walk_forward=load_json(Path(args.walk_forward)) if args.walk_forward else None,
         paper_report=load_json(Path(args.paper_report)) if args.paper_report else None,
+        run_report=load_json(Path(args.run_report)) if args.run_report else None,
+        data_health=load_json(Path(args.data_health)) if args.data_health else None,
+        information_health=load_json(Path(args.information_health)) if args.information_health else None,
     )
     output_path = Path(args.output)
     write_dashboard(output_path, html)
