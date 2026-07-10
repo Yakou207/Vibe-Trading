@@ -12,6 +12,7 @@ from fintech_quant.features import StockScore
 from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow, load_research_dataset
 from fintech_quant.research.risk_builder import PortfolioRiskState, build_risk_input
 from fintech_quant.research.scoring import build_stock_scores
+from fintech_quant.research.point_in_time import SupplementalAsOfIndex
 from fintech_quant.risk import RiskInput, RiskLimits
 from fintech_quant.strategies import ScoredBaselineStrategy
 from fintech_quant.trading import TradeAction
@@ -26,6 +27,8 @@ class ResearchRunConfig:
     fundamentals_path: Path | None = None
     capital_flow_path: Path | None = None
     market_state_path: Path | None = None
+    membership_path: Path | None = None
+    require_point_in_time: bool = False
     initial_cash: float = 100000.0
     max_position_weight: float = 0.08
     commission_rate: float = 0.0003
@@ -116,6 +119,8 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
         capital_flow_path=config.capital_flow_path,
         market_state_path=config.market_state_path,
         information_path=config.information_path,
+        membership_path=config.membership_path,
+        require_point_in_time=config.require_point_in_time,
     )
     scores = build_stock_scores(dataset)
     risk_inputs = _build_static_risk_inputs(dataset, config.initial_cash)
@@ -151,9 +156,24 @@ def _build_static_risk_inputs(
 ) -> dict[tuple[date, str], RiskInput]:
     risk_inputs: dict[tuple[date, str], RiskInput] = {}
     neutral_state = PortfolioRiskState(equity=initial_cash, rolling_peak=initial_cash, positions={})
+    trading_dates = tuple(sorted({row.trade_date for row in dataset.features}))
+    fundamentals_index = SupplementalAsOfIndex(
+        dataset.fundamentals.values(),
+        trading_dates=trading_dates,
+        allow_undated=not dataset.require_point_in_time,
+    )
+    capital_flow_index = SupplementalAsOfIndex(
+        dataset.capital_flow.values(),
+        trading_dates=trading_dates,
+        allow_undated=not dataset.require_point_in_time,
+    )
     for row in dataset.features:
-        fundamentals = _supplement_values(dataset.fundamentals, row.symbol, row.trade_date)
-        capital_flow = _supplement_values(dataset.capital_flow, row.symbol, row.trade_date)
+        fundamentals = _row_values(
+            fundamentals_index.lookup(row.symbol, row.trade_date, max_age_days=180)
+        )
+        capital_flow = _row_values(
+            capital_flow_index.lookup(row.symbol, row.trade_date, max_age_sessions=3)
+        )
         market_state = dataset.market_state.get(row.trade_date)
         risk_inputs[(row.trade_date, row.symbol)] = build_risk_input(
             row.symbol,
@@ -169,12 +189,7 @@ def _build_static_risk_inputs(
     return risk_inputs
 
 
-def _supplement_values(
-    rows: Mapping[tuple[str, date | None], SupplementalRow],
-    symbol: str,
-    trade_date: date,
-) -> Mapping[str, object] | None:
-    row = rows.get((symbol, trade_date)) or rows.get((symbol, None))
+def _row_values(row: SupplementalRow | None) -> Mapping[str, object] | None:
     return row.values if row else None
 
 
@@ -219,6 +234,7 @@ def _report_from_result(
             "fundamentals": str(config.fundamentals_path) if config.fundamentals_path else None,
             "capital_flow": str(config.capital_flow_path) if config.capital_flow_path else None,
             "market_state": str(config.market_state_path) if config.market_state_path else None,
+            "membership": str(config.membership_path) if config.membership_path else None,
         },
         strategy_config={
             "buy_threshold": config.buy_threshold,

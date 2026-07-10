@@ -6,6 +6,7 @@ from typing import Mapping, Sequence
 from fintech_quant.features import ScoreInput, StockScore, score_stock
 from fintech_quant.information import InformationRecord
 from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow
+from fintech_quant.research.point_in_time import SupplementalAsOfIndex
 
 
 NEGATIVE_RISK_TAGS = frozenset(
@@ -22,11 +23,22 @@ NEGATIVE_RISK_TAGS = frozenset(
 
 def build_stock_scores(dataset: ResearchDataset) -> dict[tuple[date, str], StockScore]:
     scores: dict[tuple[date, str], StockScore] = {}
+    trading_dates = tuple(sorted({row.trade_date for row in dataset.features}))
+    fundamentals = SupplementalAsOfIndex(
+        dataset.fundamentals.values(),
+        trading_dates=trading_dates,
+        allow_undated=not dataset.require_point_in_time,
+    )
+    capital_flow = SupplementalAsOfIndex(
+        dataset.capital_flow.values(),
+        trading_dates=trading_dates,
+        allow_undated=not dataset.require_point_in_time,
+    )
     for row in dataset.features:
         score_input = build_score_input(
             row,
-            _supplement_for(dataset.fundamentals, row.symbol, row.trade_date),
-            _supplement_for(dataset.capital_flow, row.symbol, row.trade_date),
+            fundamentals.lookup(row.symbol, row.trade_date, max_age_days=180),
+            capital_flow.lookup(row.symbol, row.trade_date, max_age_sessions=3),
             dataset.information_records,
         )
         scores[(row.trade_date, row.symbol)] = score_stock(score_input)
@@ -69,14 +81,6 @@ def build_score_input(
             _text_or_none(feature_values.get("sector")),
         ),
     )
-
-
-def _supplement_for(
-    rows: Mapping[tuple[str, date | None], SupplementalRow],
-    symbol: str,
-    trade_date: date,
-) -> SupplementalRow | None:
-    return rows.get((symbol, trade_date)) or rows.get((symbol, None))
 
 
 def _values(row: SupplementalRow | Mapping[str, object] | None) -> Mapping[str, object]:

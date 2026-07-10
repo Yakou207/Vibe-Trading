@@ -165,6 +165,29 @@ def load_membership_adjustments(path: Path) -> tuple[MembershipAdjustment, ...]:
     )
 
 
+def load_membership_intervals(path: Path) -> tuple[MembershipInterval, ...]:
+    with path.open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    intervals = tuple(
+        MembershipInterval(
+            index_code=str(row.get("index_code", "")).strip(),
+            symbol=str(row.get("symbol", "")).strip(),
+            member_from=date.fromisoformat(str(row.get("member_from", "")).strip()),
+            member_to=(
+                date.fromisoformat(str(row["member_to"]).strip())
+                if str(row.get("member_to", "")).strip()
+                else None
+            ),
+            source=str(row.get("source", "")).strip(),
+            source_fetched_at=str(row.get("source_fetched_at", "")).strip(),
+        )
+        for row in rows
+    )
+    if not intervals:
+        raise ValueError("membership interval CSV must contain at least one row")
+    return tuple(sorted(intervals, key=lambda item: (item.symbol, item.member_from)))
+
+
 def write_membership_csv(path: Path, intervals: Iterable[MembershipInterval]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:

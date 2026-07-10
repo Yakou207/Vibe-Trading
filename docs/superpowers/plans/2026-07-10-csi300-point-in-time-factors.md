@@ -426,9 +426,11 @@ git commit -m "feat: materialize point-in-time factor tables"
 - Modify: `src/fintech_quant/research/dataset.py`
 - Modify: `src/fintech_quant/research/scoring.py`
 - Modify: `src/fintech_quant/research/run.py`
+- Modify: `src/fintech_quant/training/rl_dataset.py`
 - Modify: `tests/test_research_dataset_phase4.py`
 - Modify: `tests/test_research_scoring.py`
 - Modify: `tests/test_research_run.py`
+- Modify: `tests/test_rl_dataset.py`
 
 **Interfaces:**
 - Consumes: normalized factor tables and membership intervals.
@@ -494,16 +496,16 @@ Formal runs reject undated supplemental rows. Existing undated rows remain accep
 
 - [ ] **Step 4: Use one index per dataset in scoring and risk construction**
 
-Build the fundamental and flow indexes once at the start of `build_stock_scores` and `_build_static_risk_inputs`; do not scan all snapshots for every feature row. Use a 180-calendar-day fundamental age and a trading-calendar-aware three-session capital-flow age.
+Build the fundamental and flow indexes once at the start of `build_stock_scores`, `_build_static_risk_inputs`, and `build_rl_state_samples`; do not scan all snapshots for every feature row. Use a 180-calendar-day fundamental age and a trading-calendar-aware three-session capital-flow age.
 
 - [ ] **Step 5: Verify and commit**
 
-Run: `.venv/bin/python -m pytest tests/test_research_dataset_phase4.py tests/test_research_scoring.py tests/test_research_run.py -q`
+Run: `.venv/bin/python -m pytest tests/test_research_dataset_phase4.py tests/test_research_scoring.py tests/test_research_run.py tests/test_rl_dataset.py -q`
 
 Expected: all tests pass.
 
 ```bash
-git add src/fintech_quant/research/point_in_time.py src/fintech_quant/research/dataset.py src/fintech_quant/research/scoring.py src/fintech_quant/research/run.py tests/test_research_dataset_phase4.py tests/test_research_scoring.py tests/test_research_run.py
+git add src/fintech_quant/research/point_in_time.py src/fintech_quant/research/dataset.py src/fintech_quant/research/scoring.py src/fintech_quant/research/run.py src/fintech_quant/training/rl_dataset.py tests/test_research_dataset_phase4.py tests/test_research_scoring.py tests/test_research_run.py tests/test_rl_dataset.py
 git commit -m "feat: enforce point-in-time factor joins"
 ```
 

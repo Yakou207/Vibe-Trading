@@ -15,6 +15,7 @@ from fintech_quant.data.historical_universe import (
     build_membership_intervals,
     load_membership_adjustments,
     load_membership_anchor,
+    load_membership_intervals,
     write_membership_csv,
 )
 from fintech_quant.data.registry import ProviderRegistry
@@ -55,6 +56,7 @@ __all__ = [
     "load_universe_csv",
     "load_membership_adjustments",
     "load_membership_anchor",
+    "load_membership_intervals",
     "normalize_a_share_symbol",
     "normalize_daily_bar",
     "normalize_realtime_quote",
