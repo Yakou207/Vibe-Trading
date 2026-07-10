@@ -7,6 +7,18 @@ from pathlib import Path
 
 
 class ResearchRunTest(unittest.TestCase):
+    def test_research_run_defaults_to_next_session_execution(self) -> None:
+        from fintech_quant.research.run import ResearchRunConfig
+
+        config = ResearchRunConfig(
+            run_id="timing",
+            features_path=Path("features.csv"),
+            universe_path=Path("universe.csv"),
+        )
+
+        self.assertEqual(config.execution_delay_sessions, 1)
+        self.assertEqual(config.minimum_commission, 5.0)
+
     def test_research_run_config_rejects_invalid_ratios_and_thresholds(self) -> None:
         from fintech_quant.research.run import ResearchRunConfig
 
@@ -57,12 +69,17 @@ class ResearchRunTest(unittest.TestCase):
                     max_pledge_ratio=0.45,
                     max_main_outflow_days=2,
                     broad_market_drop_threshold=10,
+                    execution_delay_sessions=0,
                 )
             )
 
         self.assertEqual(report.run_id, "fixture-run")
         self.assertEqual(report.strategy_config["buy_threshold"], 65.0)
         self.assertEqual(report.strategy_config["min_confidence"], 0.75)
+        self.assertEqual(report.strategy_config["commission_rate"], 0.0003)
+        self.assertEqual(report.strategy_config["minimum_commission"], 5.0)
+        self.assertEqual(report.strategy_config["slippage_rate"], 0.0)
+        self.assertEqual(report.strategy_config["include_stamp_duty"], True)
         self.assertEqual(report.risk_limits["max_portfolio_drawdown"], 0.12)
         self.assertEqual(report.risk_limits["max_single_position_drawdown"], 0.06)
         self.assertEqual(report.risk_limits["max_goodwill_ratio"], 0.25)
@@ -89,6 +106,9 @@ class ResearchRunTest(unittest.TestCase):
                     fundamentals_path=paths["fundamentals"],
                     capital_flow_path=paths["capital_flow"],
                     initial_cash=100000.0,
+                    execution_delay_sessions=0,
+                    minimum_commission=0.0,
+                    include_stamp_duty=False,
                 )
             )
 
@@ -144,6 +164,9 @@ class ResearchRunTest(unittest.TestCase):
                     capital_flow_path=paths["capital_flow"],
                     market_state_path=paths["market_state"],
                     initial_cash=100000.0,
+                    execution_delay_sessions=0,
+                    minimum_commission=0.0,
+                    include_stamp_duty=False,
                 )
             )
             report_path = write_run_report(report, paths["features"].parent / "outputs")

@@ -1,6 +1,7 @@
 """Backtesting engine, market constraints, and performance metrics."""
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
+from fintech_quant.backtesting.costs import AShareCostModel, TradeCost
 from fintech_quant.backtesting.drawdown import (
     DrawdownEpisode,
     DrawdownPoint,
@@ -24,6 +25,7 @@ from fintech_quant.backtesting.research_runner import (
 )
 
 __all__ = [
+    "AShareCostModel",
     "AShareTradingConstraints",
     "BacktestTrade",
     "DailyEquity",
@@ -37,6 +39,7 @@ __all__ = [
     "PortfolioDailyEquity",
     "PortfolioDatedRiskWarning",
     "ResearchBacktestResult",
+    "TradeCost",
     "calculate_drawdown",
     "run_portfolio_scored_baseline_backtest",
     "run_scored_baseline_backtest",

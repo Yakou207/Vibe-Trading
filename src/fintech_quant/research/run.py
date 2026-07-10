@@ -7,7 +7,11 @@ from datetime import date
 from pathlib import Path
 from typing import Mapping
 
-from fintech_quant.backtesting import PortfolioBacktestResult, run_portfolio_scored_baseline_backtest
+from fintech_quant.backtesting import (
+    AShareCostModel,
+    PortfolioBacktestResult,
+    run_portfolio_scored_baseline_backtest,
+)
 from fintech_quant.features import StockScore
 from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow, load_research_dataset
 from fintech_quant.research.risk_builder import PortfolioRiskState, build_risk_input
@@ -32,7 +36,10 @@ class ResearchRunConfig:
     initial_cash: float = 100000.0
     max_position_weight: float = 0.08
     commission_rate: float = 0.0003
+    minimum_commission: float = 5.0
+    include_stamp_duty: bool = True
     slippage_rate: float = 0.0
+    execution_delay_sessions: int = 1
     buy_threshold: float = 70.0
     min_score_confidence: float = 0.8
     max_portfolio_drawdown: float = 0.15
@@ -46,7 +53,9 @@ class ResearchRunConfig:
         _require_positive("initial_cash", self.initial_cash)
         _require_positive_unit_ratio("max_position_weight", self.max_position_weight)
         _require_non_negative("commission_rate", self.commission_rate)
+        _require_non_negative("minimum_commission", self.minimum_commission)
         _require_non_negative("slippage_rate", self.slippage_rate)
+        _require_non_negative_int("execution_delay_sessions", self.execution_delay_sessions)
         _require_non_negative("buy_threshold", self.buy_threshold)
         _require_unit_ratio("min_score_confidence", self.min_score_confidence)
         _require_positive_unit_ratio("max_portfolio_drawdown", self.max_portfolio_drawdown)
@@ -61,7 +70,7 @@ class ResearchRunConfig:
 class ResearchRunReport:
     run_id: str
     inputs: dict[str, str | None]
-    strategy_config: dict[str, float]
+    strategy_config: dict[str, object]
     risk_limits: dict[str, float | int]
     universe_symbols: tuple[str, ...]
     date_range: tuple[str, str] | None
@@ -138,6 +147,12 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
         slippage_rate=config.slippage_rate,
         strategy=strategy,
         risk_limits=_risk_limits_from_config(config),
+        execution_delay_sessions=config.execution_delay_sessions,
+        cost_model=AShareCostModel(
+            commission_rate=config.commission_rate,
+            minimum_commission=config.minimum_commission,
+            include_stamp_duty=config.include_stamp_duty,
+        ),
     )
     return _report_from_result(config, dataset, scores, result)
 
@@ -239,6 +254,11 @@ def _report_from_result(
         strategy_config={
             "buy_threshold": config.buy_threshold,
             "min_confidence": config.min_score_confidence,
+            "execution_delay_sessions": float(config.execution_delay_sessions),
+            "commission_rate": config.commission_rate,
+            "minimum_commission": config.minimum_commission,
+            "slippage_rate": config.slippage_rate,
+            "include_stamp_duty": config.include_stamp_duty,
         },
         risk_limits=_risk_limits_to_json(_risk_limits_from_config(config)),
         universe_symbols=dataset.universe_symbols,
@@ -358,12 +378,15 @@ def _trade_to_json(trade: object) -> dict[str, object]:
     action = trade.action.value if isinstance(trade.action, TradeAction) else str(trade.action)
     row = {
         "trade_date": trade.trade_date.isoformat(),
+        "signal_date": trade.signal_date.isoformat(),
         "symbol": trade.symbol,
         "action": action,
         "price": trade.price,
         "shares": trade.shares,
         "notional": trade.notional,
         "commission": trade.commission,
+        "stamp_duty": trade.stamp_duty,
+        "total_cost": trade.total_cost,
         "cash": trade.cash,
         "position": trade.position,
         "reason": trade.reason,

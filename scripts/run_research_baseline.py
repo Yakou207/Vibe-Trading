@@ -26,7 +26,10 @@ def main() -> int:
     parser.add_argument("--initial-cash", type=float, default=100000.0)
     parser.add_argument("--max-position-weight", type=float, default=0.08)
     parser.add_argument("--commission-rate", type=float, default=0.0003)
+    parser.add_argument("--minimum-commission", type=float, default=5.0)
+    parser.add_argument("--no-stamp-duty", action="store_true")
     parser.add_argument("--slippage-rate", type=float, default=0.0005)
+    parser.add_argument("--execution-delay-sessions", type=int, default=1)
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
     parser.add_argument("--max-portfolio-drawdown", type=float, default=0.15)
@@ -50,7 +53,10 @@ def main() -> int:
             initial_cash=args.initial_cash,
             max_position_weight=args.max_position_weight,
             commission_rate=args.commission_rate,
+            minimum_commission=args.minimum_commission,
+            include_stamp_duty=not args.no_stamp_duty,
             slippage_rate=args.slippage_rate,
+            execution_delay_sessions=args.execution_delay_sessions,
             buy_threshold=args.buy_threshold,
             min_score_confidence=args.min_score_confidence,
             max_portfolio_drawdown=args.max_portfolio_drawdown,

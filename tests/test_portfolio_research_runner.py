@@ -9,6 +9,71 @@ from fintech_quant.trading import TradeAction
 
 
 class PortfolioResearchRunnerTest(unittest.TestCase):
+    def test_portfolio_runner_executes_signal_on_next_session(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting.costs import AShareCostModel
+
+        bars = [
+            _bar("000001.SZ", "2026-01-02", 10.0),
+            _bar("000001.SZ", "2026-01-05", 11.0),
+        ]
+        scores = {(date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0)}
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=100000.0,
+            execution_delay_sessions=1,
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        buy = result.trades[0]
+        self.assertEqual(buy.signal_date, date(2026, 1, 2))
+        self.assertEqual(buy.trade_date, date(2026, 1, 5))
+        self.assertEqual(buy.price, 11.0)
+
+    def test_portfolio_runner_executes_delayed_sell_at_next_session_open(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting.costs import AShareCostModel
+        from fintech_quant.trading import TradeDecision
+
+        class ThresholdExitStrategy:
+            def decide(self, state: dict[str, object]) -> TradeDecision:
+                score = state["score"]
+                action = TradeAction.BUY if score.total >= 70 else TradeAction.SELL
+                return TradeDecision(action=action, confidence=1.0, reason="fixture threshold")
+
+        bars = [
+            _bar("000001.SZ", "2026-01-02", 10.0),
+            _bar("000001.SZ", "2026-01-05", 12.0, open=11.0),
+            _bar("000001.SZ", "2026-01-06", 14.0, open=13.0),
+        ]
+        scores = {
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 5), "000001.SZ"): _score("000001.SZ", 10.0),
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=100000.0,
+            execution_delay_sessions=1,
+            strategy=ThresholdExitStrategy(),
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        self.assertEqual([trade.price for trade in result.trades], [11.0, 13.0])
+        self.assertEqual(result.trades[1].signal_date, date(2026, 1, 5))
+        self.assertEqual(result.trades[1].trade_date, date(2026, 1, 6))
+
     def test_portfolio_runner_buys_100_share_lots_with_position_cap(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 

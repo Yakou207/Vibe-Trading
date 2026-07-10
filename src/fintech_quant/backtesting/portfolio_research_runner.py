@@ -5,6 +5,7 @@ from datetime import date
 from typing import Mapping, Sequence
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
+from fintech_quant.backtesting.costs import AShareCostModel
 from fintech_quant.backtesting.drawdown import DrawdownResult, EquityPoint, calculate_drawdown
 from fintech_quant.features import StockScore
 from fintech_quant.risk import RiskAction, RiskInput, RiskLimits, RiskWarning, evaluate_risk
@@ -16,12 +17,15 @@ from fintech_quant.trading import TradeAction
 @dataclass(frozen=True)
 class PortfolioBacktestTrade:
     trade_date: date
+    signal_date: date
     symbol: str
     action: TradeAction
     price: float
     shares: int
     notional: float
     commission: float
+    stamp_duty: float
+    total_cost: float
     cash: float
     position: int
     reason: str
@@ -61,6 +65,7 @@ class PortfolioBacktestResult:
 class _Position:
     shares: int = 0
     cost_basis: float = 0.0
+    acquisition_cost: float = 0.0
 
 
 def run_portfolio_scored_baseline_backtest(
@@ -77,11 +82,22 @@ def run_portfolio_scored_baseline_backtest(
     strategy: Strategy | None = None,
     strategy_state_overlays: Mapping[tuple[date, str], Mapping[str, object]] | None = None,
     risk_limits: RiskLimits | None = None,
+    execution_delay_sessions: int = 0,
+    cost_model: AShareCostModel | None = None,
 ) -> PortfolioBacktestResult:
     if initial_cash <= 0:
         raise ValueError("initial_cash must be positive")
     if lot_size <= 0:
         raise ValueError("lot_size must be positive")
+    if isinstance(execution_delay_sessions, bool) or not isinstance(execution_delay_sessions, int):
+        raise ValueError("execution_delay_sessions must be a non-negative integer")
+    if execution_delay_sessions < 0:
+        raise ValueError("execution_delay_sessions must be a non-negative integer")
+    active_cost_model = cost_model or AShareCostModel(
+        commission_rate=commission_rate,
+        minimum_commission=0.0,
+        include_stamp_duty=False,
+    )
     active_constraints = replace(constraints, lot_size=lot_size) if constraints else AShareTradingConstraints(lot_size=lot_size)
     ordered = sorted(bars, key=lambda item: (_bar_date(item), str(item["symbol"])))
     if not ordered:
@@ -105,7 +121,13 @@ def run_portfolio_scored_baseline_backtest(
     closed_count = 0
     rolling_peak = float(initial_cash)
 
-    for trade_date, daily_bars in _group_by_date(ordered):
+    grouped_bars = _group_by_date(ordered)
+    for date_index, (trade_date, daily_bars) in enumerate(grouped_bars):
+        signal_date = (
+            grouped_bars[date_index - execution_delay_sessions][0]
+            if date_index >= execution_delay_sessions
+            else None
+        )
         close_by_symbol = {str(bar["symbol"]): _bar_close(bar) for bar in daily_bars}
         bought_today: set[str] = set()
         starting_equity = _equity(cash, positions, close_by_symbol)
@@ -114,11 +136,17 @@ def run_portfolio_scored_baseline_backtest(
         for bar in daily_bars:
             symbol = str(bar["symbol"])
             close = _bar_close(bar)
-            score = scores.get((trade_date, symbol))
+            score = scores.get((signal_date, symbol)) if signal_date is not None else None
             position = positions.get(symbol, _Position())
             risk_input = _merge_risk_inputs(
                 risk_by_key.get((trade_date, symbol), RiskInput()),
-                _dynamic_risk_input(close, position, starting_equity, rolling_peak, commission_rate),
+                _dynamic_risk_input(
+                    close,
+                    position,
+                    starting_equity,
+                    rolling_peak,
+                    active_cost_model.commission_rate,
+                ),
             )
             risk = evaluate_risk(risk_input, active_risk_limits)
             warnings.extend(_dated_warnings(trade_date, symbol, risk.warnings))
@@ -131,11 +159,12 @@ def run_portfolio_scored_baseline_backtest(
                 ):
                     trade, cash, notional, closed_win = _sell_position(
                         trade_date=trade_date,
+                        signal_date=trade_date,
                         symbol=symbol,
                         close=close,
                         position=position,
                         cash=cash,
-                        commission_rate=commission_rate,
+                        cost_model=active_cost_model,
                         slippage_rate=slippage_rate,
                         reason=f"Risk action {risk.action.value} overrides missing score.",
                     )
@@ -147,7 +176,7 @@ def run_portfolio_scored_baseline_backtest(
                     positions.pop(symbol, None)
                 continue
 
-            overlay_state = overlays_by_key.get((trade_date, symbol), {})
+            overlay_state = overlays_by_key.get((signal_date, symbol), {})
             state = {
                 "score": score,
                 "risk_action": risk.action,
@@ -155,15 +184,17 @@ def run_portfolio_scored_baseline_backtest(
             }
             state.update(overlay_state)
             decision = active_strategy.decide(state)
+            strategy_execution_price = _bar_open(bar) if execution_delay_sessions else close
 
             if decision.action is TradeAction.SELL and position.shares > 0 and _can_sell(bar, active_constraints, symbol in bought_today):
                 trade, cash, notional, closed_win = _sell_position(
                     trade_date=trade_date,
+                    signal_date=signal_date,
                     symbol=symbol,
-                    close=close,
+                    close=strategy_execution_price,
                     position=position,
                     cash=cash,
-                    commission_rate=commission_rate,
+                    cost_model=active_cost_model,
                     slippage_rate=slippage_rate,
                     reason=decision.reason,
                 )
@@ -181,7 +212,7 @@ def run_portfolio_scored_baseline_backtest(
                 and _can_buy(bar, active_constraints)
                 and risk.action not in {RiskAction.REDUCE, RiskAction.LIQUIDATE}
             ):
-                buy_price = round(close * (1.0 + slippage_rate), 6)
+                buy_price = round(strategy_execution_price * (1.0 + slippage_rate), 6)
                 target_weight = max_position_weight
                 if overlay_state:
                     target_weight *= _decision_weight(decision.confidence)
@@ -190,26 +221,33 @@ def run_portfolio_scored_baseline_backtest(
                 if shares <= 0:
                     continue
                 notional = round(shares * buy_price, 6)
-                commission = round(notional * commission_rate, 6)
-                while shares > 0 and notional + commission > cash:
+                cost = active_cost_model.buy_cost(notional, trade_date)
+                while shares > 0 and notional + cost.total > cash:
                     shares -= active_constraints.lot_size
                     notional = round(shares * buy_price, 6)
-                    commission = round(notional * commission_rate, 6)
+                    cost = active_cost_model.buy_cost(notional, trade_date)
                 if shares <= 0:
                     continue
-                cash -= notional + commission
+                cash -= notional + cost.total
                 total_turnover += notional
-                positions[symbol] = _Position(shares=shares, cost_basis=buy_price)
+                positions[symbol] = _Position(
+                    shares=shares,
+                    cost_basis=buy_price,
+                    acquisition_cost=notional + cost.total,
+                )
                 bought_today.add(symbol)
                 trades.append(
                     PortfolioBacktestTrade(
                         trade_date=trade_date,
+                        signal_date=signal_date,
                         symbol=symbol,
                         action=TradeAction.BUY,
                         price=buy_price,
                         shares=shares,
                         notional=notional,
-                        commission=commission,
+                        commission=cost.commission,
+                        stamp_duty=cost.stamp_duty,
+                        total_cost=cost.total,
                         cash=round(cash, 6),
                         position=shares,
                         reason=decision.reason,
@@ -244,6 +282,10 @@ def run_portfolio_scored_baseline_backtest(
             "win_rate": round(closed_wins / closed_count, 6) if closed_count else 0.0,
             "win_rate_basis": "closed_trades_realized_pnl",
             "win_rate_sample_count": closed_count,
+            "commission_cost": round(sum(trade.commission for trade in trades), 6),
+            "stamp_duty_cost": round(sum(trade.stamp_duty for trade in trades), 6),
+            "total_trading_cost": round(sum(trade.total_cost for trade in trades), 6),
+            "execution_delay_sessions": execution_delay_sessions,
         },
     )
 
@@ -308,27 +350,31 @@ def _dynamic_risk_input(
 def _sell_position(
     *,
     trade_date: date,
+    signal_date: date,
     symbol: str,
     close: float,
     position: _Position,
     cash: float,
-    commission_rate: float,
+    cost_model: AShareCostModel,
     slippage_rate: float,
     reason: str,
 ) -> tuple[PortfolioBacktestTrade, float, float, bool]:
     sell_price = round(close * (1.0 - slippage_rate), 6)
     notional = round(position.shares * sell_price, 6)
-    commission = round(notional * commission_rate, 6)
-    realized_pnl = round((sell_price - position.cost_basis) * position.shares - commission, 6)
-    next_cash = cash + notional - commission
+    cost = cost_model.sell_cost(notional, trade_date)
+    realized_pnl = round(notional - cost.total - position.acquisition_cost, 6)
+    next_cash = cash + notional - cost.total
     trade = PortfolioBacktestTrade(
         trade_date=trade_date,
+        signal_date=signal_date,
         symbol=symbol,
         action=TradeAction.SELL,
         price=sell_price,
         shares=position.shares,
         notional=notional,
-        commission=commission,
+        commission=cost.commission,
+        stamp_duty=cost.stamp_duty,
+        total_cost=cost.total,
         cash=round(next_cash, 6),
         position=0,
         reason=reason,
@@ -377,6 +423,13 @@ def _bar_close(bar: Mapping[str, object]) -> float:
     if close <= 0:
         raise ValueError("bar close must be positive")
     return close
+
+
+def _bar_open(bar: Mapping[str, object]) -> float:
+    open_price = float(bar.get("open", bar["close"]))
+    if open_price <= 0:
+        raise ValueError("bar open must be positive")
+    return open_price
 
 
 def _dated_warnings(

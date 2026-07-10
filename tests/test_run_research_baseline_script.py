@@ -54,6 +54,8 @@ class RunResearchBaselineScriptTest(unittest.TestCase):
                     "2",
                     "--broad-market-drop-threshold",
                     "10",
+                    "--execution-delay-sessions",
+                    "0",
                 ],
                 cwd=worktree,
                 env=env,
