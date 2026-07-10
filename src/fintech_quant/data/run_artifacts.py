@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import csv
 import json
 import platform
 import shutil
@@ -59,6 +60,24 @@ class RunArtifactStore:
         self._record_artifact(path, row_count)
         return path
 
+    def write_csv(
+        self,
+        relative_path: str,
+        rows: Iterable[Mapping[str, object]],
+        *,
+        fieldnames: Sequence[str],
+    ) -> Path:
+        path = self._new_artifact_path(relative_path)
+        row_count = 0
+        with path.open("x", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({field: _csv_value(row.get(field)) for field in fieldnames})
+                row_count += 1
+        self._record_artifact(path, row_count)
+        return path
+
     def write_manifest(
         self,
         *,
@@ -108,3 +127,11 @@ class RunArtifactStore:
                 "sha256": sha256_file(path),
             }
         )
+
+
+def _csv_value(value: object | None) -> object:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return value
