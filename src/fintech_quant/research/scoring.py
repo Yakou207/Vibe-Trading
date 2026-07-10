@@ -22,7 +22,12 @@ NEGATIVE_RISK_TAGS = frozenset(
 
 
 def build_stock_scores(dataset: ResearchDataset) -> dict[tuple[date, str], StockScore]:
-    scores: dict[tuple[date, str], StockScore] = {}
+    score_inputs = build_score_inputs(dataset)
+    return {key: score_stock(score_input) for key, score_input in score_inputs.items()}
+
+
+def build_score_inputs(dataset: ResearchDataset) -> dict[tuple[date, str], ScoreInput]:
+    score_inputs: dict[tuple[date, str], ScoreInput] = {}
     trading_dates = tuple(sorted({row.trade_date for row in dataset.features}))
     fundamentals = SupplementalAsOfIndex(
         dataset.fundamentals.values(),
@@ -35,14 +40,13 @@ def build_stock_scores(dataset: ResearchDataset) -> dict[tuple[date, str], Stock
         allow_undated=not dataset.require_point_in_time,
     )
     for row in dataset.features:
-        score_input = build_score_input(
+        score_inputs[(row.trade_date, row.symbol)] = build_score_input(
             row,
             fundamentals.lookup(row.symbol, row.trade_date, max_age_days=180),
             capital_flow.lookup(row.symbol, row.trade_date, max_age_sessions=3),
             dataset.information_records,
         )
-        scores[(row.trade_date, row.symbol)] = score_stock(score_input)
-    return scores
+    return score_inputs
 
 
 def build_score_input(

@@ -252,6 +252,7 @@ def _report_from_result(
             "membership": str(config.membership_path) if config.membership_path else None,
         },
         strategy_config={
+            "require_point_in_time": config.require_point_in_time,
             "buy_threshold": config.buy_threshold,
             "min_confidence": config.min_score_confidence,
             "execution_delay_sessions": float(config.execution_delay_sessions),

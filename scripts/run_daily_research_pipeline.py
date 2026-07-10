@@ -53,6 +53,11 @@ def main() -> int:
     parser.add_argument("--daily-output", default="data/processed/akshare_research_daily.csv")
     parser.add_argument("--feature-output", default="data/processed/akshare_research_features.csv")
     parser.add_argument("--market-output", default="data/raw/market_state/sh000001_market_state.csv")
+    parser.add_argument("--membership", default=None, help="Historical membership intervals for point-in-time research.")
+    parser.add_argument("--fundamentals", default=None, help="Point-in-time fundamental factor table.")
+    parser.add_argument("--capital-flow", default=None, help="Point-in-time capital-flow factor table.")
+    parser.add_argument("--data-health", default=None, help="Point-in-time data-health report output.")
+    parser.add_argument("--require-point-in-time", action="store_true")
     parser.add_argument("--rl-output", default="data/processed/rl_state_dataset.jsonl")
     parser.add_argument("--rl-policy-report-output", default=None)
     parser.add_argument("--rl-policy", choices=("always_hold", "buy_and_hold"), default="buy_and_hold")
@@ -289,6 +294,30 @@ def main() -> int:
     _run(market_command)
     step_count += 1
 
+    if args.require_point_in_time:
+        _run(
+            [
+                "scripts/validate_research_data.py",
+                "--features",
+                args.feature_output,
+                "--universe",
+                universe_path,
+                "--membership",
+                args.membership,
+                "--fundamentals",
+                args.fundamentals,
+                "--capital-flow",
+                args.capital_flow,
+                "--information",
+                args.information_output,
+                "--market-state",
+                args.market_output,
+                "--output",
+                args.data_health,
+            ]
+        )
+        step_count += 1
+
     _run(
         [
             "scripts/build_rl_dataset.py",
@@ -302,6 +331,7 @@ def main() -> int:
             args.market_output,
             "--output",
             args.rl_output,
+            *_point_in_time_args(args),
         ]
     )
     step_count += 1
@@ -365,6 +395,7 @@ def main() -> int:
             args.market_output,
             "--output",
             args.scoring_coverage_output,
+            *_point_in_time_args(args),
         ]
     )
     step_count += 1
@@ -383,6 +414,7 @@ def main() -> int:
                 args.market_output,
                 "--output",
                 args.stock_analysis_output,
+                *_point_in_time_args(args),
             ]
         )
         step_count += 1
@@ -418,6 +450,7 @@ def main() -> int:
             str(args.max_main_outflow_days),
             "--broad-market-drop-threshold",
             str(args.broad_market_drop_threshold),
+            *_point_in_time_args(args),
         ]
     )
     step_count += 1
@@ -479,6 +512,19 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--market-input is required when --market-source csv")
     if args.strategy_comparison_output and not args.dqn_policy_report_output:
         raise SystemExit("--dqn-policy-report-output is required when --strategy-comparison-output is set")
+    if args.require_point_in_time:
+        missing = [
+            option
+            for option, value in (
+                ("--membership", args.membership),
+                ("--fundamentals", args.fundamentals),
+                ("--capital-flow", args.capital_flow),
+                ("--data-health", args.data_health),
+            )
+            if not value
+        ]
+        if missing:
+            raise SystemExit(f"{', '.join(missing)} required with --require-point-in-time")
 
 
 def _resolve_universe_path(args: argparse.Namespace) -> str:
@@ -491,6 +537,22 @@ def _resolve_universe_path(args: argparse.Namespace) -> str:
 
 def _universe_sectors(universe: Sequence[UniverseMember]) -> list[str]:
     return sorted({member.sector for member in universe if member.sector})
+
+
+def _point_in_time_args(args: argparse.Namespace) -> list[str]:
+    if not args.require_point_in_time:
+        return []
+    return [
+        "--membership",
+        args.membership,
+        "--fundamentals",
+        args.fundamentals,
+        "--capital-flow",
+        args.capital_flow,
+        "--data-health",
+        args.data_health,
+        "--require-point-in-time",
+    ]
 
 
 def _run(command: list[str]) -> None:

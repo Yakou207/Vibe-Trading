@@ -70,15 +70,21 @@ def load_universe_csv(path: Path) -> list[UniverseMember]:
         reader = csv.DictReader(handle)
         if "symbol" not in (reader.fieldnames or ()):
             raise ValueError("Universe CSV must contain a symbol column")
-        return [
-            UniverseMember(
+        members: list[UniverseMember] = []
+        seen: set[str] = set()
+        for row in reader:
+            if not row.get("symbol"):
+                continue
+            member = UniverseMember(
                 symbol=str(row["symbol"]),
                 name=_optional_text(row.get("name")),
                 sector=_optional_text(row.get("sector")),
             )
-            for row in reader
-            if row.get("symbol")
-        ]
+            if member.symbol in seen:
+                continue
+            seen.add(member.symbol)
+            members.append(member)
+        return members
 
 
 def collect_universe_history(

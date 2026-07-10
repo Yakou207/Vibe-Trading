@@ -10,8 +10,9 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from fintech_quant.reports import build_factor_analysis_report, write_factor_analysis_report  # noqa: E402
-from fintech_quant.research.dataset import ResearchDataset, load_research_dataset  # noqa: E402
-from fintech_quant.research.scoring import build_score_input, build_stock_scores  # noqa: E402
+from fintech_quant.research.dataset import load_research_dataset  # noqa: E402
+from fintech_quant.research.preflight import require_passing_data_health  # noqa: E402
+from fintech_quant.research.scoring import build_score_inputs, build_stock_scores  # noqa: E402
 
 
 def main() -> int:
@@ -22,9 +23,14 @@ def main() -> int:
     parser.add_argument("--fundamentals", default=None)
     parser.add_argument("--capital-flow", default=None)
     parser.add_argument("--market-state", default=None)
+    parser.add_argument("--membership", default=None)
+    parser.add_argument("--data-health", default=None)
+    parser.add_argument("--require-point-in-time", action="store_true")
     parser.add_argument("--output", default="outputs/stock_score_analysis.json")
     args = parser.parse_args()
 
+    if args.require_point_in_time:
+        require_passing_data_health(_optional_path(args.data_health), _research_inputs(args))
     dataset = load_research_dataset(
         Path(args.features),
         Path(args.universe),
@@ -32,17 +38,11 @@ def main() -> int:
         fundamentals_path=_optional_path(args.fundamentals),
         capital_flow_path=_optional_path(args.capital_flow),
         market_state_path=_optional_path(args.market_state),
+        membership_path=_optional_path(args.membership),
+        require_point_in_time=args.require_point_in_time,
     )
     scores = build_stock_scores(dataset)
-    score_inputs = {
-        (row.trade_date, row.symbol): build_score_input(
-            row,
-            _supplement_for(dataset, "fundamentals", row.symbol, row.trade_date),
-            _supplement_for(dataset, "capital_flow", row.symbol, row.trade_date),
-            dataset.information_records,
-        )
-        for row in dataset.features
-    }
+    score_inputs = build_score_inputs(dataset)
     report = build_factor_analysis_report(scores, score_inputs)
     output_path = Path(args.output)
     write_factor_analysis_report(output_path, report)
@@ -55,10 +55,15 @@ def _optional_path(value: str | None) -> Path | None:
     return Path(value) if value else None
 
 
-def _supplement_for(dataset: ResearchDataset, kind: str, symbol: str, trade_date: object) -> object | None:
-    rows = dataset.fundamentals if kind == "fundamentals" else dataset.capital_flow
-    return rows.get((symbol, trade_date)) or rows.get((symbol, None))
-
-
+def _research_inputs(args: argparse.Namespace) -> dict[str, Path | None]:
+    return {
+        "features": Path(args.features),
+        "universe": Path(args.universe),
+        "membership": _optional_path(args.membership),
+        "fundamentals": _optional_path(args.fundamentals),
+        "capital_flow": _optional_path(args.capital_flow),
+        "information": _optional_path(args.information),
+        "market_state": _optional_path(args.market_state),
+    }
 if __name__ == "__main__":
     raise SystemExit(main())

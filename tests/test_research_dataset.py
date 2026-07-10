@@ -21,6 +21,23 @@ class ResearchDatasetTest(unittest.TestCase):
         self.assertEqual(universe[0].name, "Ping An")
         self.assertEqual(universe[0].sector, "Bank")
 
+    def test_load_universe_csv_deduplicates_historical_membership_intervals(self) -> None:
+        from fintech_quant.data import load_universe_csv
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "membership.csv"
+            path.write_text(
+                "symbol,member_from,member_to\n"
+                "000001.SZ,2020-01-01,2021-01-01\n"
+                "000001.SZ,2022-01-01,\n"
+                "600000.SH,2020-01-01,\n",
+                encoding="utf-8",
+            )
+
+            universe = load_universe_csv(path)
+
+        self.assertEqual([member.symbol for member in universe], ["000001.SZ", "600000.SH"])
+
     def test_collect_universe_history_calls_provider_once_per_symbol(self) -> None:
         from fintech_quant.data import UniverseMember, collect_universe_history
 

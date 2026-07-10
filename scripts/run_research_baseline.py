@@ -11,6 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from fintech_quant.research import ResearchRunConfig, run_research_baseline, write_run_report  # noqa: E402
+from fintech_quant.research.preflight import require_passing_data_health  # noqa: E402
 
 
 def main() -> int:
@@ -22,6 +23,9 @@ def main() -> int:
     parser.add_argument("--fundamentals", default=None)
     parser.add_argument("--capital-flow", default=None)
     parser.add_argument("--market-state", default=None)
+    parser.add_argument("--membership", default=None)
+    parser.add_argument("--data-health", default=None)
+    parser.add_argument("--require-point-in-time", action="store_true")
     parser.add_argument("--output-root", default="outputs/research_runs")
     parser.add_argument("--initial-cash", type=float, default=100000.0)
     parser.add_argument("--max-position-weight", type=float, default=0.08)
@@ -42,6 +46,8 @@ def main() -> int:
 
     run_id = args.run_id or f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-baseline"
     try:
+        if args.require_point_in_time:
+            require_passing_data_health(_optional_path(args.data_health), _research_inputs(args))
         config = ResearchRunConfig(
             run_id=run_id,
             features_path=Path(args.features),
@@ -50,6 +56,8 @@ def main() -> int:
             fundamentals_path=_optional_path(args.fundamentals),
             capital_flow_path=_optional_path(args.capital_flow),
             market_state_path=_optional_path(args.market_state),
+            membership_path=_optional_path(args.membership),
+            require_point_in_time=args.require_point_in_time,
             initial_cash=args.initial_cash,
             max_position_weight=args.max_position_weight,
             commission_rate=args.commission_rate,
@@ -81,6 +89,18 @@ def main() -> int:
 
 def _optional_path(value: str | None) -> Path | None:
     return Path(value) if value else None
+
+
+def _research_inputs(args: argparse.Namespace) -> dict[str, Path | None]:
+    return {
+        "features": Path(args.features),
+        "universe": Path(args.universe),
+        "membership": _optional_path(args.membership),
+        "fundamentals": _optional_path(args.fundamentals),
+        "capital_flow": _optional_path(args.capital_flow),
+        "information": _optional_path(args.information),
+        "market_state": _optional_path(args.market_state),
+    }
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from fintech_quant.research.data_health import (  # noqa: E402
     validate_research_data,
 )
 from fintech_quant.research.dataset import load_research_dataset  # noqa: E402
+from fintech_quant.data.run_artifacts import sha256_file  # noqa: E402
 
 
 def main() -> int:
@@ -60,8 +61,22 @@ def main() -> int:
     )
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = report.to_json()
+    payload["inputs"] = {
+        name: {"path": str(path.resolve()), "sha256": sha256_file(path)}
+        for name, path in {
+            "features": Path(args.features),
+            "universe": Path(args.universe),
+            "membership": Path(args.membership),
+            "fundamentals": Path(args.fundamentals),
+            "capital_flow": Path(args.capital_flow),
+            "information": Path(args.information) if args.information else None,
+            "market_state": Path(args.market_state) if args.market_state else None,
+        }.items()
+        if path is not None
+    }
     output_path.write_text(
-        json.dumps(report.to_json(), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     print(f"data_health={output_path}")
