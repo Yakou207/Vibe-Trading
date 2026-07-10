@@ -69,23 +69,50 @@ The system now has the engineering shape of a paper-trading research platform:
   walk-forward path, CSI 300 / CSI 800 universe ingestion, paper-trading loop,
   and daily monitoring dashboard have been implemented.
 - Paper execution models A-share constraints including T+1, suspensions,
-  limit-up / limit-down blocking, lot size, commission, and slippage, and it
-  persists positions and NAV.
+  limit-up / limit-down blocking, lot size, minimum commission, date-specific
+  stamp duty, and slippage. Formal research signals execute on the next
+  available session rather than the signal close.
 - DQN rewards and strategy reports support benchmark-relative excess return,
   and resumable DQN checkpoints are available.
-- These changes currently live on
-  `codex/real-data-benchmark-evaluation`. Before this roadmap update, the
-  completed branch was 13 commits ahead of the local `main` branch and 15
-  commits ahead of `origin/main` as of 2026-07-10; this `AGENTS.md` update is
-  an additional documentation commit. Merge the branch into `main` before
-  starting the next strategy iteration, after rerunning the full test suite and
-  reviewing the merge diff.
+- The completed platform branch was merged and pushed to `main` at `a6a63a9`.
+  The point-in-time CSI 300 repair is on
+  `codex/csi300-point-in-time-factors`, 10 commits ahead of `main` before the
+  final reproducibility/status commit.
+- The repair branch now has official-anchor-plus-adjustment historical
+  membership reconstruction, immutable raw/processed manifests with SHA-256,
+  disclosure-date joins, common as-of factor lookup for scoring/risk/RL,
+  fail-closed coverage/variation checks, and a formal CSI 300 orchestration
+  command. A fixed fixture reproduces identical factor, score-analysis, and RL
+  dataset hashes across two complete runs.
 
 Engineering completion must not be confused with strategy validation. Current
 real-data evidence does not show a strategy that both beats CSI 300 and meets
 the portfolio drawdown target.
 
 ## Current Real-Data Findings
+
+### 0. The repaired data path fails closed on the latest 30-stock diagnostic
+
+- A new 2026-07-10 diagnostic attempted 90 AkShare scopes for the existing 30
+  STAR Market stocks over the five-year research interval. All 30 financial
+  statement scopes succeeded; all 30 fundamental/valuation scopes and all 30
+  individual capital-flow scopes failed because the upstream Eastmoney proxy
+  closed the connection.
+- The successful statements produced 462 point-in-time fundamental snapshots,
+  but they do not provide the PE/PB/ROE/growth fields needed by the score.
+  Capital-flow materialization produced zero rows.
+- The preserved health report failed five gates: price coverage `0.806766`
+  versus `0.95`, capital-flow coverage `0.0` versus `0.95`, 1,073 stale
+  fundamental observations, constant/all-zero fundamental scores, and all-zero
+  capital-flow scores. Fundamental row coverage was `0.891751`, but usable
+  scored-field variation was absent.
+- The formal orchestrator stopped before baseline, risk-controlled, RL, or
+  benchmark-comparison artifacts were created. This is the intended behavior;
+  the failed provider run and health report are evidence, not a strategy run.
+- Do not start the full CSI 300 provider fan-out until the failed factor scopes
+  can be resumed successfully or a separately validated point-in-time provider
+  is added. Current-constituent backfilling is not an acceptable substitute for
+  official historical membership.
 
 ### 1. The scored baseline produces no trades
 
@@ -152,27 +179,24 @@ The next experiments must use point-in-time data and remain reproducible:
 The next phase is strategy repair and validation, not additional platform
 features. Work in this order:
 
-1. Merge the completed branch into `main`.
-   - Review the 15 pre-roadmap commits relative to `origin/main` together with
-     this documentation update, rerun all tests, merge, and push `main` before
-     making new strategy changes.
-   - Preserve DQN checkpoint/resume support, but do not reintroduce a separate
-     Q-learning strategy path.
+1. Restore the failed real factor scopes and rerun the 30-stock gate.
+   - Resume the immutable `star30-raw-20260710` run after the Eastmoney-backed
+     valuation and capital-flow endpoints recover, or add a separately
+     validated provider that supplies public availability dates and historical
+     rows under the same schema.
+   - Rebuild factors under a new processed run id. Require non-constant
+     fundamental/capital-flow scores, coverage above the configured thresholds,
+     and meaningful target positions before any threshold tuning.
 
-2. Connect real factor data to the scored baseline.
-   - Reuse the existing `akshare_fundamental`,
-     `akshare_financial_statement`, and individual-stock capital-flow
-     collectors.
-   - Map point-in-time fundamental and capital-flow records into the
-     `fundamentals` and `capital_flow` inputs consumed by the scoring engine.
-   - Make missing, constant, stale, and low-coverage factor groups visible and
-     fail closed when required score components are unusable.
-   - Rebuild the 30-stock diagnostic dataset first. Verify that fundamental and
-     capital-flow scores are non-constant, the score distribution can cross the
-     configured entry gates, and the baseline produces economically meaningful
-     target positions before tuning strategy thresholds.
+2. Build the official historical CSI 300 membership artifact.
+   - Acquire a current official CSI anchor plus every official regular and
+     temporary adjustment since the research start date. Preserve source URLs
+     and fetch timestamps.
+   - Do not use the current 300 constituents for the full five-year history.
+     The existing current-universe CSV is suitable only as an anchor after its
+     source and as-of date are verified.
 
-3. Rebuild and rerun the full CSI 300 path.
+3. Rebuild and rerun the full CSI 300 path after steps 1-2 pass.
    - Fetch approximately five years of daily price, fundamental, financial
      statement, capital-flow, and required market-state data for all CSI 300
      constituents.
@@ -228,7 +252,6 @@ until all of the following hold:
 - Every daily decision can be reproduced from immutable input data, recorded
   configuration, and a known code commit.
 
-When opening the next implementation thread, start by merging the completed
-branch and then repair the fundamental and capital-flow data path. Do not add
-new strategy features until the scored baseline can trade on complete,
-point-in-time inputs.
+When resuming implementation, start from the failed 30-stock factor scopes and
+the preserved health report. Do not add new strategy features until the scored
+baseline can trade on complete, point-in-time inputs.

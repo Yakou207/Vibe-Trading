@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 
 def test_collect_point_in_time_factors_writes_versioned_raw_run(tmp_path: Path) -> None:
@@ -65,6 +67,31 @@ def test_collect_point_in_time_factors_resume_reuses_success_and_retries_failure
     assert "reused_scopes=5" in second.stdout
     assert "fetched_scopes=1" in second.stdout
     assert len(manifest["artifacts"]) == 6
+
+
+def test_real_fundamental_collection_uses_requested_end_as_snapshot_date() -> None:
+    from scripts.collect_point_in_time_factors import _fetch_rows
+
+    requested_end = date(2026, 6, 16)
+
+    class FakeFetcher:
+        def __init__(self, *, as_of: date) -> None:
+            assert as_of == requested_end
+
+        def fetch(self, symbol: str, sector: object, start: date, end: date) -> list[object]:
+            return []
+
+    with patch("scripts.collect_point_in_time_factors.AkShareFundamentalFetcher", FakeFetcher):
+        rows = _fetch_rows(
+            "akshare",
+            None,
+            "000001.SZ",
+            "fundamentals",
+            date(2021, 1, 1),
+            requested_end,
+        )
+
+    assert rows == []
 
 
 def _run_collector(

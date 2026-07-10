@@ -173,7 +173,7 @@ def _fetch_rows(
         return [dict(row) for row in value]
 
     fetcher_factory: dict[str, Callable[[], object]] = {
-        "fundamentals": AkShareFundamentalFetcher,
+        "fundamentals": lambda: AkShareFundamentalFetcher(as_of=end),
         "financial_statements": AkShareFinancialStatementFetcher,
         "capital_flow": AkShareFundFlowFetcher,
     }
