@@ -243,9 +243,12 @@ class AkShareFundamentalFetcher(InformationFetcher):
         self,
         valuation_fetcher: Callable[[str], object] | None = None,
         financial_fetcher: Callable[[str], object] | None = None,
+        *,
+        as_of: date | None = None,
     ) -> None:
         self._valuation_fetcher = valuation_fetcher
         self._financial_fetcher = financial_fetcher
+        self._as_of = as_of
 
     def fetch(
         self,
@@ -264,7 +267,12 @@ class AkShareFundamentalFetcher(InformationFetcher):
         if not valuation_rows and not financial_rows and (valuation_error or financial_error):
             details = "; ".join(error for error in (valuation_error, financial_error) if error)
             raise ProviderFetchError(f"akshare fundamental fetch failed for symbol={normalized_symbol!r}: {details}")
-        records = _records_from_fundamental_rows(normalized_symbol, valuation_rows, financial_rows, end)
+        records = _records_from_fundamental_rows(
+            normalized_symbol,
+            valuation_rows,
+            financial_rows,
+            self._as_of or date.today(),
+        )
         return _filter_records(records, normalized_symbol, None, start, end)
 
     def _fetch_optional_rows(
@@ -665,25 +673,15 @@ def _records_from_fundamental_rows(
     financial_rows: list[dict[str, object]],
     fallback_date: date,
 ) -> list[InformationRecord]:
-    valuation_by_date = {
-        _parse_date(_first_value(row, "日期", "date", "trade_date", default=fallback_date)): row for row in valuation_rows
-    }
-    financial_by_date = {
-        _parse_date(_first_value(row, "日期", "截止日期", "date", "report_date", default=fallback_date)): row for row in financial_rows
-    }
     records: list[InformationRecord] = []
-    for record_date in sorted(set(valuation_by_date) | set(financial_by_date)):
-        valuation = valuation_by_date.get(record_date, {})
-        financial = financial_by_date.get(record_date, {})
-        pe = _float_or_none(_first_value(valuation, "市盈率", "市盈率-动态", "市盈率-TTM", "pe", "PE", default=None))
-        pb = _float_or_none(_first_value(valuation, "市净率", "pb", "PB", default=None))
-        roe_raw = _float_or_none(_first_value(financial, "净资产收益率", "净资产收益率(%)", "roe", "ROE", default=None))
-        growth_raw = _float_or_none(
-            _first_value(financial, "主营业务收入增长率", "主营业务收入增长率(%)", "营业收入同比增长率", "growth", default=None)
+    for valuation in valuation_rows:
+        raw_date = _first_value(valuation, "日期", "date", "trade_date", default=None)
+        record_date = _parse_date(raw_date) if raw_date is not None else fallback_date
+        pe = _float_or_none(
+            _first_value(valuation, "市盈率", "市盈率-动态", "市盈率-TTM", "pe", "PE", default=None)
         )
-        roe = _ratio_from_percent(roe_raw)
-        growth = _ratio_from_percent(growth_raw)
-        summary = _fundamental_summary(pe, pb, roe, growth)
+        pb = _float_or_none(_first_value(valuation, "市净率", "pb", "PB", default=None))
+        summary = _fundamental_summary(pe, pb, None, None)
         if not summary:
             continue
         records.append(
@@ -693,13 +691,55 @@ def _records_from_fundamental_rows(
                 published_at=record_date,
                 source="akshare_fundamental",
                 category=InformationCategory.STOCK_DATA,
-                title=f"{normalized_symbol} fundamental snapshot",
+                title=f"{normalized_symbol} valuation snapshot {record_date.isoformat()}",
                 url="",
                 summary=summary,
-                risk_tags=("selected_universe", "fundamental"),
+                risk_tags=("selected_universe", "fundamental", "valuation"),
+                metadata={
+                    "record_kind": "valuation",
+                    "available_date_source": "row_date" if raw_date is not None else "fetch_date",
+                    "raw_row": _metadata_row(valuation),
+                },
             )
         )
-    return records
+
+    for financial in financial_rows:
+        report_period = _parse_date(
+            _first_value(financial, "日期", "截止日期", "date", "report_date")
+        )
+        roe_raw = _float_or_none(_first_value(financial, "净资产收益率", "净资产收益率(%)", "roe", "ROE", default=None))
+        growth_raw = _float_or_none(
+            _first_value(financial, "主营业务收入增长率", "主营业务收入增长率(%)", "营业收入同比增长率", "growth", default=None)
+        )
+        roe = _ratio_from_percent(roe_raw)
+        growth = _ratio_from_percent(growth_raw)
+        summary = _fundamental_summary(None, None, roe, growth)
+        if not summary:
+            continue
+        records.append(
+            InformationRecord(
+                symbol=normalized_symbol,
+                sector=None,
+                published_at=report_period,
+                source="akshare_fundamental",
+                category=InformationCategory.STOCK_DATA,
+                title=f"{normalized_symbol} financial indicator {report_period.isoformat()}",
+                url="",
+                summary=summary,
+                risk_tags=(
+                    "selected_universe",
+                    "financial_indicator",
+                    "unverified_availability",
+                ),
+                metadata={
+                    "record_kind": "financial_indicator",
+                    "report_period": report_period.isoformat(),
+                    "availability_verified": False,
+                    "raw_row": _metadata_row(financial),
+                },
+            )
+        )
+    return sorted(records, key=lambda record: (record.published_at, record.title))
 
 
 def _records_from_tushare_fundamental_rows(
@@ -768,18 +808,33 @@ def _record_from_financial_statement_row(
     statement_type: str,
 ) -> InformationRecord:
     report_date = _parse_date(_first_value(row, "报告日", "报表日期", "截止日期", "日期", "report_date"))
+    available_date, available_date_source = _financial_statement_available_date(row)
     return InformationRecord(
         symbol=normalized_symbol,
         sector=None,
-        published_at=report_date,
+        published_at=available_date,
         source="akshare_financial_statement",
         category=InformationCategory.STOCK_DATA,
         title=f"{normalized_symbol} {statement_type} {report_date.isoformat()}",
         url="",
         summary=_financial_statement_summary(row),
         risk_tags=("selected_universe", "financial_statement", _statement_tag(statement_type)),
-        metadata={"statement_type": statement_type, "raw_row": _metadata_row(row)},
+        metadata={
+            "statement_type": statement_type,
+            "report_period": report_date.isoformat(),
+            "available_date_source": available_date_source,
+            "raw_row": _metadata_row(row),
+        },
     )
+
+
+def _financial_statement_available_date(row: dict[str, object]) -> tuple[date, str]:
+    for field in ("更新日期", "公告日期", "available_date"):
+        value = row.get(field)
+        if value not in (None, ""):
+            normalized = str(value).strip().replace(" T", "T")
+            return _parse_date(normalized), field
+    raise ValueError("financial statement is missing a verified public availability date")
 
 
 def _record_from_pledge_ratio_row(
