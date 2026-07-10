@@ -662,6 +662,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("selected_universe", records[0].risk_tags)
         self.assertIn("capital_flow", records[0].risk_tags)
         self.assertIn("main_inflow", records[0].risk_tags)
+        self.assertEqual(records[0].metadata["raw_row"]["收盘价"], "10.5")
 
     def test_akshare_fundamental_fetcher_maps_selected_stock_data(self) -> None:
         from fintech_quant.information import AkShareFundamentalFetcher, InformationCategory

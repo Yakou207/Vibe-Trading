@@ -110,7 +110,7 @@ class CheckDataSourcesScriptTest(unittest.TestCase):
         self.assertIn("close", statuses["akshare_daily"]["fields"])
         self.assertEqual(statuses["akshare_realtime"]["row_count"], 1)
         self.assertIn("price", statuses["akshare_realtime"]["fields"])
-        self.assertEqual(statuses["akshare_fundamental"]["row_count"], 1)
+        self.assertEqual(statuses["akshare_fundamental"]["row_count"], 2)
         self.assertEqual(statuses["tushare_daily"]["row_count"], 1)
         self.assertEqual(statuses["tushare_fundamental"]["row_count"], 1)
 

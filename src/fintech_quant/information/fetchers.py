@@ -664,6 +664,7 @@ def _record_from_fund_flow_row(row: dict[str, object], normalized_symbol: str) -
         url="",
         summary=f"main_net_inflow={main_net_inflow}",
         risk_tags=tuple(tags),
+        metadata={"raw_row": _metadata_row(row)},
     )
 
 
