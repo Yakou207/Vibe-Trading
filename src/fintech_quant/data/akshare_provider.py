@@ -13,8 +13,21 @@ from fintech_quant.data.symbols import normalize_a_share_symbol
 class AkShareProvider(MarketDataProvider):
     name = "akshare"
 
-    def __init__(self, fetcher: Callable[..., Any] | None = None) -> None:
+    def __init__(
+        self,
+        fetcher: Callable[..., Any] | None = None,
+        *,
+        backend: str = "eastmoney",
+    ) -> None:
+        if backend not in {"eastmoney", "sina", "tencent"}:
+            raise ValueError("AkShare backend must be eastmoney, sina, or tencent")
         self._fetcher = fetcher
+        self._backend = backend
+        self.name = {
+            "eastmoney": "akshare",
+            "sina": "akshare-sina",
+            "tencent": "akshare-tencent-estimated-turnover",
+        }[backend]
 
     def history(self, symbol: str, start: date, end: date) -> list[dict[str, Any]]:
         normalized_symbol = normalize_a_share_symbol(symbol)
@@ -35,7 +48,12 @@ class AkShareProvider(MarketDataProvider):
         except ImportError as exc:
             raise MissingProviderDependency("akshare is required for AkShareProvider") from exc
 
-        return self._run_fetch(symbol, start, end, lambda **_: _load_hist_rows(ak, symbol, start, end))
+        return self._run_fetch(
+            symbol,
+            start,
+            end,
+            lambda **_: _load_hist_rows(ak, symbol, start, end, backend=self._backend),
+        )
 
     def _run_fetch(
         self,
@@ -52,13 +70,44 @@ class AkShareProvider(MarketDataProvider):
             ) from exc
 
 
-def _load_hist_rows(ak: Any, symbol: str, start: date, end: date) -> list[dict[str, Any]]:
+def _load_hist_rows(
+    ak: Any,
+    symbol: str,
+    start: date,
+    end: date,
+    *,
+    backend: str,
+) -> list[dict[str, Any]]:
     code = symbol.split(".")[0]
-    frame = ak.stock_zh_a_hist(
-        symbol=code,
-        period="daily",
-        start_date=start.strftime("%Y%m%d"),
-        end_date=end.strftime("%Y%m%d"),
-        adjust="qfq",
-    )
+    if backend == "sina":
+        exchange = symbol.split(".")[1].lower()
+        frame = ak.stock_zh_a_daily(
+            symbol=f"{exchange}{code}",
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+            adjust="qfq",
+        )
+    elif backend == "tencent":
+        exchange = symbol.split(".")[1].lower()
+        frame = ak.stock_zh_a_hist_tx(
+            symbol=f"{exchange}{code}",
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+            adjust="qfq",
+            timeout=30,
+        )
+        rows = frame.to_dict(orient="records")
+        for row in rows:
+            volume = float(row["amount"]) * 100.0
+            row["volume"] = volume
+            row["amount"] = float(row["close"]) * volume
+        return rows
+    else:
+        frame = ak.stock_zh_a_hist(
+            symbol=code,
+            period="daily",
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+            adjust="qfq",
+        )
     return frame.to_dict(orient="records")

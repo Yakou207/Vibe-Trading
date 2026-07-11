@@ -94,6 +94,46 @@ def test_real_fundamental_collection_uses_requested_end_as_snapshot_date() -> No
     assert rows == []
 
 
+def test_collector_can_limit_groups_when_capital_flow_uses_explicit_proxy(tmp_path: Path) -> None:
+    membership_path = _write_membership(tmp_path)
+    fixture_path = _write_fixture(tmp_path / "fixture.json", fail_scope=None)
+    raw_root = tmp_path / "raw-runs"
+
+    completed = _run_collector(
+        membership_path,
+        fixture_path,
+        raw_root,
+        run_id="raw-1",
+        groups=("fundamentals", "financial_statements"),
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    manifest = json.loads((raw_root / "raw-1/manifest.json").read_text(encoding="utf-8"))
+    assert manifest["request"]["groups"] == ["fundamentals", "financial_statements"]
+    assert len(manifest["artifacts"]) == 4
+    assert not any(artifact["path"].startswith("capital_flow/") for artifact in manifest["artifacts"])
+
+
+def test_collector_rejects_tampered_resume_artifact(tmp_path: Path) -> None:
+    membership_path = _write_membership(tmp_path)
+    fixture_path = _write_fixture(tmp_path / "fixture.json", fail_scope=None)
+    raw_root = tmp_path / "raw-runs"
+    first = _run_collector(membership_path, fixture_path, raw_root, run_id="raw-1")
+    assert first.returncode == 0
+    (raw_root / "raw-1/fundamentals/000001.SZ.jsonl").write_text("tampered\n", encoding="utf-8")
+
+    second = _run_collector(
+        membership_path,
+        fixture_path,
+        raw_root,
+        run_id="raw-2",
+        resume_from=raw_root / "raw-1/manifest.json",
+    )
+
+    assert second.returncode != 0
+    assert "resume artifact hash mismatch" in second.stderr
+
+
 def _run_collector(
     membership_path: Path,
     fixture_path: Path,
@@ -101,6 +141,7 @@ def _run_collector(
     *,
     run_id: str,
     resume_from: Path | None = None,
+    groups: tuple[str, ...] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -124,6 +165,8 @@ def _run_collector(
     ]
     if resume_from is not None:
         command.extend(["--resume-from", str(resume_from)])
+    if groups is not None:
+        command.extend(["--groups", *groups])
     return subprocess.run(
         command,
         cwd=Path(__file__).resolve().parents[1],

@@ -831,9 +831,15 @@ class InformationRepositoryTest(unittest.TestCase):
 
         class FakeAkShare:
             @staticmethod
-            def stock_zh_a_spot_em():
-                calls.append("valuation:spot")
-                return [{"代码": "000001", "市盈率-动态": "18", "市净率": "1.5"}]
+            def stock_value_em(symbol: str):
+                calls.append(f"valuation:value:{symbol}")
+                return [
+                    {
+                        "数据日期": "2026-06-03",
+                        "PE(TTM)": "18",
+                        "市净率": "1.5",
+                    }
+                ]
 
             @staticmethod
             def stock_financial_analysis_indicator(symbol: str):
@@ -855,8 +861,50 @@ class InformationRepositoryTest(unittest.TestCase):
             else:
                 sys.modules["akshare"] = original_akshare
 
-        self.assertEqual(calls, ["valuation:spot", "financial:000001"])
+        self.assertEqual(calls, ["valuation:value:000001", "financial:000001"])
         self.assertGreaterEqual(len(records), 1)
+        valuation = next(record for record in records if record.metadata["record_kind"] == "valuation")
+        self.assertEqual(valuation.published_at, date(2026, 6, 3))
+        self.assertIn("pe=18.0", valuation.summary)
+
+    def test_akshare_fundamental_fetcher_falls_back_to_baidu_for_delisted_stock(self) -> None:
+        from fintech_quant.information import AkShareFundamentalFetcher
+
+        class FakeAkShare:
+            @staticmethod
+            def stock_value_em(symbol: str):
+                raise TypeError("delisted stock has no Eastmoney valuation payload")
+
+            @staticmethod
+            def stock_zh_valuation_baidu(symbol: str, indicator: str, period: str):
+                assert symbol == "600837"
+                assert period == "全部"
+                value = 12.5 if indicator == "市盈率(TTM)" else 0.84
+                return [{"date": "2025-02-13", "value": value}]
+
+            @staticmethod
+            def stock_financial_analysis_indicator(symbol: str):
+                return []
+
+        original_akshare = sys.modules.get("akshare")
+        sys.modules["akshare"] = FakeAkShare()
+        try:
+            records = AkShareFundamentalFetcher().fetch(
+                "600837.SH",
+                None,
+                date(2025, 1, 1),
+                date(2025, 3, 3),
+            )
+        finally:
+            if original_akshare is None:
+                sys.modules.pop("akshare", None)
+            else:
+                sys.modules["akshare"] = original_akshare
+
+        assert len(records) == 1
+        assert records[0].published_at == date(2025, 2, 13)
+        assert records[0].summary == "pe=12.5; pb=0.84"
+        assert records[0].metadata["valuation_provider"] == "baidu"
 
     def test_akshare_fundamental_fetcher_keeps_partial_valuation_rows(self) -> None:
         from fintech_quant.information import AkShareFundamentalFetcher

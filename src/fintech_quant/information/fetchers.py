@@ -290,15 +290,51 @@ class AkShareFundamentalFetcher(InformationFetcher):
             return _rows_from_fetch_result(self._valuation_fetcher(symbol))
         ak = _import_akshare("AkShareFundamentalFetcher")
         if hasattr(ak, "stock_a_indicator_lg"):
-            return _rows_from_fetch_result(ak.stock_a_indicator_lg(symbol=symbol))
+            return _tag_valuation_provider(
+                _rows_from_fetch_result(ak.stock_a_indicator_lg(symbol=symbol)),
+                "legulegu",
+            )
+        if hasattr(ak, "stock_value_em"):
+            try:
+                rows = _rows_from_fetch_result(ak.stock_value_em(symbol=symbol))
+                if rows:
+                    return _tag_valuation_provider(rows, "eastmoney_stock_value")
+            except Exception:
+                if not hasattr(ak, "stock_zh_valuation_baidu"):
+                    raise
+        if hasattr(ak, "stock_zh_valuation_baidu"):
+            return _baidu_valuation_rows(ak, symbol)
         rows = _rows_from_fetch_result(ak.stock_zh_a_spot_em())
-        return [row for row in rows if str(row.get("代码", "")).strip() == symbol]
+        return _tag_valuation_provider(
+            [row for row in rows if str(row.get("代码", "")).strip() == symbol],
+            "eastmoney_spot",
+        )
 
     def _fetch_financial_rows(self, symbol: str) -> list[dict[str, object]]:
         if self._financial_fetcher is not None:
             return _rows_from_fetch_result(self._financial_fetcher(symbol))
         ak = _import_akshare("AkShareFundamentalFetcher")
         return _rows_from_fetch_result(ak.stock_financial_analysis_indicator(symbol=symbol))
+
+
+def _baidu_valuation_rows(ak: object, symbol: str) -> list[dict[str, object]]:
+    merged: dict[str, dict[str, object]] = {}
+    for indicator, field in (("市盈率(TTM)", "PE(TTM)"), ("市净率", "市净率")):
+        rows = _rows_from_fetch_result(
+            ak.stock_zh_valuation_baidu(symbol=symbol, indicator=indicator, period="全部")
+        )
+        for row in rows:
+            raw_date = _first_value(row, "date", "日期", "数据日期")
+            key = str(raw_date)
+            merged.setdefault(key, {"date": raw_date})[field] = _first_value(row, "value", field)
+    return _tag_valuation_provider([merged[key] for key in sorted(merged)], "baidu")
+
+
+def _tag_valuation_provider(
+    rows: list[dict[str, object]],
+    provider: str,
+) -> list[dict[str, object]]:
+    return [{**row, "valuation_provider": provider} for row in rows]
 
 
 class TushareFundamentalFetcher(InformationFetcher):
@@ -676,10 +712,26 @@ def _records_from_fundamental_rows(
 ) -> list[InformationRecord]:
     records: list[InformationRecord] = []
     for valuation in valuation_rows:
-        raw_date = _first_value(valuation, "日期", "date", "trade_date", default=None)
+        raw_date = _first_value(
+            valuation,
+            "日期",
+            "数据日期",
+            "date",
+            "trade_date",
+            default=None,
+        )
         record_date = _parse_date(raw_date) if raw_date is not None else fallback_date
         pe = _float_or_none(
-            _first_value(valuation, "市盈率", "市盈率-动态", "市盈率-TTM", "pe", "PE", default=None)
+            _first_value(
+                valuation,
+                "市盈率",
+                "市盈率-动态",
+                "市盈率-TTM",
+                "PE(TTM)",
+                "pe",
+                "PE",
+                default=None,
+            )
         )
         pb = _float_or_none(_first_value(valuation, "市净率", "pb", "PB", default=None))
         summary = _fundamental_summary(pe, pb, None, None)
@@ -699,6 +751,7 @@ def _records_from_fundamental_rows(
                 metadata={
                     "record_kind": "valuation",
                     "available_date_source": "row_date" if raw_date is not None else "fetch_date",
+                    "valuation_provider": valuation.get("valuation_provider", "unknown"),
                     "raw_row": _metadata_row(valuation),
                 },
             )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -65,6 +66,34 @@ def test_healthy_price_volume_proxy_is_visible_and_passes_capital_gate() -> None
         "unknown": 0,
     }
     assert report.metrics["capital_flow_field_coverage"]["price_volume_flow_signal"] == 1.0
+
+
+def test_capital_staleness_is_not_required_on_member_day_without_a_price_row() -> None:
+    from fintech_quant.research.data_health import validate_research_data
+
+    dataset = _dataset("healthy")
+    missing_date = date(2026, 1, 5)
+    capital_flow = dict(dataset.capital_flow)
+    capital_flow.pop(("600000.SH", missing_date))
+    dataset = replace(
+        dataset,
+        features=[
+            row
+            for row in dataset.features
+            if not (row.symbol == "600000.SH" and row.trade_date == missing_date)
+        ],
+        capital_flow=capital_flow,
+    )
+    thresholds = replace(
+        _fixture_thresholds(),
+        minimum_price_coverage=0.0,
+        minimum_capital_flow_coverage=0.0,
+        maximum_capital_flow_age_sessions=0,
+    )
+
+    report = validate_research_data(dataset, thresholds=thresholds)
+
+    assert "capital_flow_stale" not in {issue.code for issue in report.issues}
 
 
 def _fixture_thresholds():

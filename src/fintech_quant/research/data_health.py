@@ -112,11 +112,10 @@ def validate_research_data(
         if trade_date >= warmup_start
         for symbol in symbols
     ]
-    capital_pairs = [
-        (trade_date, symbol)
-        for trade_date, symbols in active_by_date.items()
-        for symbol in symbols
-    ]
+    # A price-derived flow signal is only actionable on rows where the stock has
+    # a market observation. Missing member-day prices are gated separately by
+    # price coverage and must not cause an old signal to be carried through a suspension.
+    capital_pairs = sorted(feature_pairs)
     fundamental_rows, fundamental_stale = _available_rows(
         fundamental_index,
         fundamental_pairs,

@@ -6,6 +6,7 @@ import importlib.metadata
 import json
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -42,10 +43,14 @@ def main() -> int:
     parser.add_argument("--raw-root", default="data/raw/runs")
     parser.add_argument("--resume-from", default=None)
     parser.add_argument("--created-at", default=None)
+    parser.add_argument("--groups", nargs="+", choices=GROUPS, default=list(GROUPS))
+    parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()
 
     if args.source == "fixture" and not args.fixture_input:
         raise SystemExit("--fixture-input is required when --source fixture")
+    if args.workers < 1:
+        raise SystemExit("--workers must be positive")
 
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end)
@@ -67,10 +72,11 @@ def main() -> int:
     fetched_scopes = 0
     reused_scopes = 0
     failed_scopes = 0
+    pending: list[tuple[str, str]] = []
     for symbol in symbols:
-        for group in GROUPS:
+        for group in args.groups:
             relative_path = f"{group}/{symbol}.jsonl"
-            parent_scope = _reusable_parent_scope(parent, symbol, group)
+            parent_scope = _reusable_parent_scope(parent, parent_path, symbol, group)
             if parent_scope is not None and parent_path is not None:
                 source = parent_path.parent / str(parent_scope["artifact"])
                 store.copy_artifact(source, relative_path)
@@ -85,19 +91,21 @@ def main() -> int:
                 )
                 reused_scopes += 1
                 continue
+            pending.append((symbol, group))
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        future_by_scope = {
+            executor.submit(_fetch_rows, args.source, fixture, symbol, group, start, end): (
+                symbol,
+                group,
+            )
+            for symbol, group in pending
+        }
+        for completed, future in enumerate(as_completed(future_by_scope), start=1):
+            symbol, group = future_by_scope[future]
+            relative_path = f"{group}/{symbol}.jsonl"
             try:
-                rows = _fetch_rows(args.source, fixture, symbol, group, start, end)
-                store.write_jsonl(relative_path, rows)
-                scopes.append(
-                    {
-                        "symbol": symbol,
-                        "group": group,
-                        "status": "success" if rows else "empty",
-                        "artifact": relative_path,
-                        "error": None,
-                    }
-                )
-                fetched_scopes += 1
+                rows = future.result()
             except Exception as exc:
                 scopes.append(
                     {
@@ -109,7 +117,25 @@ def main() -> int:
                     }
                 )
                 failed_scopes += 1
+            else:
+                store.write_jsonl(relative_path, rows)
+                scopes.append(
+                    {
+                        "symbol": symbol,
+                        "group": group,
+                        "status": "success" if rows else "empty",
+                        "artifact": relative_path,
+                        "error": None,
+                    }
+                )
+                fetched_scopes += 1
+            if completed % 25 == 0 or completed == len(pending):
+                print(
+                    f"progress={completed}/{len(pending)} failed={failed_scopes}",
+                    flush=True,
+                )
 
+    scopes = sorted(scopes, key=lambda scope: (str(scope["symbol"]), str(scope["group"])))
     _write_collection_state(store.run_dir, scopes)
     membership_path = Path(args.membership).resolve()
     manifest_path = store.write_manifest(
@@ -120,7 +146,7 @@ def main() -> int:
             "start": start.isoformat(),
             "end": end.isoformat(),
             "symbols": list(symbols),
-            "groups": list(GROUPS),
+            "groups": list(args.groups),
         },
         scopes=scopes,
         created_at=created_at,
@@ -202,10 +228,11 @@ def _load_parent_manifest(path: Path | None) -> dict[str, object] | None:
 
 def _reusable_parent_scope(
     parent: Mapping[str, object] | None,
+    parent_path: Path | None,
     symbol: str,
     group: str,
 ) -> Mapping[str, object] | None:
-    if parent is None:
+    if parent is None or parent_path is None:
         return None
     scopes = parent.get("scopes", [])
     if not isinstance(scopes, list):
@@ -215,6 +242,18 @@ def _reusable_parent_scope(
             continue
         if item.get("symbol") == symbol and item.get("group") == group:
             if item.get("status") in {"success", "empty", "reused"} and item.get("artifact"):
+                relative = str(item["artifact"])
+                artifact = next(
+                    (
+                        candidate
+                        for candidate in parent.get("artifacts", [])
+                        if isinstance(candidate, dict) and candidate.get("path") == relative
+                    ),
+                    None,
+                )
+                path = (parent_path.parent / relative).resolve()
+                if artifact is None or sha256_file(path) != artifact.get("sha256"):
+                    raise ValueError(f"resume artifact hash mismatch: {relative}")
                 return item
             return None
     return None
