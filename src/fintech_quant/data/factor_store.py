@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import date
 from typing import Iterable, Mapping, Sequence
@@ -199,15 +200,24 @@ def _financial_events(
                 raise ValueError("financial statement is missing available_date_source")
             statements.setdefault(report_period, []).append(record)
 
+    statement_metrics = {
+        report_period: _statement_metrics(report_period, period_statements)
+        for report_period, period_statements in statements.items()
+    }
     events: dict[date, tuple[date, dict[str, float | None]]] = {}
     for report_period, period_statements in statements.items():
         available_date = max(record.published_at for record in period_statements)
-        values = dict(
-            indicators.get(
-                report_period,
-                {"roe": None, "growth": None, "goodwill_ratio": None},
-            )
-        )
+        derived = _derived_statement_values(report_period, statement_metrics)
+        indicator = indicators.get(report_period, {})
+        values = {
+            "roe": indicator.get("roe") if indicator.get("roe") is not None else derived["roe"],
+            "growth": (
+                indicator.get("growth")
+                if indicator.get("growth") is not None
+                else derived["growth"]
+            ),
+            "goodwill_ratio": None,
+        }
         goodwill_ratio = _goodwill_ratio(period_statements)
         if goodwill_ratio is not None:
             values["goodwill_ratio"] = goodwill_ratio
@@ -215,6 +225,122 @@ def _financial_events(
         if previous is None or report_period > previous[0]:
             events[available_date] = (report_period, values)
     return events
+
+
+def _statement_metrics(
+    report_period: date,
+    records: Sequence[InformationRecord],
+) -> dict[str, float | date | None]:
+    total_assets = _summary_float_from_records(records, "total_assets")
+    total_liabilities = _summary_float_from_records(records, "total_liabilities")
+    equity = None
+    if total_assets is not None and total_liabilities is not None:
+        equity = total_assets - total_liabilities
+    return {
+        "available_date": max(record.published_at for record in records),
+        "revenue": _summary_float_from_records(records, "revenue"),
+        "net_profit": _summary_float_from_records(records, "net_profit"),
+        "equity": equity,
+        "annualization": _annualization_factor(report_period),
+    }
+
+
+def _derived_statement_values(
+    report_period: date,
+    metrics_by_period: Mapping[date, Mapping[str, float | date | None]],
+) -> dict[str, float | None]:
+    current = metrics_by_period[report_period]
+    roe = _derived_roe(report_period, metrics_by_period)
+
+    prior_period = report_period.replace(year=report_period.year - 1)
+    prior = metrics_by_period.get(prior_period)
+    revenue = _finite_float(current.get("revenue"))
+    growth = None
+    current_available = current.get("available_date")
+    prior_available = prior.get("available_date") if prior is not None else None
+    if (
+        prior is not None
+        and isinstance(current_available, date)
+        and isinstance(prior_available, date)
+        and prior_available <= current_available
+    ):
+        prior_revenue = _finite_float(prior.get("revenue"))
+        if revenue is not None and prior_revenue is not None and prior_revenue != 0:
+            growth = round(revenue / prior_revenue - 1.0, 6)
+    return {"roe": roe, "growth": growth}
+
+
+def _derived_roe(
+    report_period: date,
+    metrics_by_period: Mapping[date, Mapping[str, float | date | None]],
+) -> float | None:
+    current = metrics_by_period[report_period]
+    current_available = current.get("available_date")
+    net_profit = _finite_float(current.get("net_profit"))
+    equity = _finite_float(current.get("equity"))
+    annualization = _finite_float(current.get("annualization"))
+    if (
+        not isinstance(current_available, date)
+        or net_profit is None
+        or equity is None
+        or equity <= 0
+        or annualization is None
+    ):
+        return None
+
+    prior_same_period = report_period.replace(year=report_period.year - 1)
+    prior_same = _available_metrics(
+        metrics_by_period.get(prior_same_period),
+        current_available,
+    )
+    earnings = net_profit * annualization
+    if report_period.month != 12:
+        prior_annual_period = date(report_period.year - 1, 12, 31)
+        prior_annual = _available_metrics(
+            metrics_by_period.get(prior_annual_period),
+            current_available,
+        )
+        prior_annual_profit = _finite_float(prior_annual.get("net_profit")) if prior_annual else None
+        prior_same_profit = _finite_float(prior_same.get("net_profit")) if prior_same else None
+        if prior_annual_profit is not None and prior_same_profit is not None:
+            earnings = prior_annual_profit + net_profit - prior_same_profit
+
+    prior_equity = _finite_float(prior_same.get("equity")) if prior_same else None
+    denominator = (equity + prior_equity) / 2.0 if prior_equity and prior_equity > 0 else equity
+    return round(earnings / denominator, 6)
+
+
+def _available_metrics(
+    metrics: Mapping[str, float | date | None] | None,
+    as_of: date,
+) -> Mapping[str, float | date | None] | None:
+    if metrics is None:
+        return None
+    available_date = metrics.get("available_date")
+    if not isinstance(available_date, date) or available_date > as_of:
+        return None
+    return metrics
+
+
+def _annualization_factor(report_period: date) -> float:
+    return {3: 4.0, 6: 2.0, 9: 4.0 / 3.0, 12: 1.0}.get(report_period.month, 1.0)
+
+
+def _summary_float_from_records(
+    records: Sequence[InformationRecord],
+    field: str,
+) -> float | None:
+    for record in records:
+        value = _finite_float(_summary_float(record.summary, field))
+        if value is not None:
+            return value
+    return None
+
+
+def _finite_float(value: object) -> float | None:
+    if not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        return None
+    return float(value)
 
 
 def _goodwill_ratio(records: Iterable[InformationRecord]) -> float | None:

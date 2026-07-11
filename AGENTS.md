@@ -98,14 +98,17 @@ the portfolio drawdown target.
   statement scopes succeeded; all 30 fundamental/valuation scopes and all 30
   individual capital-flow scopes failed because the upstream Eastmoney proxy
   closed the connection.
-- The successful statements produced 462 point-in-time fundamental snapshots,
-  but they do not provide the PE/PB/ROE/growth fields needed by the score.
-  Capital-flow materialization produced zero rows.
-- The preserved health report failed five gates: price coverage `0.806766`
-  versus `0.95`, capital-flow coverage `0.0` versus `0.95`, 1,073 stale
-  fundamental observations, constant/all-zero fundamental scores, and all-zero
-  capital-flow scores. Fundamental row coverage was `0.891751`, but usable
-  scored-field variation was absent.
+- The successful statements produced 462 point-in-time fundamental snapshots.
+  Statement-derived trailing/annualized ROE has 455 populated rows and
+  same-period revenue growth has 396; the fundamental score now has three
+  distinct values from 0 to 17.5 instead of being constant at zero. PE/PB still
+  require a separately valid point-in-time valuation path. Capital-flow
+  materialization produced zero rows.
+- The latest preserved health report fails four gates: price coverage
+  `0.806766` versus `0.95`, capital-flow coverage `0.0` versus `0.95`, 1,073
+  stale fundamental observations, and all-zero capital-flow scores.
+  Fundamental row coverage is `0.891751`, with ROE field coverage `0.992839`
+  and growth field coverage `0.888683` among the usable snapshots.
 - The formal orchestrator stopped before baseline, risk-controlled, RL, or
   benchmark-comparison artifacts were created. This is the intended behavior;
   the failed provider run and health report are evidence, not a strategy run.
