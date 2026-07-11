@@ -226,12 +226,31 @@ def validate_research_data(
         ),
         "capital_flow_field_coverage": _field_coverage(
             capital_rows,
-            ("main_net_inflow", "main_outflow_days", "margin_financing_positive"),
+            (
+                "main_net_inflow",
+                "main_outflow_days",
+                "margin_financing_positive",
+                "price_volume_flow_signal",
+                "price_volume_outflow_days",
+            ),
         ),
+        "capital_flow_mode_counts": _capital_flow_mode_counts(capital_rows),
         "fundamental_score": fundamental_stats,
         "capital_flow_score": capital_stats,
     }
     return DataHealthReport(not issues, metrics, tuple(issues))
+
+
+def _capital_flow_mode_counts(rows: Sequence[SupplementalRow]) -> dict[str, int]:
+    counts = {"price_volume_proxy": 0, "real_main_flow": 0, "unknown": 0}
+    for row in rows:
+        if row.values.get("flow_proxy_kind") == "price_volume_cmf_obv":
+            counts["price_volume_proxy"] += 1
+        elif row.values.get("main_net_inflow") is not None:
+            counts["real_main_flow"] += 1
+        else:
+            counts["unknown"] += 1
+    return counts
 
 
 def _available_rows(

@@ -40,6 +40,33 @@ def test_healthy_point_in_time_dataset_passes_required_gates() -> None:
     assert report.metrics["capital_flow_coverage"] == 1.0
 
 
+def test_healthy_price_volume_proxy_is_visible_and_passes_capital_gate() -> None:
+    from fintech_quant.research.data_health import validate_research_data
+
+    dataset = _dataset("healthy")
+    for row in dataset.capital_flow.values():
+        row.values.update(
+            {
+                "flow_proxy_kind": "price_volume_cmf_obv",
+                "price_volume_flow_signal": 0.2 if row.symbol == "000001.SZ" else -0.2,
+                "price_volume_outflow_days": 0 if row.symbol == "000001.SZ" else 5,
+                "main_net_inflow": None,
+                "main_outflow_days": None,
+                "margin_financing_positive": None,
+            }
+        )
+
+    report = validate_research_data(dataset, thresholds=_fixture_thresholds())
+
+    assert report.passed is True
+    assert report.metrics["capital_flow_mode_counts"] == {
+        "price_volume_proxy": 4,
+        "real_main_flow": 0,
+        "unknown": 0,
+    }
+    assert report.metrics["capital_flow_field_coverage"]["price_volume_flow_signal"] == 1.0
+
+
 def _fixture_thresholds():
     from fintech_quant.research.data_health import DataHealthThresholds
 

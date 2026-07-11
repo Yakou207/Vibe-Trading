@@ -165,6 +165,63 @@ def test_build_point_in_time_factors_rejects_tampered_raw_artifact(tmp_path: Pat
     assert "raw artifact hash mismatch" in completed.stderr
 
 
+def test_build_point_in_time_factors_can_explicitly_build_price_volume_proxy(tmp_path: Path) -> None:
+    from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file
+
+    raw_store = RunArtifactStore(tmp_path / "raw", "raw-1", layer="raw")
+    raw_manifest = raw_store.write_manifest(
+        request={"symbols": ["000001.SZ"]},
+        scopes=[],
+        created_at="2026-07-10T12:00:00+08:00",
+        git_sha="abc123",
+        provider_versions={"fixture": "1"},
+    )
+    features_path = tmp_path / "features.csv"
+    features_path.write_text(
+        "symbol,trade_date,open,high,low,close,volume,amount,source\n"
+        "000001.SZ,2026-01-02,10,11,9,10,100,1000,fixture\n"
+        "000001.SZ,2026-01-05,11,11,9,11,200,2200,fixture\n"
+        "000001.SZ,2026-01-06,9,11,9,9,100,900,fixture\n",
+        encoding="utf-8",
+    )
+    processed_root = tmp_path / "processed"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_point_in_time_factors.py",
+            "--raw-manifest",
+            str(raw_manifest),
+            "--trading-calendar",
+            str(features_path),
+            "--capital-flow-mode",
+            "price-volume-proxy",
+            "--price-features",
+            str(features_path),
+            "--price-volume-window",
+            "3",
+            "--run-id",
+            "processed-1",
+            "--processed-root",
+            str(processed_root),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    manifest = json.loads((processed_root / "processed-1/manifest.json").read_text(encoding="utf-8"))
+    assert manifest["request"]["capital_flow_mode"] == "price-volume-proxy"
+    assert manifest["request"]["price_features_sha256"] == sha256_file(features_path)
+    with (processed_root / "processed-1/capital_flow.csv").open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[0]["source"] == "derived_price_volume_cmf_obv_v1"
+    assert rows[0]["flow_proxy_kind"] == "price_volume_cmf_obv"
+    assert rows[0]["main_net_inflow"] == ""
+
+
 def _record_json(
     *,
     source: str,

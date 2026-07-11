@@ -32,6 +32,8 @@ _BOOLEAN_FIELDS = {
 }
 _INT_FIELDS = {
     "main_outflow_days",
+    "flow_proxy_window",
+    "price_volume_outflow_days",
     "broad_market_drop_gt_3pct_count",
 }
 _FLOAT_FIELDS = {
@@ -57,6 +59,9 @@ _FLOAT_FIELDS = {
     "goodwill_ratio",
     "pledge_ratio",
     "main_net_inflow",
+    "price_volume_flow_signal",
+    "cmf",
+    "obv_momentum",
     "index_close",
     "index_ma250",
 }

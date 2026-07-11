@@ -72,6 +72,9 @@ def build_score_input(
         volume_confirmed=_volume_confirmed(feature_values),
         main_net_inflow=_float_or_none(capital_values.get("main_net_inflow")),
         main_outflow_days=_int_or_none(capital_values.get("main_outflow_days")),
+        flow_proxy_kind=_text_or_none(capital_values.get("flow_proxy_kind")),
+        price_volume_flow_signal=_float_or_none(capital_values.get("price_volume_flow_signal")),
+        price_volume_outflow_days=_int_or_none(capital_values.get("price_volume_outflow_days")),
         margin_financing_positive=_bool_or_none(capital_values.get("margin_financing_positive")),
         limit_up_streak=_int_or_none(feature_values.get("limit_up_streak")),
         dragon_tiger_positive=_first_present(
