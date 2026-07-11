@@ -138,7 +138,7 @@ def update_drawdown_control(
 
 
 def _drawdown(equity: float, peak: float) -> float:
-    return max(0.0, (peak - equity) / peak) if peak > 0 else 0.0
+    return round(max(0.0, (peak - equity) / peak), 12) if peak > 0 else 0.0
 
 
 def drawdown_control_state_to_json(state: DrawdownControlState) -> dict[str, object]:

@@ -127,6 +127,8 @@ class DqnTrainingTest(unittest.TestCase):
         self.assertEqual(report["strategy_config"]["symbol_count"], 2)
         self.assertEqual(report["summary"]["ending_equity"], 1.0)
         self.assertEqual(report["summary"]["trade_count"], 2)
+        self.assertEqual(report["summary"]["action_counts"], {"buy": 2, "hold": 0, "sell": 0})
+        self.assertEqual(report["summary"]["invested_step_rate"], 1.0)
         self.assertEqual(report["summary"]["win_rate"], 0.5)
         self.assertEqual(report["summary"]["win_rate_sample_count"], 2)
         self.assertEqual(
@@ -135,6 +137,70 @@ class DqnTrainingTest(unittest.TestCase):
                 {"trade_date": "2026-01-01", "equity": 1.0},
                 {"trade_date": "2026-01-02", "equity": 1.0},
             ],
+        )
+
+    def test_policy_report_calculates_max_drawdown_from_evaluation_equity(self) -> None:
+        from fintech_quant.training import LinearQPolicy, RlStateSample, evaluate_linear_dqn_policy
+
+        policy = LinearQPolicy(
+            state_fields=("signal",),
+            weights={
+                "sell": (0.0, 0.0, 0.0),
+                "hold": (0.0, 0.0, 0.0),
+                "buy": (0.0, 0.0, 1.0),
+            },
+        )
+        report = evaluate_linear_dqn_policy(
+            [
+                RlStateSample(
+                    "000001.SZ",
+                    _date("2026-01-01"),
+                    _date("2026-01-02"),
+                    ("signal",),
+                    (1.0,),
+                    0.10,
+                ),
+                RlStateSample(
+                    "000001.SZ",
+                    _date("2026-01-02"),
+                    _date("2026-01-03"),
+                    ("signal",),
+                    (1.0,),
+                    -0.20,
+                ),
+            ],
+            policy,
+        )
+
+        self.assertEqual(report["summary"]["max_drawdown"], 0.2)
+
+    def test_linear_evaluation_applies_shared_portfolio_drawdown_state_machine(self) -> None:
+        from fintech_quant.backtesting import DrawdownControlPolicy
+        from fintech_quant.training import LinearQPolicy, RlStateSample, evaluate_linear_dqn_policy
+
+        policy = LinearQPolicy(
+            state_fields=("signal",),
+            weights={
+                "sell": (0.0, 0.0, 0.0),
+                "hold": (0.0, 0.0, 0.0),
+                "buy": (0.0, 0.0, 1.0),
+            },
+        )
+        report = evaluate_linear_dqn_policy(
+            [
+                RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("signal",), (1.0,), -0.08),
+                RlStateSample("000001.SZ", _date("2026-01-02"), _date("2026-01-03"), ("signal",), (1.0,), -0.02),
+                RlStateSample("000001.SZ", _date("2026-01-03"), _date("2026-01-04"), ("signal",), (1.0,), 0.055555),
+            ],
+            policy,
+            drawdown_policy=DrawdownControlPolicy(),
+        )
+
+        self.assertEqual(report["summary"]["max_drawdown"], 0.0892)
+        self.assertEqual(report["shadow_summary"]["max_drawdown"], 0.0984)
+        self.assertEqual(
+            [item["to_regime"] for item in report["drawdown_control"]["transitions"]],
+            ["reduced", "normal"],
         )
 
     def test_train_dqn_policy_script_reads_jsonl_and_writes_report(self) -> None:
@@ -181,6 +247,7 @@ class DqnTrainingTest(unittest.TestCase):
         self.assertIn(f"report_path={output_path}", result.stdout)
         self.assertEqual(payload["strategy_config"]["policy"], "linear_q_dqn_v0")
         self.assertEqual(payload["summary"]["ending_equity"], 1.155)
+        self.assertIn("drawdown_control", payload)
 
     def test_train_dqn_policy_script_supports_out_of_sample_eval_start(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

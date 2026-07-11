@@ -17,6 +17,7 @@ from fintech_quant.training import (  # noqa: E402
     train_torch_dqn_policy_report,
     write_dqn_policy_report,
 )
+from fintech_quant.backtesting import DrawdownControlPolicy  # noqa: E402
 
 
 def main() -> int:
@@ -32,6 +33,7 @@ def main() -> int:
     parser.add_argument("--drawdown-penalty", type=float, default=0.0)
     parser.add_argument("--eval-start", default=None, help="First trade date used for out-of-sample evaluation.")
     parser.add_argument("--run-id", default="linear-q-dqn")
+    parser.add_argument("--no-drawdown-control", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -50,6 +52,7 @@ def main() -> int:
                     transaction_cost=args.transaction_cost,
                     drawdown_penalty=args.drawdown_penalty,
                 ),
+                drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
             )
         else:
             report = train_linear_dqn_policy_report(
@@ -62,6 +65,7 @@ def main() -> int:
                 transaction_cost=args.transaction_cost,
                 drawdown_penalty=args.drawdown_penalty,
                 eval_start=date.fromisoformat(args.eval_start) if args.eval_start else None,
+                drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
             )
     except (RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

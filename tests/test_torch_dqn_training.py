@@ -5,9 +5,40 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 
 
 class TorchDqnTrainingTest(unittest.TestCase):
+    def test_torch_evaluation_uses_shared_portfolio_drawdown_state_machine(self) -> None:
+        from fintech_quant.backtesting import DrawdownControlPolicy
+        from fintech_quant.training import RlStateSample
+        from fintech_quant.training.torch_dqn import evaluate_torch_dqn_policy
+
+        class AlwaysBuyPolicy:
+            config = SimpleNamespace(transaction_cost=0.0, drawdown_penalty=0.0)
+
+            def action(self, _observation: object) -> str:
+                return "buy"
+
+        samples = [
+            RlStateSample("000001.SZ", _date("2026-01-01"), _date("2026-01-02"), ("signal",), (1.0,), -0.08),
+            RlStateSample("000001.SZ", _date("2026-01-02"), _date("2026-01-03"), ("signal",), (1.0,), -0.02),
+            RlStateSample("000001.SZ", _date("2026-01-03"), _date("2026-01-04"), ("signal",), (1.0,), 0.055555),
+        ]
+
+        report = evaluate_torch_dqn_policy(
+            samples,
+            AlwaysBuyPolicy(),  # type: ignore[arg-type]
+            drawdown_policy=DrawdownControlPolicy(),
+        )
+
+        self.assertEqual(report["summary"]["max_drawdown"], 0.0892)
+        self.assertEqual(report["summary"]["action_counts"], {"buy": 3, "hold": 0, "sell": 0})
+        self.assertEqual(
+            [item["to_regime"] for item in report["drawdown_control"]["transitions"]],
+            ["reduced", "normal"],
+        )
+
     def test_torch_dqn_imports_and_trains_when_dependency_is_available(self) -> None:
         from fintech_quant.training import RlStateSample
         from fintech_quant.training.torch_dqn import TORCH_DQN_POLICY_NAME, TorchDQNConfig, train_torch_dqn_policy

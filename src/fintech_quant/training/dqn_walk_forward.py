@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Sequence
 
+from fintech_quant.backtesting.drawdown_control import DrawdownControlPolicy
 from fintech_quant.training.rl_dataset import RlStateSample
 from fintech_quant.training.torch_dqn import (
     TORCH_DQN_POLICY_NAME,
@@ -88,6 +89,7 @@ def run_torch_dqn_walk_forward_report(
     symbol: str | None = None,
     train_years: int = 2,
     eval_years: int = 1,
+    drawdown_policy: DrawdownControlPolicy | None = None,
 ) -> dict[str, object]:
     windows = rolling_dqn_windows(samples, train_years=train_years, eval_years=eval_years)
     if not windows:
@@ -107,6 +109,7 @@ def run_torch_dqn_walk_forward_report(
             policy,
             run_id=f"{run_id}:{window.name}",
             symbol=symbol,
+            drawdown_policy=drawdown_policy,
         )
         payload = _window_payload(window, train_samples, eval_samples)
         payload["evaluation"] = evaluation
