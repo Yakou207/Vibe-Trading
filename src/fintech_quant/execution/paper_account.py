@@ -7,6 +7,14 @@ from pathlib import Path
 from typing import Mapping
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
+from fintech_quant.backtesting.drawdown_control import (
+    DrawdownControlPolicy,
+    DrawdownControlState,
+    DrawdownRegime,
+    drawdown_control_state_from_json,
+    drawdown_control_state_to_json,
+    update_drawdown_control,
+)
 
 
 @dataclass(frozen=True)
@@ -21,6 +29,10 @@ class PaperAccount:
     cash: float
     positions: dict[str, PaperPosition] = field(default_factory=dict)
     nav_history: list[dict[str, object]] = field(default_factory=list)
+    shadow_cash: float | None = None
+    shadow_positions: dict[str, PaperPosition] = field(default_factory=dict)
+    shadow_nav_history: list[dict[str, object]] = field(default_factory=list)
+    drawdown_control_state: DrawdownControlState | None = None
 
 
 @dataclass(frozen=True)
@@ -29,6 +41,7 @@ class PaperTradingResult:
     nav: dict[str, object]
     trades: list[dict[str, object]]
     blocked_orders: list[dict[str, object]]
+    shadow_trades: list[dict[str, object]] = field(default_factory=list)
 
 
 def run_paper_trading_day(
@@ -40,7 +53,19 @@ def run_paper_trading_day(
     constraints: AShareTradingConstraints | None = None,
     commission_rate: float = 0.0003,
     slippage_rate: float = 0.0,
+    drawdown_policy: DrawdownControlPolicy | None = None,
 ) -> PaperTradingResult:
+    if drawdown_policy is not None:
+        return _run_drawdown_controlled_day(
+            account,
+            targets=targets,
+            bars=bars,
+            as_of=as_of,
+            constraints=constraints,
+            commission_rate=commission_rate,
+            slippage_rate=slippage_rate,
+            policy=drawdown_policy,
+        )
     active_constraints = constraints or AShareTradingConstraints()
     cash = float(account.cash)
     positions = dict(account.positions)
@@ -118,10 +143,101 @@ def run_paper_trading_day(
 
     nav = _nav(as_of, cash, positions, bars)
     return PaperTradingResult(
-        account=PaperAccount(cash=round(cash, 6), positions=positions, nav_history=[*account.nav_history, nav]),
+        account=PaperAccount(
+            cash=round(cash, 6),
+            positions=positions,
+            nav_history=[*account.nav_history, nav],
+            shadow_cash=account.shadow_cash,
+            shadow_positions=account.shadow_positions,
+            shadow_nav_history=account.shadow_nav_history,
+            drawdown_control_state=account.drawdown_control_state,
+        ),
         nav=nav,
         trades=trades,
         blocked_orders=blocked,
+    )
+
+
+def _run_drawdown_controlled_day(
+    account: PaperAccount,
+    *,
+    targets: Mapping[str, float],
+    bars: Mapping[str, Mapping[str, object]],
+    as_of: date,
+    constraints: AShareTradingConstraints | None,
+    commission_rate: float,
+    slippage_rate: float,
+    policy: DrawdownControlPolicy,
+) -> PaperTradingResult:
+    initial_equity = _equity(account.cash, account.positions, bars)
+    state = account.drawdown_control_state or DrawdownControlState.initial(initial_equity)
+    applied_regime = state.regime
+    exposure_multiplier = {
+        DrawdownRegime.NORMAL: 1.0,
+        DrawdownRegime.REDUCED: 0.5,
+        DrawdownRegime.LIQUIDATED: 0.0,
+    }[applied_regime]
+    actual_targets = {
+        symbol: max(0.0, float(weight)) * exposure_multiplier
+        for symbol, weight in targets.items()
+    }
+    actual_result = run_paper_trading_day(
+        PaperAccount(
+            cash=account.cash,
+            positions=account.positions,
+            nav_history=account.nav_history,
+        ),
+        targets=actual_targets,
+        bars=bars,
+        as_of=as_of,
+        constraints=constraints,
+        commission_rate=commission_rate,
+        slippage_rate=slippage_rate,
+    )
+    shadow_is_initialized = account.shadow_cash is not None
+    shadow_result = run_paper_trading_day(
+        PaperAccount(
+            cash=account.shadow_cash if shadow_is_initialized else account.cash,
+            positions=(
+                account.shadow_positions if shadow_is_initialized else account.positions
+            ),
+            nav_history=account.shadow_nav_history,
+        ),
+        targets=targets,
+        bars=bars,
+        as_of=as_of,
+        constraints=constraints,
+        commission_rate=commission_rate,
+        slippage_rate=slippage_rate,
+    )
+    decision = update_drawdown_control(
+        state,
+        trade_date=as_of,
+        actual_equity=float(actual_result.nav["equity"]),
+        shadow_equity=float(shadow_result.nav["equity"]),
+        policy=policy,
+    )
+    nav = {
+        **actual_result.nav,
+        "shadow_equity": shadow_result.nav["equity"],
+        "applied_drawdown_regime": applied_regime.value,
+        "next_drawdown_regime": decision.state.regime.value,
+        "exposure_multiplier": exposure_multiplier,
+    }
+    return PaperTradingResult(
+        account=PaperAccount(
+            cash=actual_result.account.cash,
+            positions=actual_result.account.positions,
+            nav_history=[*account.nav_history, nav],
+            shadow_cash=shadow_result.account.cash,
+            shadow_positions=shadow_result.account.positions,
+            shadow_nav_history=shadow_result.account.nav_history,
+            drawdown_control_state=decision.state,
+        ),
+        nav=nav,
+        trades=actual_result.trades,
+        blocked_orders=actual_result.blocked_orders,
+        shadow_trades=shadow_result.trades,
     )
 
 
@@ -129,21 +245,21 @@ def load_paper_account(path: Path, *, initial_cash: float) -> PaperAccount:
     if not path.exists():
         return PaperAccount(cash=initial_cash)
     payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_state = payload.get("drawdown_control_state")
     return PaperAccount(
         cash=float(payload["cash"]),
-        positions={
-            symbol: PaperPosition(
-                shares=int(position["shares"]),
-                cost_basis=float(position["cost_basis"]),
-                last_buy_date=(
-                    date.fromisoformat(str(position["last_buy_date"]))
-                    if position.get("last_buy_date")
-                    else None
-                ),
-            )
-            for symbol, position in payload.get("positions", {}).items()
-        },
+        positions=_positions_from_json(payload.get("positions", {})),
         nav_history=list(payload.get("nav_history", [])),
+        shadow_cash=(
+            float(payload["shadow_cash"]) if payload.get("shadow_cash") is not None else None
+        ),
+        shadow_positions=_positions_from_json(payload.get("shadow_positions", {})),
+        shadow_nav_history=list(payload.get("shadow_nav_history", [])),
+        drawdown_control_state=(
+            drawdown_control_state_from_json(raw_state)
+            if isinstance(raw_state, Mapping)
+            else None
+        ),
     )
 
 
@@ -160,6 +276,7 @@ def write_paper_report(path: Path, result: PaperTradingResult) -> None:
                 "nav": result.nav,
                 "trades": result.trades,
                 "blocked_orders": result.blocked_orders,
+                "shadow_trades": result.shadow_trades,
                 "account": _account_to_json(result.account),
             },
             ensure_ascii=False,
@@ -295,15 +412,49 @@ def _equity(cash: float, positions: Mapping[str, PaperPosition], bars: Mapping[s
 def _account_to_json(account: PaperAccount) -> dict[str, object]:
     return {
         "cash": account.cash,
-        "positions": {
-            symbol: {
-                "shares": position.shares,
-                "cost_basis": position.cost_basis,
-                "last_buy_date": position.last_buy_date.isoformat() if position.last_buy_date else None,
-            }
-            for symbol, position in sorted(account.positions.items())
-        },
+        "positions": _positions_to_json(account.positions),
         "nav_history": account.nav_history,
+        "shadow_cash": account.shadow_cash,
+        "shadow_positions": _positions_to_json(account.shadow_positions),
+        "shadow_nav_history": account.shadow_nav_history,
+        "drawdown_control_state": (
+            drawdown_control_state_to_json(account.drawdown_control_state)
+            if account.drawdown_control_state
+            else None
+        ),
+    }
+
+
+def _positions_to_json(
+    positions: Mapping[str, PaperPosition],
+) -> dict[str, dict[str, object]]:
+    return {
+        symbol: {
+            "shares": position.shares,
+            "cost_basis": position.cost_basis,
+            "last_buy_date": (
+                position.last_buy_date.isoformat() if position.last_buy_date else None
+            ),
+        }
+        for symbol, position in sorted(positions.items())
+    }
+
+
+def _positions_from_json(payload: object) -> dict[str, PaperPosition]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("paper positions must be an object")
+    return {
+        str(symbol): PaperPosition(
+            shares=int(position["shares"]),
+            cost_basis=float(position["cost_basis"]),
+            last_buy_date=(
+                date.fromisoformat(str(position["last_buy_date"]))
+                if position.get("last_buy_date")
+                else None
+            ),
+        )
+        for symbol, position in payload.items()
+        if isinstance(position, Mapping)
     }
 
 

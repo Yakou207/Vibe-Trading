@@ -17,6 +17,7 @@ from fintech_quant.execution.paper_account import (  # noqa: E402
     write_paper_account,
     write_paper_report,
 )
+from fintech_quant.backtesting import DrawdownControlPolicy  # noqa: E402
 
 
 def main() -> int:
@@ -29,6 +30,7 @@ def main() -> int:
     parser.add_argument("--initial-cash", type=float, default=100000.0)
     parser.add_argument("--commission-rate", type=float, default=0.0003)
     parser.add_argument("--slippage-rate", type=float, default=0.0)
+    parser.add_argument("--no-drawdown-control", action="store_true")
     args = parser.parse_args()
 
     as_of = date.fromisoformat(args.as_of)
@@ -41,6 +43,7 @@ def main() -> int:
         as_of=as_of,
         commission_rate=args.commission_rate,
         slippage_rate=args.slippage_rate,
+        drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
     )
     write_paper_account(account_path, result.account)
     write_paper_report(Path(args.report), result)

@@ -11,6 +11,40 @@ from pathlib import Path
 
 
 class PaperTradingLoopTest(unittest.TestCase):
+    def test_paper_account_applies_persisted_reduced_regime_and_tracks_shadow_book(self) -> None:
+        from fintech_quant.backtesting import DrawdownControlPolicy
+        from fintech_quant.backtesting.drawdown_control import (
+            DrawdownControlState,
+            DrawdownRegime,
+        )
+        from fintech_quant.execution.paper_account import PaperAccount, run_paper_trading_day
+
+        account = PaperAccount(
+            cash=10000.0,
+            shadow_cash=10000.0,
+            drawdown_control_state=DrawdownControlState(
+                regime=DrawdownRegime.REDUCED,
+                actual_peak=10000.0,
+                shadow_peak=10000.0,
+                last_transition_date=date(2026, 1, 1),
+            ),
+        )
+
+        result = run_paper_trading_day(
+            account,
+            targets={"000001.SZ": 1.0},
+            bars={"000001.SZ": {"close": 10.0}},
+            as_of=date(2026, 1, 2),
+            commission_rate=0.0,
+            drawdown_policy=DrawdownControlPolicy(),
+        )
+
+        self.assertEqual(result.trades[0]["shares"], 500)
+        self.assertEqual(result.account.positions["000001.SZ"].shares, 500)
+        self.assertEqual(result.account.shadow_positions["000001.SZ"].shares, 1000)
+        self.assertEqual(result.nav["applied_drawdown_regime"], "reduced")
+        self.assertEqual(result.account.drawdown_control_state.regime, DrawdownRegime.NORMAL)
+
     def test_paper_trading_day_buys_target_weight_and_persists_nav(self) -> None:
         from fintech_quant.execution.paper_account import PaperAccount, run_paper_trading_day
 

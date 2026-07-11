@@ -9,6 +9,7 @@ from typing import Mapping
 
 from fintech_quant.backtesting import (
     AShareCostModel,
+    DrawdownControlPolicy,
     PortfolioBacktestResult,
     load_corporate_actions_csv,
     run_portfolio_scored_baseline_backtest,
@@ -47,6 +48,10 @@ class ResearchRunConfig:
     buy_threshold: float = 70.0
     min_score_confidence: float = 0.8
     max_portfolio_drawdown: float = 0.15
+    enable_drawdown_control: bool = False
+    reduce_portfolio_drawdown: float = 0.08
+    recover_reduced_drawdown: float = 0.08
+    recover_normal_drawdown: float = 0.06
     max_single_position_drawdown: float = 0.08
     max_goodwill_ratio: float = 0.30
     max_pledge_ratio: float = 0.50
@@ -63,6 +68,13 @@ class ResearchRunConfig:
         _require_non_negative("buy_threshold", self.buy_threshold)
         _require_unit_ratio("min_score_confidence", self.min_score_confidence)
         _require_positive_unit_ratio("max_portfolio_drawdown", self.max_portfolio_drawdown)
+        if self.enable_drawdown_control:
+            DrawdownControlPolicy(
+                reduce_at=self.reduce_portfolio_drawdown,
+                liquidate_at=self.max_portfolio_drawdown,
+                recover_to_reduced_at=self.recover_reduced_drawdown,
+                recover_to_normal_at=self.recover_normal_drawdown,
+            )
         _require_positive_unit_ratio("max_single_position_drawdown", self.max_single_position_drawdown)
         _require_unit_ratio("max_goodwill_ratio", self.max_goodwill_ratio)
         _require_unit_ratio("max_pledge_ratio", self.max_pledge_ratio)
@@ -86,7 +98,7 @@ class ResearchRunReport:
     corporate_actions: list[dict[str, object]]
     equity_curve: list[dict[str, object]]
     drawdown: dict[str, object]
-    summary: dict[str, float | int | str]
+    summary: dict[str, object]
 
 
 def _require_positive(name: str, value: float) -> None:
@@ -154,6 +166,16 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
             load_corporate_actions_csv(config.corporate_actions_path)
             if config.corporate_actions_path is not None
             else ()
+        ),
+        drawdown_policy=(
+            DrawdownControlPolicy(
+                reduce_at=config.reduce_portfolio_drawdown,
+                liquidate_at=config.max_portfolio_drawdown,
+                recover_to_reduced_at=config.recover_reduced_drawdown,
+                recover_to_normal_at=config.recover_normal_drawdown,
+            )
+            if config.enable_drawdown_control
+            else None
         ),
         risk_inputs=risk_inputs,
         initial_cash=config.initial_cash,
@@ -281,6 +303,10 @@ def _report_from_result(
             "minimum_commission": config.minimum_commission,
             "slippage_rate": config.slippage_rate,
             "include_stamp_duty": config.include_stamp_duty,
+            "enable_drawdown_control": config.enable_drawdown_control,
+            "reduce_portfolio_drawdown": config.reduce_portfolio_drawdown,
+            "recover_reduced_drawdown": config.recover_reduced_drawdown,
+            "recover_normal_drawdown": config.recover_normal_drawdown,
         },
         risk_limits=_risk_limits_to_json(_risk_limits_from_config(config)),
         universe_symbols=dataset.universe_symbols,

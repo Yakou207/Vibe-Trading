@@ -164,7 +164,12 @@ def main() -> int:
         ResearchRunConfig(run_id="baseline", max_portfolio_drawdown=1.0, **common_config)
     )
     risk_report = run_research_baseline(
-        ResearchRunConfig(run_id="risk_controlled", max_portfolio_drawdown=0.10, **common_config)
+        ResearchRunConfig(
+            run_id="risk_controlled",
+            max_portfolio_drawdown=0.10,
+            enable_drawdown_control=True,
+            **common_config,
+        )
     )
     baseline_path = write_run_report(baseline_report, run_dir)
     risk_path = write_run_report(risk_report, run_dir)

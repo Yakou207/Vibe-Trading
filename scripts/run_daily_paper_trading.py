@@ -19,6 +19,7 @@ from fintech_quant.execution.paper_account import (  # noqa: E402
     write_paper_account,
     write_paper_report,
 )
+from fintech_quant.backtesting import DrawdownControlPolicy  # noqa: E402
 from scripts.generate_strategy_targets import (  # noqa: E402
     generate_targets,
     load_rl_signals,
@@ -48,6 +49,7 @@ def main() -> int:
     parser.add_argument("--initial-cash", type=float, default=100000.0)
     parser.add_argument("--commission-rate", type=float, default=0.0003)
     parser.add_argument("--slippage-rate", type=float, default=0.0)
+    parser.add_argument("--no-drawdown-control", action="store_true")
     args = parser.parse_args()
     if args.rl_signals and args.dqn_report:
         raise SystemExit("--rl-signals and --dqn-report cannot be used together")
@@ -77,6 +79,7 @@ def main() -> int:
         as_of=as_of,
         commission_rate=args.commission_rate,
         slippage_rate=args.slippage_rate,
+        drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
     )
     write_paper_account(account_path, result.account)
     write_paper_report(paper_report_path, result)

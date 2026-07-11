@@ -137,6 +137,105 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual(result.equity_curve[-1].equity, 10000.0)
         self.assertEqual(result.corporate_actions[0].shares_after, 2000)
 
+    def test_portfolio_runner_stages_reentry_from_shadow_nav_recovery(self) -> None:
+        from fintech_quant.backtesting import (
+            DrawdownControlPolicy,
+            run_portfolio_scored_baseline_backtest,
+        )
+        from fintech_quant.backtesting.costs import AShareCostModel
+        from fintech_quant.risk import RiskLimits
+
+        prices = (10.0, 9.2, 8.0, 9.2, 9.4, 9.5)
+        bars = [
+            _bar("000001.SZ", f"2026-01-0{index}", price)
+            for index, price in enumerate(prices, start=1)
+        ]
+        scores = {
+            (date.fromisoformat(f"2026-01-0{index}"), "000001.SZ"): _score(
+                "000001.SZ", 80.0
+            )
+            for index in range(1, 7)
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+            drawdown_policy=DrawdownControlPolicy(),
+            risk_limits=RiskLimits(
+                max_position_weight=1.0,
+                max_portfolio_drawdown=1.0,
+                max_single_position_drawdown=1.0,
+            ),
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        self.assertEqual(
+            [trade.action for trade in result.trades],
+            [
+                TradeAction.BUY,
+                TradeAction.SELL,
+                TradeAction.SELL,
+                TradeAction.BUY,
+                TradeAction.BUY,
+            ],
+        )
+        self.assertEqual([trade.shares for trade in result.trades], [1000, 500, 500, 400, 500])
+        self.assertEqual(
+            [row["to_regime"] for row in result.summary["drawdown_transitions"]],
+            ["reduced", "liquidated", "reduced", "normal"],
+        )
+
+    def test_drawdown_liquidation_retries_after_limit_down_blocks_exit(self) -> None:
+        from fintech_quant.backtesting import (
+            DrawdownControlPolicy,
+            run_portfolio_scored_baseline_backtest,
+        )
+        from fintech_quant.backtesting.costs import AShareCostModel
+        from fintech_quant.risk import RiskLimits
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 8.9),
+            _bar("000001.SZ", "2026-01-03", 8.0, limit_down=True),
+            _bar("000001.SZ", "2026-01-04", 8.0),
+        ]
+        scores = {
+            (date.fromisoformat(f"2026-01-0{index}"), "000001.SZ"): _score(
+                "000001.SZ", 80.0
+            )
+            for index in range(1, 5)
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+            drawdown_policy=DrawdownControlPolicy(),
+            risk_limits=RiskLimits(
+                max_position_weight=1.0,
+                max_portfolio_drawdown=1.0,
+                max_single_position_drawdown=1.0,
+            ),
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        self.assertEqual([trade.trade_date for trade in result.trades], [
+            date(2026, 1, 1),
+            date(2026, 1, 4),
+        ])
+        self.assertEqual(result.trades[-1].action, TradeAction.SELL)
+
     def test_portfolio_runner_executes_signal_on_next_session(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
         from fintech_quant.backtesting.costs import AShareCostModel

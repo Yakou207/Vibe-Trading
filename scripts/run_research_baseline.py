@@ -39,6 +39,10 @@ def main() -> int:
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
     parser.add_argument("--max-portfolio-drawdown", type=float, default=0.15)
+    parser.add_argument("--enable-drawdown-control", action="store_true")
+    parser.add_argument("--reduce-portfolio-drawdown", type=float, default=0.08)
+    parser.add_argument("--recover-reduced-drawdown", type=float, default=0.08)
+    parser.add_argument("--recover-normal-drawdown", type=float, default=0.06)
     parser.add_argument("--max-single-position-drawdown", type=float, default=0.08)
     parser.add_argument("--max-goodwill-ratio", type=float, default=0.30)
     parser.add_argument("--max-pledge-ratio", type=float, default=0.50)
@@ -72,6 +76,10 @@ def main() -> int:
             buy_threshold=args.buy_threshold,
             min_score_confidence=args.min_score_confidence,
             max_portfolio_drawdown=args.max_portfolio_drawdown,
+            enable_drawdown_control=args.enable_drawdown_control,
+            reduce_portfolio_drawdown=args.reduce_portfolio_drawdown,
+            recover_reduced_drawdown=args.recover_reduced_drawdown,
+            recover_normal_drawdown=args.recover_normal_drawdown,
             max_single_position_drawdown=args.max_single_position_drawdown,
             max_goodwill_ratio=args.max_goodwill_ratio,
             max_pledge_ratio=args.max_pledge_ratio,

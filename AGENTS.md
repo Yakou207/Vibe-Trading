@@ -85,16 +85,21 @@ system for fintech graduate-school portfolio work.
   recording corporate-action artifact hashes.
 - Under the repaired dual-price path, the scored baseline returned 104.09%
   over the observed five-year interval with 12.03% maximum drawdown. The
-  current 10% liquidation configuration returned 4.80% with 10.49% maximum
-  drawdown. These are research results, not deployable-profit proof: dividend
-  tax, the 8% exposure-reduction state, shadow-NAV recovery/re-entry, and
-  out-of-sample stability still require validation.
-- The next implementation priority is the shared portfolio drawdown state
-  machine: reduce risk exposure by half near 8%, liquidate near 10%, maintain
-  an unrestricted shadow strategy NAV while defensive, re-enter at half
-  exposure after shadow drawdown recovers within 8%, and restore normal
-  exposure within 6%. Apply the same state to baseline, RL evaluation, target
-  generation, and paper trading before additional strategy tuning.
+  shared drawdown controller reduces exposure to 50% after an 8% close,
+  liquidates after a 10% close, and uses an unrestricted shadow strategy NAV
+  for staged 8%/6% recovery. Its formal CSI 300 run returned 107.17% with
+  9.34% maximum drawdown, approximately 1.60 Sharpe, and positive excess
+  return in all four reported time segments after modeled costs.
+- The drawdown state is persisted in the paper account together with actual
+  and shadow books. Fixed tests cover staged re-entry and repeated liquidation
+  attempts after a limit-down blocked exit. These are still research results,
+  not deployable-profit proof: dividend differential tax, target/RL parity,
+  DQN backend selection, and eight weeks of continuous paper evidence remain
+  required.
+- The next implementation priority is to apply the same persisted controller
+  semantics to target exports and both RL evaluators, diagnose the linear/torch
+  reward and action divergence, model dividend tax, then rerun walk-forward
+  and paper validation before additional strategy tuning.
 
 The system now has the engineering shape of a paper-trading research platform:
 
