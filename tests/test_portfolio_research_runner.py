@@ -9,6 +9,134 @@ from fintech_quant.trading import TradeAction
 
 
 class PortfolioResearchRunnerTest(unittest.TestCase):
+    def test_portfolio_runner_separates_adjusted_signal_and_unadjusted_execution_prices(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting.costs import AShareCostModel
+
+        signal_bars = [
+            _bar("000001.SZ", "2026-01-01", 5.0),
+            _bar("000001.SZ", "2026-01-02", 6.0),
+        ]
+        execution_bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0, source="unadjusted"),
+            _bar("000001.SZ", "2026-01-02", 12.0, source="unadjusted"),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            signal_bars,
+            scores,
+            execution_bars=execution_bars,
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        self.assertEqual(result.trades[0].price, 10.0)
+        self.assertEqual(result.trades[0].shares, 1000)
+        self.assertEqual(result.equity_curve[-1].equity, 12000.0)
+        self.assertEqual(result.summary["execution_price_mode"], "unadjusted_external")
+
+    def test_portfolio_runner_fails_closed_when_execution_price_is_missing(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        signal_bars = [
+            _bar("000001.SZ", "2026-01-01", 5.0),
+            _bar("000001.SZ", "2026-01-02", 6.0),
+        ]
+        execution_bars = [_bar("000001.SZ", "2026-01-01", 10.0)]
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "execution bars missing 000001.SZ on 2026-01-02",
+        ):
+            run_portfolio_scored_baseline_backtest(
+                signal_bars,
+                {},
+                execution_bars=execution_bars,
+            )
+
+    def test_portfolio_runner_applies_cash_dividend_on_ex_date(self) -> None:
+        from fintech_quant.backtesting import CorporateAction, run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting.costs import AShareCostModel
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 9.5),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            corporate_actions=(
+                CorporateAction(
+                    symbol="000001.SZ",
+                    ex_date=date(2026, 1, 2),
+                    cash_dividend_per_share=0.5,
+                    source="fixture",
+                ),
+            ),
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        self.assertEqual(result.equity_curve[-1].equity, 10000.0)
+        self.assertEqual(result.corporate_actions[0].cash_delta, 500.0)
+        self.assertEqual(result.corporate_actions[0].shares_before, 1000)
+        self.assertEqual(result.corporate_actions[0].shares_after, 1000)
+
+    def test_portfolio_runner_applies_bonus_share_multiplier_on_ex_date(self) -> None:
+        from fintech_quant.backtesting import CorporateAction, run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting.costs import AShareCostModel
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-02", 5.0),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0),
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            corporate_actions=(
+                CorporateAction(
+                    symbol="000001.SZ",
+                    ex_date=date(2026, 1, 2),
+                    share_multiplier=2.0,
+                    source="fixture",
+                ),
+            ),
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        self.assertEqual(result.equity_curve[-1].equity, 10000.0)
+        self.assertEqual(result.corporate_actions[0].shares_after, 2000)
+
     def test_portfolio_runner_executes_signal_on_next_session(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
         from fintech_quant.backtesting.costs import AShareCostModel

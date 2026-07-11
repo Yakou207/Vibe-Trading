@@ -2,6 +2,11 @@
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
 from fintech_quant.backtesting.costs import AShareCostModel, TradeCost
+from fintech_quant.backtesting.corporate_actions import (
+    AppliedCorporateAction,
+    CorporateAction,
+    load_corporate_actions_csv,
+)
 from fintech_quant.backtesting.drawdown import (
     DrawdownEpisode,
     DrawdownPoint,
@@ -27,8 +32,10 @@ from fintech_quant.backtesting.research_runner import (
 __all__ = [
     "AShareCostModel",
     "AShareTradingConstraints",
+    "AppliedCorporateAction",
     "BacktestTrade",
     "DailyEquity",
+    "CorporateAction",
     "DatedRiskWarning",
     "DrawdownEpisode",
     "DrawdownPoint",
@@ -41,6 +48,7 @@ __all__ = [
     "ResearchBacktestResult",
     "TradeCost",
     "calculate_drawdown",
+    "load_corporate_actions_csv",
     "run_portfolio_scored_baseline_backtest",
     "run_scored_baseline_backtest",
 ]

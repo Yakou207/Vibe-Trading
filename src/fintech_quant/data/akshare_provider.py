@@ -18,16 +18,16 @@ class AkShareProvider(MarketDataProvider):
         fetcher: Callable[..., Any] | None = None,
         *,
         backend: str = "eastmoney",
+        adjust: str = "qfq",
     ) -> None:
         if backend not in {"eastmoney", "sina", "tencent"}:
             raise ValueError("AkShare backend must be eastmoney, sina, or tencent")
+        if adjust not in {"qfq", "none"}:
+            raise ValueError("AkShare adjustment must be qfq or none")
         self._fetcher = fetcher
         self._backend = backend
-        self.name = {
-            "eastmoney": "akshare",
-            "sina": "akshare-sina",
-            "tencent": "akshare-tencent-estimated-turnover",
-        }[backend]
+        self._adjust = adjust
+        self.name = _provider_name(backend, adjust)
 
     def history(self, symbol: str, start: date, end: date) -> list[dict[str, Any]]:
         normalized_symbol = normalize_a_share_symbol(symbol)
@@ -52,7 +52,14 @@ class AkShareProvider(MarketDataProvider):
             symbol,
             start,
             end,
-            lambda **_: _load_hist_rows(ak, symbol, start, end, backend=self._backend),
+            lambda **_: _load_hist_rows(
+                ak,
+                symbol,
+                start,
+                end,
+                backend=self._backend,
+                adjust=self._adjust,
+            ),
         )
 
     def _run_fetch(
@@ -77,15 +84,17 @@ def _load_hist_rows(
     end: date,
     *,
     backend: str,
+    adjust: str,
 ) -> list[dict[str, Any]]:
     code = symbol.split(".")[0]
+    api_adjust = "" if adjust == "none" else adjust
     if backend == "sina":
         exchange = symbol.split(".")[1].lower()
         frame = ak.stock_zh_a_daily(
             symbol=f"{exchange}{code}",
             start_date=start.strftime("%Y%m%d"),
             end_date=end.strftime("%Y%m%d"),
-            adjust="qfq",
+            adjust=api_adjust,
         )
     elif backend == "tencent":
         exchange = symbol.split(".")[1].lower()
@@ -93,7 +102,7 @@ def _load_hist_rows(
             symbol=f"{exchange}{code}",
             start_date=start.strftime("%Y%m%d"),
             end_date=end.strftime("%Y%m%d"),
-            adjust="qfq",
+            adjust=api_adjust,
             timeout=30,
         )
         rows = frame.to_dict(orient="records")
@@ -108,6 +117,15 @@ def _load_hist_rows(
             period="daily",
             start_date=start.strftime("%Y%m%d"),
             end_date=end.strftime("%Y%m%d"),
-            adjust="qfq",
+            adjust=api_adjust,
         )
     return frame.to_dict(orient="records")
+
+
+def _provider_name(backend: str, adjust: str) -> str:
+    if backend == "eastmoney":
+        return "akshare" if adjust == "qfq" else "akshare-eastmoney-unadjusted"
+    if backend == "sina":
+        return f"akshare-sina-{'qfq' if adjust == 'qfq' else 'unadjusted'}"
+    suffix = "qfq" if adjust == "qfq" else "unadjusted"
+    return f"akshare-tencent-{suffix}-estimated-turnover"

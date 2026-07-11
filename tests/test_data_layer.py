@@ -354,8 +354,42 @@ class DataLayerTest(unittest.TestCase):
             end_date="20260603",
             adjust="qfq",
         )
-        self.assertEqual(rows[0]["source"], "akshare-sina")
+        self.assertEqual(rows[0]["source"], "akshare-sina-qfq")
         self.assertEqual(rows[0]["volume"], 12345.0)
+
+    def test_akshare_provider_labels_unadjusted_execution_prices(self) -> None:
+        from fintech_quant.data.akshare_provider import AkShareProvider
+
+        frame = Mock()
+        frame.to_dict.return_value = [
+            {
+                "date": "2026-06-03",
+                "open": 20.0,
+                "high": 20.0,
+                "low": 20.0,
+                "close": 20.0,
+                "volume": 1000,
+                "amount": 20000,
+            }
+        ]
+        akshare = Mock()
+        akshare.stock_zh_a_daily.return_value = frame
+
+        with patch(
+            "fintech_quant.data.akshare_provider.importlib.import_module",
+            return_value=akshare,
+        ):
+            rows = AkShareProvider(backend="sina", adjust="none").history(
+                "000001.SZ", date(2026, 6, 1), date(2026, 6, 3)
+            )
+
+        akshare.stock_zh_a_daily.assert_called_once_with(
+            symbol="sz000001",
+            start_date="20260601",
+            end_date="20260603",
+            adjust="",
+        )
+        self.assertEqual(rows[0]["source"], "akshare-sina-unadjusted")
 
     def test_akshare_provider_maps_tencent_lots_and_marks_estimated_turnover(self) -> None:
         from fintech_quant.data.akshare_provider import AkShareProvider
@@ -389,7 +423,7 @@ class DataLayerTest(unittest.TestCase):
             adjust="qfq",
             timeout=30,
         )
-        self.assertEqual(rows[0]["source"], "akshare-tencent-estimated-turnover")
+        self.assertEqual(rows[0]["source"], "akshare-tencent-qfq-estimated-turnover")
         self.assertEqual(rows[0]["volume"], 92295300.0)
         self.assertEqual(rows[0]["amount"], 960794073.0)
 

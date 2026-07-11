@@ -6,6 +6,7 @@ from typing import Mapping, Sequence
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
 from fintech_quant.backtesting.costs import AShareCostModel
+from fintech_quant.backtesting.corporate_actions import AppliedCorporateAction, CorporateAction
 from fintech_quant.backtesting.drawdown import DrawdownResult, EquityPoint, calculate_drawdown
 from fintech_quant.features import StockScore
 from fintech_quant.risk import RiskAction, RiskInput, RiskLimits, RiskWarning, evaluate_risk
@@ -59,6 +60,7 @@ class PortfolioBacktestResult:
     risk_warnings: list[PortfolioDatedRiskWarning]
     drawdown: DrawdownResult
     summary: dict[str, float | int | str]
+    corporate_actions: list[AppliedCorporateAction]
 
 
 @dataclass
@@ -72,6 +74,8 @@ def run_portfolio_scored_baseline_backtest(
     bars: Sequence[Mapping[str, object]],
     scores: Mapping[tuple[date, str], StockScore],
     *,
+    execution_bars: Sequence[Mapping[str, object]] | None = None,
+    corporate_actions: Sequence[CorporateAction] = (),
     risk_inputs: Mapping[tuple[date, str], RiskInput] | None = None,
     initial_cash: float = 100000.0,
     max_position_weight: float = 0.08,
@@ -102,6 +106,8 @@ def run_portfolio_scored_baseline_backtest(
     ordered = sorted(bars, key=lambda item: (_bar_date(item), str(item["symbol"])))
     if not ordered:
         raise ValueError("bars must contain at least one daily bar")
+    execution_by_key = _execution_bar_index(ordered, execution_bars)
+    corporate_actions_by_date = _corporate_action_index(corporate_actions)
 
     active_strategy = strategy or ScoredBaselineStrategy()
     risk_by_key = risk_inputs or {}
@@ -116,6 +122,7 @@ def run_portfolio_scored_baseline_backtest(
     trades: list[PortfolioBacktestTrade] = []
     warnings: list[PortfolioDatedRiskWarning] = []
     equity_curve: list[PortfolioDailyEquity] = []
+    applied_corporate_actions: list[AppliedCorporateAction] = []
     total_turnover = 0.0
     closed_wins = 0
     closed_count = 0
@@ -123,19 +130,32 @@ def run_portfolio_scored_baseline_backtest(
 
     grouped_bars = _group_by_date(ordered)
     for date_index, (trade_date, daily_bars) in enumerate(grouped_bars):
+        cash = _apply_corporate_actions(
+            trade_date,
+            corporate_actions_by_date.get(trade_date, ()),
+            positions,
+            cash,
+            applied_corporate_actions,
+        )
         signal_date = (
             grouped_bars[date_index - execution_delay_sessions][0]
             if date_index >= execution_delay_sessions
             else None
         )
-        close_by_symbol = {str(bar["symbol"]): _bar_close(bar) for bar in daily_bars}
+        close_by_symbol = {
+            str(bar["symbol"]): _bar_close(
+                execution_by_key[(_bar_date(bar), str(bar["symbol"]))]
+            )
+            for bar in daily_bars
+        }
         bought_today: set[str] = set()
         starting_equity = _equity(cash, positions, close_by_symbol)
         rolling_peak = max(rolling_peak, starting_equity)
 
         for bar in daily_bars:
             symbol = str(bar["symbol"])
-            close = _bar_close(bar)
+            execution_bar = execution_by_key[(trade_date, symbol)]
+            close = _bar_close(execution_bar)
             score = scores.get((signal_date, symbol)) if signal_date is not None else None
             position = positions.get(symbol, _Position())
             risk_input = _merge_risk_inputs(
@@ -184,7 +204,9 @@ def run_portfolio_scored_baseline_backtest(
             }
             state.update(overlay_state)
             decision = active_strategy.decide(state)
-            strategy_execution_price = _bar_open(bar) if execution_delay_sessions else close
+            strategy_execution_price = (
+                _bar_open(execution_bar) if execution_delay_sessions else close
+            )
 
             if decision.action is TradeAction.SELL and position.shares > 0 and _can_sell(bar, active_constraints, symbol in bought_today):
                 trade, cash, notional, closed_win = _sell_position(
@@ -271,6 +293,7 @@ def run_portfolio_scored_baseline_backtest(
         equity_curve=equity_curve,
         risk_warnings=warnings,
         drawdown=drawdown,
+        corporate_actions=applied_corporate_actions,
         summary={
             "initial_cash": float(initial_cash),
             "ending_equity": ending_equity,
@@ -286,8 +309,87 @@ def run_portfolio_scored_baseline_backtest(
             "stamp_duty_cost": round(sum(trade.stamp_duty for trade in trades), 6),
             "total_trading_cost": round(sum(trade.total_cost for trade in trades), 6),
             "execution_delay_sessions": execution_delay_sessions,
+            "execution_price_mode": (
+                "unadjusted_external" if execution_bars is not None else "signal_bar"
+            ),
         },
     )
+
+
+def _execution_bar_index(
+    signal_bars: Sequence[Mapping[str, object]],
+    execution_bars: Sequence[Mapping[str, object]] | None,
+) -> dict[tuple[date, str], Mapping[str, object]]:
+    if execution_bars is None:
+        return {(_bar_date(bar), str(bar["symbol"])): bar for bar in signal_bars}
+    result: dict[tuple[date, str], Mapping[str, object]] = {}
+    for bar in execution_bars:
+        key = (_bar_date(bar), str(bar["symbol"]))
+        if key in result:
+            raise ValueError(f"duplicate execution bar for {key[1]} on {key[0].isoformat()}")
+        result[key] = bar
+    for bar in signal_bars:
+        key = (_bar_date(bar), str(bar["symbol"]))
+        if key not in result:
+            raise ValueError(f"execution bars missing {key[1]} on {key[0].isoformat()}")
+    return result
+
+
+def _corporate_action_index(
+    actions: Sequence[CorporateAction],
+) -> dict[date, tuple[CorporateAction, ...]]:
+    by_date: dict[date, list[CorporateAction]] = {}
+    seen: set[tuple[date, str]] = set()
+    for action in actions:
+        key = (action.ex_date, action.symbol)
+        if key in seen:
+            raise ValueError(
+                f"duplicate corporate action for {action.symbol} on {action.ex_date.isoformat()}"
+            )
+        seen.add(key)
+        by_date.setdefault(action.ex_date, []).append(action)
+    return {
+        ex_date: tuple(sorted(items, key=lambda item: item.symbol))
+        for ex_date, items in by_date.items()
+    }
+
+
+def _apply_corporate_actions(
+    trade_date: date,
+    actions: Sequence[CorporateAction],
+    positions: dict[str, _Position],
+    cash: float,
+    applied: list[AppliedCorporateAction],
+) -> float:
+    for action in actions:
+        position = positions.get(action.symbol)
+        if position is None or position.shares <= 0:
+            continue
+        shares_before = position.shares
+        raw_shares_after = shares_before * action.share_multiplier
+        shares_after = round(raw_shares_after)
+        if abs(raw_shares_after - shares_after) > 1e-6:
+            raise ValueError(
+                f"corporate action creates fractional shares for {action.symbol} "
+                f"on {trade_date.isoformat()}"
+            )
+        cash_delta = round(shares_before * action.cash_dividend_per_share, 6)
+        cash += cash_delta
+        position.shares = shares_after
+        position.cost_basis /= action.share_multiplier
+        applied.append(
+            AppliedCorporateAction(
+                symbol=action.symbol,
+                ex_date=trade_date,
+                cash_dividend_per_share=action.cash_dividend_per_share,
+                share_multiplier=action.share_multiplier,
+                shares_before=shares_before,
+                shares_after=shares_after,
+                cash_delta=cash_delta,
+                source=action.source,
+            )
+        )
+    return cash
 
 
 def _group_by_date(rows: Sequence[Mapping[str, object]]) -> list[tuple[date, list[Mapping[str, object]]]]:

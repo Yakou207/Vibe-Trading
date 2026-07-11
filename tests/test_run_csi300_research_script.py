@@ -101,6 +101,47 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
 
     features = tmp_path / "features.csv"
     features.write_text(_features_csv(), encoding="utf-8")
+    execution_dir = tmp_path / "execution-processed"
+    execution_dir.mkdir()
+    execution_prices = execution_dir / "daily.csv"
+    execution_prices.write_text(_features_csv(), encoding="utf-8")
+    execution_manifest = execution_dir / "manifest.json"
+    execution_manifest.write_text(
+        json.dumps(
+            {
+                "layer": "processed",
+                "request": {"adjust": "none"},
+                "artifacts": [
+                    {"path": "daily.csv", "sha256": sha256_file(execution_prices)}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    corporate_action_dir = tmp_path / "corporate-action-processed"
+    corporate_action_dir.mkdir()
+    corporate_actions = corporate_action_dir / "corporate_actions.csv"
+    corporate_actions.write_text(
+        "symbol,ex_date,cash_dividend_per_share,share_multiplier,source\n"
+        "000001.SZ,2026-01-05,0.01,1.0,fixture\n",
+        encoding="utf-8",
+    )
+    corporate_action_manifest = corporate_action_dir / "manifest.json"
+    corporate_action_manifest.write_text(
+        json.dumps(
+            {
+                "layer": "processed",
+                "request": {},
+                "artifacts": [
+                    {
+                        "path": "corporate_actions.csv",
+                        "sha256": sha256_file(corporate_actions),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
     output_root = tmp_path / "outputs"
 
     completed = subprocess.run(
@@ -111,6 +152,10 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
             str(processed_manifest),
             "--features",
             str(features),
+            "--execution-price-manifest",
+            str(execution_manifest),
+            "--corporate-action-manifest",
+            str(corporate_action_manifest),
             "--benchmark",
             str(benchmark),
             "--run-id",
@@ -145,6 +190,8 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
     assert manifest["data_health_passed"] is True
     assert manifest["dqn_overlay_status"] == "diagnostic_only"
     assert manifest["inputs"]["processed_manifest"]["sha256"] == sha256_file(processed_manifest)
+    assert manifest["inputs"]["execution_prices"]["sha256"] == sha256_file(execution_prices)
+    assert manifest["inputs"]["corporate_actions"]["sha256"] == sha256_file(corporate_actions)
 
     failed = subprocess.run(
         [
@@ -154,6 +201,10 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
             str(processed_manifest),
             "--features",
             str(features),
+            "--execution-price-manifest",
+            str(execution_manifest),
+            "--corporate-action-manifest",
+            str(corporate_action_manifest),
             "--benchmark",
             str(benchmark),
             "--run-id",

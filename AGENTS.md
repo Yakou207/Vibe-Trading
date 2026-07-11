@@ -63,6 +63,39 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-07-11 CSI 300 execution-price update
+
+- The official CSI 300 history has been reconstructed from a 2026-06-30
+  official anchor plus 186 regular and temporary adjustment pairs. It contains
+  439 unique stocks and 461 membership intervals; every checked effective date
+  has exactly 300 active members.
+- The five-year formal path now has 526,767 adjusted signal-price rows,
+  525,399 point-in-time fundamental rows, and 518,426 explicit price-volume
+  proxy rows. The formal health gate passes with 99.8928% price coverage, 100%
+  fundamental coverage, no stale decision-time factor, and no detected future
+  leakage.
+- Historical PE/PB uses the daily AkShare `stock_value_em` path, with a Baidu
+  valuation fallback for delisted stocks. Financial metrics remain joined by
+  verified public availability date. The price-volume proxy remains visibly
+  labeled and never claims to be actual main-capital net flow.
+- Backtest execution now separates adjusted signal prices from unadjusted
+  transaction and mark-to-market prices. A versioned corporate-action ledger
+  applies cash dividends and bonus/transfer shares on ex-dates. Formal runs
+  require processed manifests proving `adjust=none` for execution prices and
+  recording corporate-action artifact hashes.
+- Under the repaired dual-price path, the scored baseline returned 104.09%
+  over the observed five-year interval with 12.03% maximum drawdown. The
+  current 10% liquidation configuration returned 4.80% with 10.49% maximum
+  drawdown. These are research results, not deployable-profit proof: dividend
+  tax, the 8% exposure-reduction state, shadow-NAV recovery/re-entry, and
+  out-of-sample stability still require validation.
+- The next implementation priority is the shared portfolio drawdown state
+  machine: reduce risk exposure by half near 8%, liquidate near 10%, maintain
+  an unrestricted shadow strategy NAV while defensive, re-enter at half
+  exposure after shadow drawdown recovers within 8%, and restore normal
+  exposure within 6%. Apply the same state to baseline, RL evaluation, target
+  generation, and paper trading before additional strategy tuning.
+
 The system now has the engineering shape of a paper-trading research platform:
 
 - The real-data research pipeline, benchmark-relative comparison, DQN

@@ -40,6 +40,7 @@ def main() -> int:
     parser.add_argument("--resume-from", default=None)
     parser.add_argument("--created-at", default=None)
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--adjust", choices=("qfq", "none"), default="qfq")
     args = parser.parse_args()
 
     if args.source == "fixture" and not args.fixture_input:
@@ -70,7 +71,8 @@ def main() -> int:
                 "akshare": "eastmoney",
                 "akshare-sina": "sina",
                 "akshare-tencent": "tencent",
-            }[args.source]
+            }[args.source],
+            adjust=args.adjust,
         )
         if args.source != "fixture"
         else None
@@ -131,6 +133,7 @@ def main() -> int:
             "membership_sha256": sha256_file(membership_path),
             "start": start.isoformat(),
             "end": end.isoformat(),
+            "adjust": args.adjust,
             "symbols": list(symbols),
         },
         scopes=sorted(scopes, key=lambda scope: str(scope["symbol"])),

@@ -47,6 +47,49 @@ def _run_fixture_pipeline(root: Path) -> dict[str, dict[str, str]]:
     )
     features = root / "features.csv"
     features.write_text(_features_csv(), encoding="utf-8")
+    execution_dir = root / "execution"
+    execution_dir.mkdir()
+    execution_prices = execution_dir / "daily.csv"
+    execution_prices.write_text(_features_csv(), encoding="utf-8")
+    execution_manifest = execution_dir / "manifest.json"
+    execution_manifest.write_text(
+        json.dumps(
+            {
+                "layer": "processed",
+                "request": {"adjust": "none"},
+                "artifacts": [
+                    {"path": "daily.csv", "sha256": sha256_file(execution_prices)}
+                ],
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    action_dir = root / "actions"
+    action_dir.mkdir()
+    corporate_actions = action_dir / "corporate_actions.csv"
+    corporate_actions.write_text(
+        "symbol,ex_date,cash_dividend_per_share,share_multiplier,source\n"
+        "000001.SZ,2026-01-05,0.01,1.0,fixture\n",
+        encoding="utf-8",
+    )
+    action_manifest = action_dir / "manifest.json"
+    action_manifest.write_text(
+        json.dumps(
+            {
+                "layer": "processed",
+                "request": {},
+                "artifacts": [
+                    {
+                        "path": "corporate_actions.csv",
+                        "sha256": sha256_file(corporate_actions),
+                    }
+                ],
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
 
     raw_root = root / "raw"
     _run(
@@ -94,6 +137,10 @@ def _run_fixture_pipeline(root: Path) -> dict[str, dict[str, str]]:
             str(processed_root / "processed/manifest.json"),
             "--features",
             str(features),
+            "--execution-price-manifest",
+            str(execution_manifest),
+            "--corporate-action-manifest",
+            str(action_manifest),
             "--benchmark",
             str(benchmark),
             "--run-id",

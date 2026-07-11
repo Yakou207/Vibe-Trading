@@ -92,6 +92,38 @@ class ResearchRunTest(unittest.TestCase):
         self.assertIn("max_drawdown", report.summary)
         self.assertEqual(report.summary["trade_count"], 1)
 
+    def test_research_run_loads_external_unadjusted_execution_prices(self) -> None:
+        from fintech_quant.research.run import ResearchRunConfig, run_research_baseline
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = _write_fixture_inputs(root)
+            execution_prices = root / "execution_prices.csv"
+            execution_prices.write_text(
+                "symbol,trade_date,open,high,low,close,volume,amount,source\n"
+                "000001.SZ,2026-01-01,20,20,20,20,1000,20000,unadjusted\n",
+                encoding="utf-8",
+            )
+            report = run_research_baseline(
+                ResearchRunConfig(
+                    run_id="dual-price",
+                    features_path=paths["features"],
+                    execution_prices_path=execution_prices,
+                    universe_path=paths["universe"],
+                    fundamentals_path=paths["fundamentals"],
+                    capital_flow_path=paths["capital_flow"],
+                    initial_cash=100000.0,
+                    execution_delay_sessions=0,
+                    minimum_commission=0.0,
+                    include_stamp_duty=False,
+                )
+            )
+
+        self.assertEqual(report.trades[0]["price"], 20.0)
+        self.assertEqual(report.trades[0]["shares"], 400)
+        self.assertEqual(report.inputs["execution_prices"], str(execution_prices))
+        self.assertEqual(report.summary["execution_price_mode"], "unadjusted_external")
+
     def test_write_run_report_serializes_stable_json(self) -> None:
         from fintech_quant.research.run import ResearchRunConfig, run_research_baseline, write_run_report
 

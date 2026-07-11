@@ -56,6 +56,7 @@ def main() -> int:
             "membership_sha256": request.get("membership_sha256"),
             "start": request.get("start"),
             "end": request.get("end"),
+            "adjust": request.get("adjust"),
         },
         scopes=[
             {"group": "daily", "status": "success", "row_count": len(rows)},

@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 from typing import Mapping, Protocol, Sequence
 
+from fintech_quant.data.base import normalize_daily_bar
 from fintech_quant.data.symbols import normalize_a_share_symbol
 
 
@@ -85,6 +86,26 @@ def load_universe_csv(path: Path) -> list[UniverseMember]:
             seen.add(member.symbol)
             members.append(member)
         return members
+
+
+def load_daily_bars_csv(path: Path) -> list[dict[str, object]]:
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        rows: list[dict[str, object]] = []
+        seen: set[tuple[str, str]] = set()
+        for raw in reader:
+            if not str(raw.get("symbol", "")).strip():
+                continue
+            source = str(raw.get("source", "csv"))
+            row = normalize_daily_bar(str(raw["symbol"]), raw, source)
+            key = (str(row["symbol"]), str(row["trade_date"]))
+            if key in seen:
+                raise ValueError(f"Duplicate daily bar for {key[0]} on {key[1]}")
+            seen.add(key)
+            rows.append(row)
+    if not rows:
+        raise ValueError("Daily-bar CSV must contain at least one row")
+    return sorted(rows, key=lambda row: (str(row["trade_date"]), str(row["symbol"])))
 
 
 def collect_universe_history(

@@ -10,9 +10,11 @@ from typing import Mapping
 from fintech_quant.backtesting import (
     AShareCostModel,
     PortfolioBacktestResult,
+    load_corporate_actions_csv,
     run_portfolio_scored_baseline_backtest,
 )
 from fintech_quant.features import StockScore
+from fintech_quant.data.research_dataset import load_daily_bars_csv
 from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow, load_research_dataset
 from fintech_quant.research.risk_builder import PortfolioRiskState, build_risk_input
 from fintech_quant.research.scoring import build_stock_scores
@@ -27,6 +29,8 @@ class ResearchRunConfig:
     run_id: str
     features_path: Path
     universe_path: Path
+    execution_prices_path: Path | None = None
+    corporate_actions_path: Path | None = None
     information_path: Path | None = None
     fundamentals_path: Path | None = None
     capital_flow_path: Path | None = None
@@ -79,6 +83,7 @@ class ResearchRunReport:
     risk_warnings: list[dict[str, object]]
     risk_summary: dict[str, object]
     trades: list[dict[str, object]]
+    corporate_actions: list[dict[str, object]]
     equity_curve: list[dict[str, object]]
     drawdown: dict[str, object]
     summary: dict[str, float | int | str]
@@ -140,6 +145,16 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
     result = run_portfolio_scored_baseline_backtest(
         [_bar_from_feature(row) for row in dataset.features],
         scores,
+        execution_bars=(
+            load_daily_bars_csv(config.execution_prices_path)
+            if config.execution_prices_path is not None
+            else None
+        ),
+        corporate_actions=(
+            load_corporate_actions_csv(config.corporate_actions_path)
+            if config.corporate_actions_path is not None
+            else ()
+        ),
         risk_inputs=risk_inputs,
         initial_cash=config.initial_cash,
         max_position_weight=config.max_position_weight,
@@ -244,6 +259,12 @@ def _report_from_result(
         run_id=config.run_id,
         inputs={
             "features": str(config.features_path),
+            "execution_prices": (
+                str(config.execution_prices_path) if config.execution_prices_path else None
+            ),
+            "corporate_actions": (
+                str(config.corporate_actions_path) if config.corporate_actions_path else None
+            ),
             "universe": str(config.universe_path),
             "information": str(config.information_path) if config.information_path else None,
             "fundamentals": str(config.fundamentals_path) if config.fundamentals_path else None,
@@ -273,6 +294,9 @@ def _report_from_result(
         risk_warnings=risk_warnings,
         risk_summary=_risk_summary(risk_warnings),
         trades=[_trade_to_json(trade) for trade in result.trades],
+        corporate_actions=[
+            _corporate_action_to_json(action) for action in result.corporate_actions
+        ],
         equity_curve=[_equity_to_json(point) for point in result.equity_curve],
         drawdown={
             "max_drawdown": round(result.drawdown.max_drawdown, 6),
@@ -407,6 +431,19 @@ def _equity_to_json(point: object) -> dict[str, object]:
     }
 
 
+def _corporate_action_to_json(action: object) -> dict[str, object]:
+    return {
+        "symbol": action.symbol,
+        "ex_date": action.ex_date.isoformat(),
+        "cash_dividend_per_share": action.cash_dividend_per_share,
+        "share_multiplier": action.share_multiplier,
+        "shares_before": action.shares_before,
+        "shares_after": action.shares_after,
+        "cash_delta": action.cash_delta,
+        "source": action.source,
+    }
+
+
 def _drawdown_point_to_json(point: object) -> dict[str, object]:
     return {
         "trade_date": point.trade_date.isoformat(),
@@ -442,6 +479,7 @@ def _report_to_json(report: ResearchRunReport) -> dict[str, object]:
         "risk_warnings": report.risk_warnings,
         "risk_summary": report.risk_summary,
         "trades": report.trades,
+        "corporate_actions": report.corporate_actions,
         "equity_curve": report.equity_curve,
         "drawdown": report.drawdown,
         "summary": report.summary,

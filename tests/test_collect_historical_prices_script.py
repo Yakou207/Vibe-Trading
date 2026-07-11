@@ -53,6 +53,7 @@ def test_collect_historical_prices_writes_immutable_symbol_artifacts(tmp_path: P
     assert completed.returncode == 0, completed.stderr
     manifest = json.loads((tmp_path / "raw/prices-1/manifest.json").read_text(encoding="utf-8"))
     assert manifest["request"]["membership"] == str(membership.resolve())
+    assert manifest["request"]["adjust"] == "qfq"
     assert len(manifest["request"]["membership_sha256"]) == 64
     assert {artifact["path"] for artifact in manifest["artifacts"]} == {
         "prices/000001.SZ.jsonl",

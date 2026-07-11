@@ -52,6 +52,8 @@ def main() -> int:
     )
     parser.add_argument("--processed-manifest", required=True)
     parser.add_argument("--features", required=True)
+    parser.add_argument("--execution-price-manifest", required=True)
+    parser.add_argument("--corporate-action-manifest", required=True)
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--information", default=None)
     parser.add_argument("--dqn-diagnostics", default=None)
@@ -77,6 +79,17 @@ def main() -> int:
 
     processed_manifest_path = Path(args.processed_manifest).resolve()
     features_path = Path(args.features).resolve()
+    execution_price_manifest_path = Path(args.execution_price_manifest).resolve()
+    corporate_action_manifest_path = Path(args.corporate_action_manifest).resolve()
+    execution_prices_path = _resolve_processed_artifact(
+        execution_price_manifest_path,
+        "daily.csv",
+        required_request={"adjust": "none"},
+    )
+    corporate_actions_path = _resolve_processed_artifact(
+        corporate_action_manifest_path,
+        "corporate_actions.csv",
+    )
     benchmark_path = Path(args.benchmark).resolve()
     information_path = Path(args.information).resolve() if args.information else None
     diagnostics_path = Path(args.dqn_diagnostics).resolve() if args.dqn_diagnostics else None
@@ -129,6 +142,8 @@ def main() -> int:
 
     common_config = {
         "features_path": features_path,
+        "execution_prices_path": execution_prices_path,
+        "corporate_actions_path": corporate_actions_path,
         "universe_path": universe_path,
         "information_path": information_path,
         "fundamentals_path": fundamentals_path,
@@ -187,6 +202,10 @@ def main() -> int:
                     "processed_manifest": processed_manifest_path,
                     "membership": membership_path,
                     "features": features_path,
+                    "execution_price_manifest": execution_price_manifest_path,
+                    "execution_prices": execution_prices_path,
+                    "corporate_action_manifest": corporate_action_manifest_path,
+                    "corporate_actions": corporate_actions_path,
                     "fundamentals": fundamentals_path,
                     "capital_flow": capital_flow_path,
                     "benchmark": benchmark_path,
@@ -249,6 +268,28 @@ def _resolve_verified_inputs(processed_manifest_path: Path) -> VerifiedInputs:
         capital_flow=capital_flow_path,
         trading_calendar_sha256=calendar_hash,
     )
+
+
+def _resolve_processed_artifact(
+    manifest_path: Path,
+    relative_path: str,
+    *,
+    required_request: Mapping[str, object] | None = None,
+) -> Path:
+    manifest = _read_json(manifest_path)
+    if manifest.get("layer") != "processed":
+        raise ValueError(f"{manifest_path.name} must describe a processed run")
+    artifacts = _verified_artifacts(manifest_path, manifest)
+    artifact = artifacts.get(relative_path)
+    if artifact is None:
+        raise ValueError(f"processed manifest must contain {relative_path}")
+    request = manifest.get("request")
+    if not isinstance(request, Mapping):
+        raise ValueError("processed manifest request must be an object")
+    for key, expected in (required_request or {}).items():
+        if request.get(key) != expected:
+            raise ValueError(f"processed manifest request must set {key}={expected}")
+    return artifact
 
 
 def _verified_artifacts(manifest_path: Path, manifest: Mapping[str, object]) -> dict[str, Path]:

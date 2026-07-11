@@ -18,6 +18,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run a reproducible A-share research baseline report.")
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--features", required=True)
+    parser.add_argument("--execution-prices", default=None)
+    parser.add_argument("--corporate-actions", default=None)
     parser.add_argument("--universe", required=True)
     parser.add_argument("--information", default=None)
     parser.add_argument("--fundamentals", default=None)
@@ -51,6 +53,8 @@ def main() -> int:
         config = ResearchRunConfig(
             run_id=run_id,
             features_path=Path(args.features),
+            execution_prices_path=_optional_path(args.execution_prices),
+            corporate_actions_path=_optional_path(args.corporate_actions),
             universe_path=Path(args.universe),
             information_path=_optional_path(args.information),
             fundamentals_path=_optional_path(args.fundamentals),
@@ -94,6 +98,8 @@ def _optional_path(value: str | None) -> Path | None:
 def _research_inputs(args: argparse.Namespace) -> dict[str, Path | None]:
     return {
         "features": Path(args.features),
+        "execution_prices": _optional_path(args.execution_prices),
+        "corporate_actions": _optional_path(args.corporate_actions),
         "universe": Path(args.universe),
         "membership": _optional_path(args.membership),
         "fundamentals": _optional_path(args.fundamentals),
