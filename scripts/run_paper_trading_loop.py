@@ -58,7 +58,10 @@ def main() -> int:
 def _load_targets(path: Path) -> dict[str, float]:
     with path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        return {str(row["symbol"]): float(row["target_weight"]) for row in reader}
+        return {
+            str(row["symbol"]): float(row.get("raw_target_weight") or row["target_weight"])
+            for row in reader
+        }
 
 
 def _load_prices(path: Path, as_of: date) -> dict[str, dict[str, object]]:

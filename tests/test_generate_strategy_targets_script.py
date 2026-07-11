@@ -10,6 +10,24 @@ from pathlib import Path
 
 
 class GenerateStrategyTargetsScriptTest(unittest.TestCase):
+    def test_generate_targets_records_raw_and_drawdown_scaled_weights(self) -> None:
+        from scripts.generate_strategy_targets import generate_targets
+
+        targets = generate_targets(
+            {"scores": [_score("2026-01-02", "000001.SZ", 82.0, 1.0)]},
+            as_of="2026-01-02",
+            buy_threshold=70.0,
+            min_score_confidence=0.8,
+            max_position_weight=0.08,
+            max_targets=None,
+            rl_signals={},
+            portfolio_exposure_multiplier=0.5,
+        )
+
+        self.assertEqual(targets[0]["raw_target_weight"], 0.08)
+        self.assertEqual(targets[0]["target_weight"], 0.04)
+        self.assertEqual(targets[0]["portfolio_exposure_multiplier"], 0.5)
+
     def test_generate_strategy_targets_uses_scores_risk_and_rl_overlay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -60,6 +60,21 @@ class DrawdownControlDecision:
     exposure_multiplier: float
 
 
+def drawdown_exposure_multiplier(
+    regime_or_state: DrawdownRegime | DrawdownControlState,
+) -> float:
+    regime = (
+        regime_or_state.regime
+        if isinstance(regime_or_state, DrawdownControlState)
+        else regime_or_state
+    )
+    return {
+        DrawdownRegime.NORMAL: 1.0,
+        DrawdownRegime.REDUCED: 0.5,
+        DrawdownRegime.LIQUIDATED: 0.0,
+    }[regime]
+
+
 def update_drawdown_control(
     state: DrawdownControlState,
     *,
@@ -118,11 +133,7 @@ def update_drawdown_control(
         state=next_state,
         actual_drawdown=round(actual_drawdown, 8),
         shadow_drawdown=round(shadow_drawdown, 8),
-        exposure_multiplier={
-            DrawdownRegime.NORMAL: 1.0,
-            DrawdownRegime.REDUCED: 0.5,
-            DrawdownRegime.LIQUIDATED: 0.0,
-        }[next_state.regime],
+        exposure_multiplier=drawdown_exposure_multiplier(next_state),
     )
 
 

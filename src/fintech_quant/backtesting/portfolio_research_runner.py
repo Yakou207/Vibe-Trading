@@ -12,6 +12,7 @@ from fintech_quant.backtesting.drawdown_control import (
     DrawdownControlPolicy,
     DrawdownControlState,
     DrawdownRegime,
+    drawdown_exposure_multiplier,
     update_drawdown_control,
 )
 from fintech_quant.features import StockScore
@@ -182,11 +183,7 @@ def run_portfolio_scored_baseline_backtest(
             else None
         )
         regime = control_state.regime if control_state else DrawdownRegime.NORMAL
-        exposure_multiplier = {
-            DrawdownRegime.NORMAL: 1.0,
-            DrawdownRegime.REDUCED: 0.5,
-            DrawdownRegime.LIQUIDATED: 0.0,
-        }[regime]
+        exposure_multiplier = drawdown_exposure_multiplier(regime)
         previous_trade_date = grouped_bars[date_index - 1][0] if date_index else None
         reentry_day = (
             control_state is not None

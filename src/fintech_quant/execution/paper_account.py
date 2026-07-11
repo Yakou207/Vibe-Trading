@@ -10,7 +10,7 @@ from fintech_quant.backtesting.constraints import AShareTradingConstraints
 from fintech_quant.backtesting.drawdown_control import (
     DrawdownControlPolicy,
     DrawdownControlState,
-    DrawdownRegime,
+    drawdown_exposure_multiplier,
     drawdown_control_state_from_json,
     drawdown_control_state_to_json,
     update_drawdown_control,
@@ -172,11 +172,7 @@ def _run_drawdown_controlled_day(
     initial_equity = _equity(account.cash, account.positions, bars)
     state = account.drawdown_control_state or DrawdownControlState.initial(initial_equity)
     applied_regime = state.regime
-    exposure_multiplier = {
-        DrawdownRegime.NORMAL: 1.0,
-        DrawdownRegime.REDUCED: 0.5,
-        DrawdownRegime.LIQUIDATED: 0.0,
-    }[applied_regime]
+    exposure_multiplier = drawdown_exposure_multiplier(applied_regime)
     actual_targets = {
         symbol: max(0.0, float(weight)) * exposure_multiplier
         for symbol, weight in targets.items()

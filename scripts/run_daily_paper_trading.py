@@ -19,7 +19,10 @@ from fintech_quant.execution.paper_account import (  # noqa: E402
     write_paper_account,
     write_paper_report,
 )
-from fintech_quant.backtesting import DrawdownControlPolicy  # noqa: E402
+from fintech_quant.backtesting import (  # noqa: E402
+    DrawdownControlPolicy,
+    drawdown_exposure_multiplier,
+)
 from scripts.generate_strategy_targets import (  # noqa: E402
     generate_targets,
     load_rl_signals,
@@ -59,6 +62,13 @@ def main() -> int:
     paper_report_path = Path(args.paper_report or f"outputs/paper_trading/report_{args.as_of}.json")
 
     research_report = _load_json(Path(args.research_report))
+    account_path = Path(args.account)
+    account = load_paper_account(account_path, initial_cash=args.initial_cash)
+    exposure_multiplier = (
+        1.0
+        if args.no_drawdown_control or account.drawdown_control_state is None
+        else drawdown_exposure_multiplier(account.drawdown_control_state)
+    )
     targets = generate_targets(
         research_report,
         as_of=args.as_of,
@@ -67,14 +77,13 @@ def main() -> int:
         max_position_weight=args.max_position_weight,
         max_targets=args.max_targets,
         rl_signals=_load_overlay_signals(args),
+        portfolio_exposure_multiplier=exposure_multiplier,
     )
     write_targets(targets_path, targets)
 
-    account_path = Path(args.account)
-    account = load_paper_account(account_path, initial_cash=args.initial_cash)
     result = run_paper_trading_day(
         account,
-        targets={str(row["symbol"]): float(row["target_weight"]) for row in targets},
+        targets={str(row["symbol"]): float(row["raw_target_weight"]) for row in targets},
         bars=_load_feature_bars(Path(args.features), as_of),
         as_of=as_of,
         commission_rate=args.commission_rate,
