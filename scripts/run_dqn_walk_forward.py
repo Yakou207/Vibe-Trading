@@ -32,6 +32,7 @@ def main() -> int:
     parser.add_argument("--min-epsilon", type=float, default=0.05)
     parser.add_argument("--epsilon-decay", type=float, default=0.95)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--train-frequency", type=int, default=4)
     parser.add_argument("--transaction-cost", type=float, default=0.0)
     parser.add_argument("--drawdown-penalty", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=42)
@@ -54,6 +55,7 @@ def main() -> int:
                 min_epsilon=args.min_epsilon,
                 epsilon_decay=args.epsilon_decay,
                 batch_size=args.batch_size,
+                train_frequency=args.train_frequency,
                 transaction_cost=args.transaction_cost,
                 drawdown_penalty=args.drawdown_penalty,
                 seed=args.seed,

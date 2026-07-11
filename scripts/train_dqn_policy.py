@@ -31,6 +31,7 @@ def main() -> int:
     parser.add_argument("--gamma", type=float, default=0.0)
     parser.add_argument("--transaction-cost", type=float, default=0.0)
     parser.add_argument("--drawdown-penalty", type=float, default=0.0)
+    parser.add_argument("--train-frequency", type=int, default=4)
     parser.add_argument("--eval-start", default=None, help="First trade date used for out-of-sample evaluation.")
     parser.add_argument("--run-id", default="linear-q-dqn")
     parser.add_argument("--no-drawdown-control", action="store_true")
@@ -51,6 +52,7 @@ def main() -> int:
                     gamma=args.gamma,
                     transaction_cost=args.transaction_cost,
                     drawdown_penalty=args.drawdown_penalty,
+                    train_frequency=args.train_frequency,
                 ),
                 drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
             )

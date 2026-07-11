@@ -55,10 +55,39 @@ class TorchDqnTrainingTest(unittest.TestCase):
                 train_torch_dqn_policy(samples, TorchDQNConfig(episodes=1, batch_size=2))
             return
 
-        policy = train_torch_dqn_policy(samples, TorchDQNConfig(episodes=1, batch_size=1))
+        policy = train_torch_dqn_policy(
+            samples,
+            TorchDQNConfig(episodes=1, batch_size=1, train_frequency=1),
+        )
 
         self.assertEqual(policy.diagnostics()["type"], "torch_dqn_v1")
         self.assertEqual(policy.diagnostics()["training_steps"], 2)
+
+    def test_torch_dqn_respects_configured_training_frequency(self) -> None:
+        if importlib.util.find_spec("torch") is None:
+            self.skipTest("torch is not installed")
+
+        from fintech_quant.training import RlStateSample
+        from fintech_quant.training.torch_dqn import TorchDQNConfig, train_torch_dqn_policy
+
+        samples = [
+            RlStateSample(
+                "000001.SZ",
+                _date(f"2026-01-{index:02d}"),
+                _date(f"2026-01-{index + 1:02d}"),
+                ("signal",),
+                (1.0,),
+                0.01,
+            )
+            for index in range(1, 9)
+        ]
+
+        policy = train_torch_dqn_policy(
+            samples,
+            TorchDQNConfig(episodes=1, batch_size=1, train_frequency=4),
+        )
+
+        self.assertEqual(policy.training_steps, 2)
 
     def test_torch_dqn_checkpoint_round_trips_and_resumes_training(self) -> None:
         if importlib.util.find_spec("torch") is None:

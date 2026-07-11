@@ -27,6 +27,7 @@ class TorchDQNConfig:
     batch_size: int = 64
     replay_capacity: int = 10_000
     target_update_interval: int = 100
+    train_frequency: int = 4
     transaction_cost: float = 0.0
     drawdown_penalty: float = 0.0
     hidden_layers: tuple[int, ...] = (64, 32)
@@ -160,6 +161,8 @@ def train_torch_dqn_policy_run(
         metadata = dict(initial_run.metadata)
         metrics = dict(initial_run.metrics)
 
+    environment_steps = int(metrics.get("environment_steps", 0))
+
     optimizer = torch.optim.Adam(network.parameters(), lr=config.learning_rate)
     if initial_run is not None:
         optimizer.load_state_dict(initial_run.optimizer_state)
@@ -199,7 +202,11 @@ def train_torch_dqn_policy_run(
                             done=sample.terminal or index == len(episode) - 1,
                         )
                     )
-                    if len(replay) >= config.batch_size:
+                    environment_steps += 1
+                    if (
+                        len(replay) >= config.batch_size
+                        and environment_steps % config.train_frequency == 0
+                    ):
                         _train_batch(
                             torch,
                             network,
@@ -230,6 +237,7 @@ def train_torch_dqn_policy_run(
             "episodes_trained": episodes_trained + config.episodes,
             "training_steps": training_steps,
             "replay_size": len(replay),
+            "environment_steps": environment_steps,
         }
     )
     return TorchDQNTrainingRun(
@@ -389,6 +397,7 @@ def _validate_config(config: TorchDQNConfig) -> None:
     _require_positive_int("batch_size", config.batch_size)
     _require_positive_int("replay_capacity", config.replay_capacity)
     _require_positive_int("target_update_interval", config.target_update_interval)
+    _require_positive_int("train_frequency", config.train_frequency)
     _require_positive_number("learning_rate", config.learning_rate)
     _require_unit_ratio("gamma", config.gamma)
     _require_unit_ratio("epsilon", config.epsilon)
