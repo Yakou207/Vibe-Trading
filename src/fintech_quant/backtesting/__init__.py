@@ -21,6 +21,7 @@ from fintech_quant.backtesting.drawdown_control import (
     DrawdownRegime,
     DrawdownTransition,
     drawdown_exposure_multiplier,
+    standard_drawdown_control_policy,
     drawdown_control_state_from_json,
     drawdown_control_state_to_json,
     update_drawdown_control,
@@ -80,5 +81,6 @@ __all__ = [
     "run_portfolio_scored_baseline_backtest",
     "run_scored_baseline_backtest",
     "settle_dividend_tax",
+    "standard_drawdown_control_policy",
     "update_drawdown_control",
 ]

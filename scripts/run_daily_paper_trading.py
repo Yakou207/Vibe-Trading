@@ -20,8 +20,12 @@ from fintech_quant.execution.paper_account import (  # noqa: E402
     write_paper_report,
 )
 from fintech_quant.backtesting import (  # noqa: E402
-    DrawdownControlPolicy,
+    AShareCostModel,
+    CorporateAction,
+    IndividualAShareDividendTaxPolicy,
     drawdown_exposure_multiplier,
+    load_corporate_actions_csv,
+    standard_drawdown_control_policy,
 )
 from scripts.generate_strategy_targets import (  # noqa: E402
     generate_targets,
@@ -35,8 +39,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the daily post-close paper-trading loop from research output."
     )
-    parser.add_argument("--research-report", required=True, help="Research run_report.json with scores and risk warnings.")
-    parser.add_argument("--features", required=True, help="Feature CSV with symbol,trade_date,close and optional A-share flags.")
+    parser.add_argument(
+        "--research-report",
+        required=True,
+        help="Research run_report.json with scores and risk warnings.",
+    )
+    parser.add_argument(
+        "--features",
+        required=True,
+        help="Feature CSV with symbol,trade_date,close and optional A-share flags.",
+    )
     parser.add_argument("--as-of", required=True)
     parser.add_argument("--account", default="data/paper/account.json")
     parser.add_argument("--targets-output", default=None)
@@ -45,14 +57,24 @@ def main() -> int:
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
     parser.add_argument("--max-position-weight", type=float, default=0.08)
     parser.add_argument("--max-targets", type=int, default=None)
-    parser.add_argument("--rl-signals", default=None, help="Optional CSV with symbol,trade_date,rl_action.")
-    parser.add_argument("--dqn-report", default=None, help="Optional DQN run_report.json used as RL overlay signals.")
+    parser.add_argument(
+        "--rl-signals", default=None, help="Optional CSV with symbol,trade_date,rl_action."
+    )
+    parser.add_argument(
+        "--dqn-report",
+        default=None,
+        help="Optional DQN run_report.json used as RL overlay signals.",
+    )
     parser.add_argument("--dqn-default-action", choices=("buy", "hold", "sell"), default="hold")
     parser.add_argument("--dqn-flat-action", choices=("buy", "hold", "sell"), default="hold")
     parser.add_argument("--initial-cash", type=float, default=100000.0)
     parser.add_argument("--commission-rate", type=float, default=0.0003)
+    parser.add_argument("--minimum-commission", type=float, default=None)
     parser.add_argument("--slippage-rate", type=float, default=0.0)
+    parser.add_argument("--no-stamp-duty", action="store_true")
     parser.add_argument("--no-drawdown-control", action="store_true")
+    parser.add_argument("--corporate-actions", default=None)
+    parser.add_argument("--no-dividend-tax", action="store_true")
     args = parser.parse_args()
     if args.rl_signals and args.dqn_report:
         raise SystemExit("--rl-signals and --dqn-report cannot be used together")
@@ -88,7 +110,18 @@ def main() -> int:
         as_of=as_of,
         commission_rate=args.commission_rate,
         slippage_rate=args.slippage_rate,
-        drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
+        drawdown_policy=(None if args.no_drawdown_control else standard_drawdown_control_policy()),
+        corporate_actions=_load_corporate_actions(args.corporate_actions, as_of),
+        dividend_tax_policy=(None if args.no_dividend_tax else IndividualAShareDividendTaxPolicy()),
+        cost_model=AShareCostModel(
+            commission_rate=args.commission_rate,
+            minimum_commission=(
+                args.minimum_commission
+                if args.minimum_commission is not None
+                else (0.0 if args.commission_rate == 0 else 5.0)
+            ),
+            include_stamp_duty=not args.no_stamp_duty,
+        ),
     )
     write_paper_account(account_path, result.account)
     write_paper_report(paper_report_path, result)
@@ -128,6 +161,17 @@ def _load_overlay_signals(args: argparse.Namespace) -> dict[str, str]:
             )
         }
     return {}
+
+
+def _load_corporate_actions(
+    value: str | None,
+    as_of: date,
+) -> tuple[CorporateAction, ...]:
+    if value is None:
+        return ()
+    return tuple(
+        action for action in load_corporate_actions_csv(Path(value)) if action.ex_date == as_of
+    )
 
 
 def _load_json(path: Path) -> dict[str, object]:

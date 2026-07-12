@@ -59,13 +59,21 @@ class RunPostCloseDailyCycleScriptTest(unittest.TestCase):
                     {
                         "strategy_config": {"symbols": ["000001.SZ", "000002.SZ"]},
                         "trades": [
-                            {"trade_date": "2026-01-01", "symbol": "000001.SZ", "action": "buy", "position": 1}
+                            {
+                                "trade_date": "2026-01-01",
+                                "symbol": "000001.SZ",
+                                "action": "buy",
+                                "position": 1,
+                            }
                         ],
                     }
                 ),
                 encoding="utf-8",
             )
-            walk_forward.write_text(json.dumps({"summary": {"window_count": 1, "mean_total_return": 0.02}}), encoding="utf-8")
+            walk_forward.write_text(
+                json.dumps({"summary": {"window_count": 1, "mean_total_return": 0.02}}),
+                encoding="utf-8",
+            )
 
             completed = subprocess.run(
                 [
@@ -100,6 +108,8 @@ class RunPostCloseDailyCycleScriptTest(unittest.TestCase):
                     "--initial-cash",
                     "100000",
                     "--commission-rate",
+                    "0",
+                    "--minimum-commission",
                     "0",
                 ],
                 cwd=Path(__file__).resolve().parents[1],

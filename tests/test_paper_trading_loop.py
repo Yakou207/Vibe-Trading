@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import json
 import subprocess
 import sys
@@ -11,6 +10,66 @@ from pathlib import Path
 
 
 class PaperTradingLoopTest(unittest.TestCase):
+    def test_paper_account_persists_dividend_lot_and_withholds_tax_on_sale(self) -> None:
+        from fintech_quant.backtesting import (
+            CorporateAction,
+            IndividualAShareDividendTaxPolicy,
+        )
+        from fintech_quant.execution.paper_account import (
+            PaperAccount,
+            load_paper_account,
+            run_paper_trading_day,
+            write_paper_account,
+        )
+
+        policy = IndividualAShareDividendTaxPolicy()
+        bought = run_paper_trading_day(
+            PaperAccount(cash=10000.0),
+            targets={"000001.SZ": 1.0},
+            bars={"000001.SZ": _bar("000001.SZ", 10.0)},
+            as_of=date(2026, 1, 1),
+            commission_rate=0.0,
+            dividend_tax_policy=policy,
+        )
+        dividend = run_paper_trading_day(
+            bought.account,
+            targets={"000001.SZ": 0.9},
+            bars={"000001.SZ": _bar("000001.SZ", 10.0)},
+            as_of=date(2026, 1, 10),
+            commission_rate=0.0,
+            corporate_actions=(
+                CorporateAction(
+                    symbol="000001.SZ",
+                    ex_date=date(2026, 1, 10),
+                    cash_dividend_per_share=1.0,
+                    source="fixture",
+                ),
+            ),
+            dividend_tax_policy=policy,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            account_path = Path(tmp) / "account.json"
+            write_paper_account(account_path, dividend.account)
+            restored = load_paper_account(account_path, initial_cash=0.0)
+
+        sold = run_paper_trading_day(
+            restored,
+            targets={"000001.SZ": 0.0},
+            bars={"000001.SZ": _bar("000001.SZ", 10.0)},
+            as_of=date(2026, 1, 20),
+            commission_rate=0.0,
+            dividend_tax_policy=policy,
+        )
+
+        self.assertEqual(dividend.account.cash, 1000.0)
+        self.assertEqual(
+            restored.dividend_tax_lots["000001.SZ"][0].pending_dividend,
+            1000.0,
+        )
+        self.assertEqual(sold.trades[0]["dividend_tax"], 200.0)
+        self.assertEqual(sold.account.cash, 10800.0)
+
     def test_paper_account_applies_persisted_reduced_regime_and_tracks_shadow_book(self) -> None:
         from fintech_quant.backtesting import DrawdownControlPolicy
         from fintech_quant.backtesting.drawdown_control import (
@@ -63,8 +122,43 @@ class PaperTradingLoopTest(unittest.TestCase):
         self.assertEqual(result.nav["equity"], 100000.0)
         self.assertEqual(result.trades[0]["action"], "buy")
 
+    def test_paper_trading_uses_minimum_commission_and_sell_stamp_duty(self) -> None:
+        from fintech_quant.backtesting import AShareCostModel
+        from fintech_quant.execution.paper_account import PaperAccount, run_paper_trading_day
+
+        cost_model = AShareCostModel(
+            commission_rate=0.0003,
+            minimum_commission=5.0,
+            include_stamp_duty=True,
+        )
+        bought = run_paper_trading_day(
+            PaperAccount(cash=10000.0),
+            targets={"000001.SZ": 0.10},
+            bars={"000001.SZ": _bar("000001.SZ", 10.0)},
+            as_of=date(2026, 1, 2),
+            cost_model=cost_model,
+        )
+        sold = run_paper_trading_day(
+            bought.account,
+            targets={"000001.SZ": 0.0},
+            bars={"000001.SZ": _bar("000001.SZ", 10.0)},
+            as_of=date(2026, 1, 5),
+            cost_model=cost_model,
+        )
+
+        self.assertEqual(bought.trades[0]["commission"], 5.0)
+        self.assertEqual(bought.trades[0]["stamp_duty"], 0.0)
+        self.assertEqual(sold.trades[0]["commission"], 5.0)
+        self.assertEqual(sold.trades[0]["stamp_duty"], 0.5)
+        self.assertEqual(sold.trades[0]["total_cost"], 5.5)
+        self.assertEqual(sold.account.cash, 9989.5)
+
     def test_paper_trading_day_enforces_t_plus_one_and_limit_constraints(self) -> None:
-        from fintech_quant.execution.paper_account import PaperAccount, PaperPosition, run_paper_trading_day
+        from fintech_quant.execution.paper_account import (
+            PaperAccount,
+            PaperPosition,
+            run_paper_trading_day,
+        )
 
         account = PaperAccount(
             cash=90000.0,
@@ -154,6 +248,10 @@ class PaperTradingLoopTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, msg=completed.stderr)
         self.assertIn("trade_count=1", completed.stdout)
         self.assertEqual(account["positions"]["000001.SZ"]["shares"], 1000)
+        self.assertEqual(
+            account["dividend_tax_lots"]["000001.SZ"][0]["shares"],
+            1000,
+        )
         self.assertEqual(report["nav"]["equity"], 100000.0)
 
 

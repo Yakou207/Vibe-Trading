@@ -3,6 +3,17 @@ from __future__ import annotations
 from datetime import date
 
 
+def test_standard_drawdown_policy_preserves_execution_buffer_below_ten_percent_limit() -> None:
+    from fintech_quant.backtesting import standard_drawdown_control_policy
+
+    policy = standard_drawdown_control_policy()
+
+    assert policy.reduce_at == 0.08
+    assert policy.liquidate_at == 0.09
+    assert policy.recover_to_reduced_at == 0.08
+    assert policy.recover_to_normal_at == 0.06
+
+
 def test_drawdown_control_reduces_at_eight_and_liquidates_at_ten_percent() -> None:
     from fintech_quant.backtesting.drawdown_control import (
         DrawdownControlState,

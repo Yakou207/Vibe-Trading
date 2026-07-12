@@ -60,6 +60,15 @@ class DrawdownControlDecision:
     exposure_multiplier: float
 
 
+def standard_drawdown_control_policy() -> DrawdownControlPolicy:
+    return DrawdownControlPolicy(
+        reduce_at=0.08,
+        liquidate_at=0.09,
+        recover_to_reduced_at=0.08,
+        recover_to_normal_at=0.06,
+    )
+
+
 def drawdown_exposure_multiplier(
     regime_or_state: DrawdownRegime | DrawdownControlState,
 ) -> float:
@@ -185,7 +194,5 @@ def drawdown_control_state_from_json(
         actual_peak=float(payload["actual_peak"]),
         shadow_peak=float(payload["shadow_peak"]),
         transitions=transitions,
-        last_transition_date=(
-            date.fromisoformat(str(raw_last_date)) if raw_last_date else None
-        ),
+        last_transition_date=(date.fromisoformat(str(raw_last_date)) if raw_last_date else None),
     )

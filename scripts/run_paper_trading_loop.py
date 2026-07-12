@@ -17,20 +17,34 @@ from fintech_quant.execution.paper_account import (  # noqa: E402
     write_paper_account,
     write_paper_report,
 )
-from fintech_quant.backtesting import DrawdownControlPolicy  # noqa: E402
+from fintech_quant.backtesting import (  # noqa: E402
+    AShareCostModel,
+    CorporateAction,
+    IndividualAShareDividendTaxPolicy,
+    load_corporate_actions_csv,
+    standard_drawdown_control_policy,
+)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run one post-close paper-trading rebalance.")
     parser.add_argument("--account", default="data/paper/account.json")
     parser.add_argument("--targets", required=True, help="CSV with symbol,target_weight.")
-    parser.add_argument("--prices", required=True, help="CSV with symbol,trade_date,close and optional A-share flags.")
+    parser.add_argument(
+        "--prices",
+        required=True,
+        help="CSV with symbol,trade_date,close and optional A-share flags.",
+    )
     parser.add_argument("--as-of", required=True)
     parser.add_argument("--report", default="outputs/paper_trading/daily_report.json")
     parser.add_argument("--initial-cash", type=float, default=100000.0)
     parser.add_argument("--commission-rate", type=float, default=0.0003)
+    parser.add_argument("--minimum-commission", type=float, default=None)
     parser.add_argument("--slippage-rate", type=float, default=0.0)
+    parser.add_argument("--no-stamp-duty", action="store_true")
     parser.add_argument("--no-drawdown-control", action="store_true")
+    parser.add_argument("--corporate-actions", default=None)
+    parser.add_argument("--no-dividend-tax", action="store_true")
     args = parser.parse_args()
 
     as_of = date.fromisoformat(args.as_of)
@@ -43,7 +57,18 @@ def main() -> int:
         as_of=as_of,
         commission_rate=args.commission_rate,
         slippage_rate=args.slippage_rate,
-        drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
+        drawdown_policy=(None if args.no_drawdown_control else standard_drawdown_control_policy()),
+        corporate_actions=_load_corporate_actions(args.corporate_actions, as_of),
+        dividend_tax_policy=(None if args.no_dividend_tax else IndividualAShareDividendTaxPolicy()),
+        cost_model=AShareCostModel(
+            commission_rate=args.commission_rate,
+            minimum_commission=(
+                args.minimum_commission
+                if args.minimum_commission is not None
+                else (0.0 if args.commission_rate == 0 else 5.0)
+            ),
+            include_stamp_duty=not args.no_stamp_duty,
+        ),
     )
     write_paper_account(account_path, result.account)
     write_paper_report(Path(args.report), result)
@@ -72,6 +97,17 @@ def _load_prices(path: Path, as_of: date) -> dict[str, dict[str, object]]:
             for row in reader
             if date.fromisoformat(str(row["trade_date"])) == as_of
         }
+
+
+def _load_corporate_actions(
+    value: str | None,
+    as_of: date,
+) -> tuple[CorporateAction, ...]:
+    if value is None:
+        return ()
+    return tuple(
+        action for action in load_corporate_actions_csv(Path(value)) if action.ex_date == as_of
+    )
 
 
 if __name__ == "__main__":

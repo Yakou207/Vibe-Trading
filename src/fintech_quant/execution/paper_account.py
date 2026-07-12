@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Mapping
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
+from fintech_quant.backtesting.costs import AShareCostModel
 from fintech_quant.backtesting.drawdown_control import (
     DrawdownControlPolicy,
     DrawdownControlState,
@@ -14,6 +15,17 @@ from fintech_quant.backtesting.drawdown_control import (
     drawdown_control_state_from_json,
     drawdown_control_state_to_json,
     update_drawdown_control,
+)
+from fintech_quant.backtesting.corporate_actions import (
+    AppliedCorporateAction,
+    CorporateAction,
+)
+from fintech_quant.backtesting.dividend_tax import (
+    DividendTaxLot,
+    IndividualAShareDividendTaxPolicy,
+    accrue_cash_dividend,
+    apply_share_multiplier,
+    settle_dividend_tax,
 )
 
 
@@ -33,6 +45,8 @@ class PaperAccount:
     shadow_positions: dict[str, PaperPosition] = field(default_factory=dict)
     shadow_nav_history: list[dict[str, object]] = field(default_factory=list)
     drawdown_control_state: DrawdownControlState | None = None
+    dividend_tax_lots: dict[str, list[DividendTaxLot]] = field(default_factory=dict)
+    shadow_dividend_tax_lots: dict[str, list[DividendTaxLot]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -42,6 +56,7 @@ class PaperTradingResult:
     trades: list[dict[str, object]]
     blocked_orders: list[dict[str, object]]
     shadow_trades: list[dict[str, object]] = field(default_factory=list)
+    corporate_actions: list[AppliedCorporateAction] = field(default_factory=list)
 
 
 def run_paper_trading_day(
@@ -54,6 +69,9 @@ def run_paper_trading_day(
     commission_rate: float = 0.0003,
     slippage_rate: float = 0.0,
     drawdown_policy: DrawdownControlPolicy | None = None,
+    corporate_actions: tuple[CorporateAction, ...] = (),
+    dividend_tax_policy: IndividualAShareDividendTaxPolicy | None = None,
+    cost_model: AShareCostModel | None = None,
 ) -> PaperTradingResult:
     if drawdown_policy is not None:
         return _run_drawdown_controlled_day(
@@ -65,10 +83,28 @@ def run_paper_trading_day(
             commission_rate=commission_rate,
             slippage_rate=slippage_rate,
             policy=drawdown_policy,
+            corporate_actions=corporate_actions,
+            dividend_tax_policy=dividend_tax_policy,
+            cost_model=cost_model,
         )
     active_constraints = constraints or AShareTradingConstraints()
+    active_cost_model = cost_model or AShareCostModel(
+        commission_rate=commission_rate,
+        minimum_commission=0.0,
+        include_stamp_duty=False,
+    )
     cash = float(account.cash)
     positions = dict(account.positions)
+    dividend_tax_lots = _copy_dividend_tax_lots(account.dividend_tax_lots)
+    applied_corporate_actions: list[AppliedCorporateAction] = []
+    cash = _apply_corporate_actions(
+        as_of,
+        corporate_actions,
+        positions,
+        dividend_tax_lots,
+        cash,
+        applied_corporate_actions,
+    )
     trades: list[dict[str, object]] = []
     blocked: list[dict[str, object]] = []
     equity_before = _equity(cash, positions, bars)
@@ -96,7 +132,7 @@ def run_paper_trading_day(
                 bar,
                 as_of,
                 active_constraints,
-                commission_rate,
+                active_cost_model,
                 slippage_rate,
             )
             if order["blocked"]:
@@ -111,19 +147,28 @@ def run_paper_trading_day(
                 cost_basis=round((previous_cost + float(trade["notional"])) / new_shares, 6),
                 last_buy_date=as_of,
             )
+            if dividend_tax_policy is not None:
+                dividend_tax_lots.setdefault(symbol, []).append(
+                    DividendTaxLot(shares=int(trade["shares"]), acquired_date=as_of)
+                )
             trades.append(trade)
             continue
         order = _sell(
             symbol,
             close,
-            min(current.shares, _round_lot(int(abs(value_diff) // close), active_constraints.lot_size)),
+            min(
+                current.shares,
+                _round_lot(int(abs(value_diff) // close), active_constraints.lot_size),
+            ),
             cash,
             current,
             bar,
             as_of,
             active_constraints,
-            commission_rate,
+            active_cost_model,
             slippage_rate,
+            dividend_tax_lots.get(symbol),
+            dividend_tax_policy,
         )
         if order["blocked"]:
             blocked.append(order["blocked"])
@@ -151,10 +196,13 @@ def run_paper_trading_day(
             shadow_positions=account.shadow_positions,
             shadow_nav_history=account.shadow_nav_history,
             drawdown_control_state=account.drawdown_control_state,
+            dividend_tax_lots=dividend_tax_lots,
+            shadow_dividend_tax_lots=account.shadow_dividend_tax_lots,
         ),
         nav=nav,
         trades=trades,
         blocked_orders=blocked,
+        corporate_actions=applied_corporate_actions,
     )
 
 
@@ -168,20 +216,23 @@ def _run_drawdown_controlled_day(
     commission_rate: float,
     slippage_rate: float,
     policy: DrawdownControlPolicy,
+    corporate_actions: tuple[CorporateAction, ...],
+    dividend_tax_policy: IndividualAShareDividendTaxPolicy | None,
+    cost_model: AShareCostModel | None,
 ) -> PaperTradingResult:
     initial_equity = _equity(account.cash, account.positions, bars)
     state = account.drawdown_control_state or DrawdownControlState.initial(initial_equity)
     applied_regime = state.regime
     exposure_multiplier = drawdown_exposure_multiplier(applied_regime)
     actual_targets = {
-        symbol: max(0.0, float(weight)) * exposure_multiplier
-        for symbol, weight in targets.items()
+        symbol: max(0.0, float(weight)) * exposure_multiplier for symbol, weight in targets.items()
     }
     actual_result = run_paper_trading_day(
         PaperAccount(
             cash=account.cash,
             positions=account.positions,
             nav_history=account.nav_history,
+            dividend_tax_lots=_copy_dividend_tax_lots(account.dividend_tax_lots),
         ),
         targets=actual_targets,
         bars=bars,
@@ -189,15 +240,21 @@ def _run_drawdown_controlled_day(
         constraints=constraints,
         commission_rate=commission_rate,
         slippage_rate=slippage_rate,
+        corporate_actions=corporate_actions,
+        dividend_tax_policy=dividend_tax_policy,
+        cost_model=cost_model,
     )
     shadow_is_initialized = account.shadow_cash is not None
     shadow_result = run_paper_trading_day(
         PaperAccount(
             cash=account.shadow_cash if shadow_is_initialized else account.cash,
-            positions=(
-                account.shadow_positions if shadow_is_initialized else account.positions
-            ),
+            positions=(account.shadow_positions if shadow_is_initialized else account.positions),
             nav_history=account.shadow_nav_history,
+            dividend_tax_lots=_copy_dividend_tax_lots(
+                account.shadow_dividend_tax_lots
+                if shadow_is_initialized
+                else account.dividend_tax_lots
+            ),
         ),
         targets=targets,
         bars=bars,
@@ -205,6 +262,9 @@ def _run_drawdown_controlled_day(
         constraints=constraints,
         commission_rate=commission_rate,
         slippage_rate=slippage_rate,
+        corporate_actions=corporate_actions,
+        dividend_tax_policy=dividend_tax_policy,
+        cost_model=cost_model,
     )
     decision = update_drawdown_control(
         state,
@@ -229,11 +289,14 @@ def _run_drawdown_controlled_day(
             shadow_positions=shadow_result.account.positions,
             shadow_nav_history=shadow_result.account.nav_history,
             drawdown_control_state=decision.state,
+            dividend_tax_lots=actual_result.account.dividend_tax_lots,
+            shadow_dividend_tax_lots=shadow_result.account.dividend_tax_lots,
         ),
         nav=nav,
         trades=actual_result.trades,
         blocked_orders=actual_result.blocked_orders,
         shadow_trades=shadow_result.trades,
+        corporate_actions=actual_result.corporate_actions,
     )
 
 
@@ -252,16 +315,21 @@ def load_paper_account(path: Path, *, initial_cash: float) -> PaperAccount:
         shadow_positions=_positions_from_json(payload.get("shadow_positions", {})),
         shadow_nav_history=list(payload.get("shadow_nav_history", [])),
         drawdown_control_state=(
-            drawdown_control_state_from_json(raw_state)
-            if isinstance(raw_state, Mapping)
-            else None
+            drawdown_control_state_from_json(raw_state) if isinstance(raw_state, Mapping) else None
+        ),
+        dividend_tax_lots=_dividend_tax_lots_from_json(payload.get("dividend_tax_lots", {})),
+        shadow_dividend_tax_lots=_dividend_tax_lots_from_json(
+            payload.get("shadow_dividend_tax_lots", {})
         ),
     )
 
 
 def write_paper_account(path: Path, account: PaperAccount) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_account_to_json(account), ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(_account_to_json(account), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def write_paper_report(path: Path, result: PaperTradingResult) -> None:
@@ -273,6 +341,19 @@ def write_paper_report(path: Path, result: PaperTradingResult) -> None:
                 "trades": result.trades,
                 "blocked_orders": result.blocked_orders,
                 "shadow_trades": result.shadow_trades,
+                "corporate_actions": [
+                    {
+                        "symbol": action.symbol,
+                        "ex_date": action.ex_date.isoformat(),
+                        "cash_dividend_per_share": action.cash_dividend_per_share,
+                        "share_multiplier": action.share_multiplier,
+                        "shares_before": action.shares_before,
+                        "shares_after": action.shares_after,
+                        "cash_delta": action.cash_delta,
+                        "source": action.source,
+                    }
+                    for action in result.corporate_actions
+                ],
                 "account": _account_to_json(result.account),
             },
             ensure_ascii=False,
@@ -292,7 +373,7 @@ def _buy(
     bar: Mapping[str, object],
     as_of: date,
     constraints: AShareTradingConstraints,
-    commission_rate: float,
+    cost_model: AShareCostModel,
     slippage_rate: float,
 ) -> dict[str, object]:
     blocked = _blocked_buy(symbol, bar, constraints)
@@ -302,8 +383,8 @@ def _buy(
     shares = _round_lot(int(min(value_diff, cash) // price), constraints.lot_size)
     while shares > 0:
         notional = round(shares * price, 6)
-        commission = round(notional * commission_rate, 6)
-        if notional + commission <= cash:
+        cost = cost_model.buy_cost(notional, as_of)
+        if notional + cost.total <= cash:
             return {
                 "trade": {
                     "trade_date": as_of.isoformat(),
@@ -312,8 +393,10 @@ def _buy(
                     "price": price,
                     "shares": shares,
                     "notional": notional,
-                    "commission": commission,
-                    "cash": round(cash - notional - commission, 6),
+                    "commission": cost.commission,
+                    "stamp_duty": cost.stamp_duty,
+                    "total_cost": cost.total,
+                    "cash": round(cash - notional - cost.total, 6),
                 },
                 "blocked": None,
             }
@@ -330,8 +413,10 @@ def _sell(
     bar: Mapping[str, object],
     as_of: date,
     constraints: AShareTradingConstraints,
-    commission_rate: float,
+    cost_model: AShareCostModel,
     slippage_rate: float,
+    dividend_tax_lots: list[DividendTaxLot] | None,
+    dividend_tax_policy: IndividualAShareDividendTaxPolicy | None,
 ) -> dict[str, object]:
     blocked = _blocked_sell(symbol, position, bar, as_of, constraints)
     if blocked:
@@ -341,7 +426,17 @@ def _sell(
         return {"blocked": {"symbol": symbol, "action": "sell", "reason": "below_lot_size"}}
     price = round(close * (1.0 - slippage_rate), 6)
     notional = round(shares * price, 6)
-    commission = round(notional * commission_rate, 6)
+    cost = cost_model.sell_cost(notional, as_of)
+    dividend_tax = 0.0
+    if dividend_tax_policy is not None:
+        if dividend_tax_lots is None:
+            raise ValueError("dividend-tax policy requires paper acquisition lots")
+        dividend_tax = settle_dividend_tax(
+            dividend_tax_lots,
+            shares_sold=shares,
+            sale_date=as_of,
+            policy=dividend_tax_policy,
+        )
     return {
         "trade": {
             "trade_date": as_of.isoformat(),
@@ -350,9 +445,15 @@ def _sell(
             "price": price,
             "shares": shares,
             "notional": notional,
-            "commission": commission,
-            "cash": round(cash + notional - commission, 6),
-            "realized_pnl": round((price - position.cost_basis) * shares - commission, 6),
+            "commission": cost.commission,
+            "stamp_duty": cost.stamp_duty,
+            "dividend_tax": dividend_tax,
+            "total_cost": round(cost.total + dividend_tax, 6),
+            "cash": round(cash + notional - cost.total - dividend_tax, 6),
+            "realized_pnl": round(
+                (price - position.cost_basis) * shares - cost.total - dividend_tax,
+                6,
+            ),
         },
         "blocked": None,
     }
@@ -363,7 +464,9 @@ def _blocked_buy(
     bar: Mapping[str, object],
     constraints: AShareTradingConstraints,
 ) -> dict[str, object] | None:
-    if constraints.suspension_filter_required and _truthy(bar.get("is_suspended") or bar.get("suspended")):
+    if constraints.suspension_filter_required and _truthy(
+        bar.get("is_suspended") or bar.get("suspended")
+    ):
         return {"symbol": symbol, "action": "buy", "reason": "suspended"}
     if constraints.price_limit_required and _truthy(bar.get("limit_up") or bar.get("is_limit_up")):
         return {"symbol": symbol, "action": "buy", "reason": "limit_up"}
@@ -379,9 +482,13 @@ def _blocked_sell(
 ) -> dict[str, object] | None:
     if constraints.t_plus_one and position.last_buy_date == as_of:
         return {"symbol": symbol, "action": "sell", "reason": "t_plus_one"}
-    if constraints.suspension_filter_required and _truthy(bar.get("is_suspended") or bar.get("suspended")):
+    if constraints.suspension_filter_required and _truthy(
+        bar.get("is_suspended") or bar.get("suspended")
+    ):
         return {"symbol": symbol, "action": "sell", "reason": "suspended"}
-    if constraints.price_limit_required and _truthy(bar.get("limit_down") or bar.get("is_limit_down")):
+    if constraints.price_limit_required and _truthy(
+        bar.get("limit_down") or bar.get("is_limit_down")
+    ):
         return {"symbol": symbol, "action": "sell", "reason": "limit_down"}
     return None
 
@@ -392,7 +499,11 @@ def _nav(
     positions: Mapping[str, PaperPosition],
     bars: Mapping[str, Mapping[str, object]],
 ) -> dict[str, object]:
-    positions_value = sum(position.shares * _close(bars[symbol]) for symbol, position in positions.items() if symbol in bars)
+    positions_value = sum(
+        position.shares * _close(bars[symbol])
+        for symbol, position in positions.items()
+        if symbol in bars
+    )
     return {
         "trade_date": as_of.isoformat(),
         "cash": round(cash, 6),
@@ -401,7 +512,9 @@ def _nav(
     }
 
 
-def _equity(cash: float, positions: Mapping[str, PaperPosition], bars: Mapping[str, Mapping[str, object]]) -> float:
+def _equity(
+    cash: float, positions: Mapping[str, PaperPosition], bars: Mapping[str, Mapping[str, object]]
+) -> float:
     return float(_nav(date.min, cash, positions, bars)["equity"])
 
 
@@ -418,6 +531,8 @@ def _account_to_json(account: PaperAccount) -> dict[str, object]:
             if account.drawdown_control_state
             else None
         ),
+        "dividend_tax_lots": _dividend_tax_lots_to_json(account.dividend_tax_lots),
+        "shadow_dividend_tax_lots": _dividend_tax_lots_to_json(account.shadow_dividend_tax_lots),
     }
 
 
@@ -452,6 +567,106 @@ def _positions_from_json(payload: object) -> dict[str, PaperPosition]:
         for symbol, position in payload.items()
         if isinstance(position, Mapping)
     }
+
+
+def _copy_dividend_tax_lots(
+    lots_by_symbol: Mapping[str, list[DividendTaxLot]],
+) -> dict[str, list[DividendTaxLot]]:
+    return {
+        symbol: [
+            DividendTaxLot(
+                shares=lot.shares,
+                acquired_date=lot.acquired_date,
+                pending_dividend=lot.pending_dividend,
+            )
+            for lot in lots
+        ]
+        for symbol, lots in lots_by_symbol.items()
+    }
+
+
+def _dividend_tax_lots_to_json(
+    lots_by_symbol: Mapping[str, list[DividendTaxLot]],
+) -> dict[str, list[dict[str, object]]]:
+    return {
+        symbol: [
+            {
+                "shares": lot.shares,
+                "acquired_date": lot.acquired_date.isoformat(),
+                "pending_dividend": lot.pending_dividend,
+            }
+            for lot in lots
+        ]
+        for symbol, lots in sorted(lots_by_symbol.items())
+    }
+
+
+def _dividend_tax_lots_from_json(
+    payload: object,
+) -> dict[str, list[DividendTaxLot]]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("paper dividend-tax lots must be an object")
+    result: dict[str, list[DividendTaxLot]] = {}
+    for symbol, raw_lots in payload.items():
+        if not isinstance(raw_lots, list):
+            raise ValueError("paper dividend-tax symbol lots must be a list")
+        result[str(symbol)] = [
+            DividendTaxLot(
+                shares=int(item["shares"]),
+                acquired_date=date.fromisoformat(str(item["acquired_date"])),
+                pending_dividend=float(item.get("pending_dividend", 0.0)),
+            )
+            for item in raw_lots
+            if isinstance(item, Mapping)
+        ]
+    return result
+
+
+def _apply_corporate_actions(
+    as_of: date,
+    actions: tuple[CorporateAction, ...],
+    positions: dict[str, PaperPosition],
+    dividend_tax_lots: dict[str, list[DividendTaxLot]],
+    cash: float,
+    applied: list[AppliedCorporateAction],
+) -> float:
+    for action in actions:
+        if action.ex_date != as_of:
+            raise ValueError("paper corporate actions must match the trading date")
+        position = positions.get(action.symbol)
+        if position is None or position.shares <= 0:
+            continue
+        shares_before = position.shares
+        raw_shares_after = shares_before * action.share_multiplier
+        shares_after = round(raw_shares_after)
+        if abs(raw_shares_after - shares_after) > 1e-6:
+            raise ValueError("paper corporate action creates fractional shares")
+        cash_delta = round(shares_before * action.cash_dividend_per_share, 6)
+        cash += cash_delta
+        lots = dividend_tax_lots.get(action.symbol, [])
+        accrue_cash_dividend(
+            lots,
+            cash_dividend_per_share=action.cash_dividend_per_share,
+        )
+        apply_share_multiplier(lots, share_multiplier=action.share_multiplier)
+        positions[action.symbol] = PaperPosition(
+            shares=shares_after,
+            cost_basis=position.cost_basis / action.share_multiplier,
+            last_buy_date=position.last_buy_date,
+        )
+        applied.append(
+            AppliedCorporateAction(
+                symbol=action.symbol,
+                ex_date=as_of,
+                cash_dividend_per_share=action.cash_dividend_per_share,
+                share_multiplier=action.share_multiplier,
+                shares_before=shares_before,
+                shares_after=shares_after,
+                cash_delta=cash_delta,
+                source=action.source,
+            )
+        )
+    return cash
 
 
 def _round_lot(shares: int, lot_size: int) -> int:
