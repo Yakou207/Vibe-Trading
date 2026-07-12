@@ -122,6 +122,19 @@ system for fintech graduate-school portfolio work.
   0.8125, was vetoed by the market-wide risk rule after 39 tracked names fell
   more than 3%. This is a reproducible bootstrap record, not the start of the
   eight-week evidence clock; fresh post-close data and cycles are required.
+- Corporate-action collection now covers both distributions and CNInfo rights
+  issues. The complete five-year CSI 300 ledger contains 2,452 events: 2,444
+  distributions and eight rights issues. Eight dividend scopes that failed on
+  CNInfo were completed with Sina dividend data while retaining CNInfo rights
+  coverage; all 439 scopes passed. Formal runs reject older manifests that do
+  not declare both action types.
+- The explicit formal rights policy is `do_not_subscribe`; a held rights issue
+  without an explicit policy fails closed in both backtest and paper execution.
+  None of the eight historical rights events intersected a position in the
+  risk-controlled run, so the complete-action result is unchanged: 105.53%
+  total return, 9.7278% maximum drawdown, and 1,705.92 modeled dividend tax.
+  The authoritative action ledger hash is
+  `d02716c22c0f744815378946282650f6be6f582b94a006afdcce1af99df9f082`.
 
 The system now has the engineering shape of a paper-trading research platform:
 

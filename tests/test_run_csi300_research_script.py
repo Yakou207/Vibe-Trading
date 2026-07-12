@@ -184,6 +184,7 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["data_health_passed"] is True
     assert manifest["dqn_overlay_status"] == "diagnostic_only"
+    assert "9% liquidation trigger" in manifest["research_scope"]["risk_control_note"]
     baseline = json.loads(
         (output_root / "fixture-csi300" / "baseline" / "run_report.json").read_text(
             encoding="utf-8"

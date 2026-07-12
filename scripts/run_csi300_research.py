@@ -201,8 +201,8 @@ def main() -> int:
                 "expected_members": args.expected_members,
                 "execution_timing": "signal_t_executes_at_next_available_session_open",
                 "risk_control_note": (
-                    "10% liquidation gate; cross-backend 8% exposure reduction remains "
-                    "a later validation phase"
+                    "8% exposure reduction and 9% liquidation trigger preserve an "
+                    "execution buffer under the 10% validation limit"
                 ),
             },
             "inputs": {
