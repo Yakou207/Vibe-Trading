@@ -48,6 +48,8 @@ class DailyPaperTradingScriptTest(unittest.TestCase):
                             "last_transition_date": "2026-01-01",
                             "transitions": [],
                         },
+                        "pending_targets": {"000001.SZ": 0.10},
+                        "pending_signal_date": "2026-01-01",
                     }
                 ),
                 encoding="utf-8",
@@ -165,10 +167,14 @@ class DailyPaperTradingScriptTest(unittest.TestCase):
                 target_rows = list(csv.DictReader(handle))
 
         self.assertIn("target_count=2", completed.stdout)
-        self.assertIn("trade_count=2", completed.stdout)
+        self.assertIn("trade_count=0", completed.stdout)
         self.assertEqual([row["symbol"] for row in target_rows], ["000001.SZ", "000002.SZ"])
-        self.assertEqual(account_payload["positions"]["000001.SZ"]["shares"], 1000)
-        self.assertEqual(account_payload["positions"]["000002.SZ"]["shares"], 500)
+        self.assertEqual(account_payload["positions"], {})
+        self.assertEqual(
+            account_payload["pending_targets"],
+            {"000001.SZ": 0.1, "000002.SZ": 0.1},
+        )
+        self.assertEqual(account_payload["pending_signal_date"], "2026-01-02")
         self.assertEqual(paper_payload["nav"]["equity"], 100000.0)
 
     def test_daily_paper_trading_can_use_dqn_report_as_overlay(self) -> None:
@@ -205,8 +211,18 @@ class DailyPaperTradingScriptTest(unittest.TestCase):
                     {
                         "strategy_config": {"symbols": ["000001.SZ", "000002.SZ", "000003.SZ"]},
                         "trades": [
-                            {"trade_date": "2026-01-01", "symbol": "000001.SZ", "action": "buy", "position": 1},
-                            {"trade_date": "2026-01-02", "symbol": "000002.SZ", "action": "sell", "position": 0},
+                            {
+                                "trade_date": "2026-01-01",
+                                "symbol": "000001.SZ",
+                                "action": "buy",
+                                "position": 1,
+                            },
+                            {
+                                "trade_date": "2026-01-02",
+                                "symbol": "000002.SZ",
+                                "action": "sell",
+                                "position": 0,
+                            },
                         ],
                     }
                 ),
@@ -255,7 +271,11 @@ class DailyPaperTradingScriptTest(unittest.TestCase):
         self.assertIn("target_count=3", completed.stdout)
         self.assertEqual(
             [(row["symbol"], row["target_weight"], row["rl_action"]) for row in target_rows],
-            [("000001.SZ", "0.1", "buy"), ("000002.SZ", "0.05", "hold"), ("000003.SZ", "0.05", "hold")],
+            [
+                ("000001.SZ", "0.1", "buy"),
+                ("000002.SZ", "0.05", "hold"),
+                ("000003.SZ", "0.05", "hold"),
+            ],
         )
 
 

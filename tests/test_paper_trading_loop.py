@@ -122,6 +122,22 @@ class PaperTradingLoopTest(unittest.TestCase):
         self.assertEqual(result.nav["equity"], 100000.0)
         self.assertEqual(result.trades[0]["action"], "buy")
 
+    def test_paper_trading_executes_pending_target_at_session_open_and_marks_close(self) -> None:
+        from fintech_quant.execution.paper_account import PaperAccount, run_paper_trading_day
+
+        result = run_paper_trading_day(
+            PaperAccount(cash=100000.0),
+            targets={"000001.SZ": 0.10},
+            bars={"000001.SZ": _bar("000001.SZ", 12.0, open=10.0)},
+            as_of=date(2026, 1, 5),
+            commission_rate=0.0,
+        )
+
+        self.assertEqual(result.trades[0]["price"], 10.0)
+        self.assertEqual(result.trades[0]["shares"], 1000)
+        self.assertEqual(result.nav["positions_value"], 12000.0)
+        self.assertEqual(result.nav["equity"], 102000.0)
+
     def test_paper_trading_uses_minimum_commission_and_sell_stamp_duty(self) -> None:
         from fintech_quant.backtesting import AShareCostModel
         from fintech_quant.execution.paper_account import PaperAccount, run_paper_trading_day
@@ -203,6 +219,24 @@ class PaperTradingLoopTest(unittest.TestCase):
 
         self.assertEqual(result.trades, [])
         self.assertEqual(result.blocked_orders[0]["reason"], "limit_up")
+
+    def test_paper_account_rejects_duplicate_or_out_of_order_processing_date(self) -> None:
+        from fintech_quant.execution.paper_account import PaperAccount, run_paper_trading_day
+
+        first = run_paper_trading_day(
+            PaperAccount(cash=100000.0),
+            targets={},
+            bars={},
+            as_of=date(2026, 1, 5),
+        )
+
+        with self.assertRaisesRegex(ValueError, "after last processed date"):
+            run_paper_trading_day(
+                first.account,
+                targets={},
+                bars={},
+                as_of=date(2026, 1, 5),
+            )
 
     def test_paper_trading_script_writes_account_and_daily_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

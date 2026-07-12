@@ -105,7 +105,7 @@ def main() -> int:
 
     result = run_paper_trading_day(
         account,
-        targets={str(row["symbol"]): float(row["raw_target_weight"]) for row in targets},
+        targets=account.pending_targets,
         bars=_load_feature_bars(Path(args.features), as_of),
         as_of=as_of,
         commission_rate=args.commission_rate,
@@ -123,6 +123,14 @@ def main() -> int:
             include_stamp_duty=not args.no_stamp_duty,
         ),
     )
+    result.account.pending_targets = {
+        str(row["symbol"]): float(row["raw_target_weight"]) for row in targets
+    }
+    result.account.pending_signal_date = as_of
+    result.nav["executed_signal_date"] = (
+        account.pending_signal_date.isoformat() if account.pending_signal_date else None
+    )
+    result.nav["queued_signal_date"] = as_of.isoformat()
     write_paper_account(account_path, result.account)
     write_paper_report(paper_report_path, result)
 

@@ -47,6 +47,9 @@ class PaperAccount:
     drawdown_control_state: DrawdownControlState | None = None
     dividend_tax_lots: dict[str, list[DividendTaxLot]] = field(default_factory=dict)
     shadow_dividend_tax_lots: dict[str, list[DividendTaxLot]] = field(default_factory=dict)
+    pending_targets: dict[str, float] = field(default_factory=dict)
+    pending_signal_date: date | None = None
+    last_processed_date: date | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +76,8 @@ def run_paper_trading_day(
     dividend_tax_policy: IndividualAShareDividendTaxPolicy | None = None,
     cost_model: AShareCostModel | None = None,
 ) -> PaperTradingResult:
+    if account.last_processed_date is not None and as_of <= account.last_processed_date:
+        raise ValueError("paper as_of must be after last processed date")
     if drawdown_policy is not None:
         return _run_drawdown_controlled_day(
             account,
@@ -107,7 +112,7 @@ def run_paper_trading_day(
     )
     trades: list[dict[str, object]] = []
     blocked: list[dict[str, object]] = []
-    equity_before = _equity(cash, positions, bars)
+    equity_before = _execution_equity(cash, positions, bars)
 
     symbols = sorted(set(targets) | set(positions))
     for symbol in symbols:
@@ -115,18 +120,21 @@ def run_paper_trading_day(
         if bar is None:
             blocked.append({"symbol": symbol, "action": "rebalance", "reason": "missing_price"})
             continue
-        close = _close(bar)
-        current = positions.get(symbol, PaperPosition(shares=0, cost_basis=close))
+        execution_price = _execution_price(bar)
+        current = positions.get(
+            symbol,
+            PaperPosition(shares=0, cost_basis=execution_price),
+        )
         target_weight = max(0.0, float(targets.get(symbol, 0.0)))
         target_value = equity_before * target_weight
-        current_value = current.shares * close
+        current_value = current.shares * execution_price
         value_diff = target_value - current_value
-        if abs(value_diff) < close * active_constraints.lot_size:
+        if abs(value_diff) < execution_price * active_constraints.lot_size:
             continue
         if value_diff > 0:
             order = _buy(
                 symbol,
-                close,
+                execution_price,
                 value_diff,
                 cash,
                 bar,
@@ -155,10 +163,13 @@ def run_paper_trading_day(
             continue
         order = _sell(
             symbol,
-            close,
+            execution_price,
             min(
                 current.shares,
-                _round_lot(int(abs(value_diff) // close), active_constraints.lot_size),
+                _round_lot(
+                    int(abs(value_diff) // execution_price),
+                    active_constraints.lot_size,
+                ),
             ),
             cash,
             current,
@@ -198,6 +209,9 @@ def run_paper_trading_day(
             drawdown_control_state=account.drawdown_control_state,
             dividend_tax_lots=dividend_tax_lots,
             shadow_dividend_tax_lots=account.shadow_dividend_tax_lots,
+            pending_targets=dict(account.pending_targets),
+            pending_signal_date=account.pending_signal_date,
+            last_processed_date=as_of,
         ),
         nav=nav,
         trades=trades,
@@ -233,6 +247,7 @@ def _run_drawdown_controlled_day(
             positions=account.positions,
             nav_history=account.nav_history,
             dividend_tax_lots=_copy_dividend_tax_lots(account.dividend_tax_lots),
+            last_processed_date=account.last_processed_date,
         ),
         targets=actual_targets,
         bars=bars,
@@ -255,6 +270,7 @@ def _run_drawdown_controlled_day(
                 if shadow_is_initialized
                 else account.dividend_tax_lots
             ),
+            last_processed_date=account.last_processed_date,
         ),
         targets=targets,
         bars=bars,
@@ -291,6 +307,9 @@ def _run_drawdown_controlled_day(
             drawdown_control_state=decision.state,
             dividend_tax_lots=actual_result.account.dividend_tax_lots,
             shadow_dividend_tax_lots=shadow_result.account.dividend_tax_lots,
+            pending_targets=dict(account.pending_targets),
+            pending_signal_date=account.pending_signal_date,
+            last_processed_date=as_of,
         ),
         nav=nav,
         trades=actual_result.trades,
@@ -320,6 +339,22 @@ def load_paper_account(path: Path, *, initial_cash: float) -> PaperAccount:
         dividend_tax_lots=_dividend_tax_lots_from_json(payload.get("dividend_tax_lots", {})),
         shadow_dividend_tax_lots=_dividend_tax_lots_from_json(
             payload.get("shadow_dividend_tax_lots", {})
+        ),
+        pending_targets={
+            str(symbol): float(weight)
+            for symbol, weight in payload.get("pending_targets", {}).items()
+        }
+        if isinstance(payload.get("pending_targets", {}), Mapping)
+        else {},
+        pending_signal_date=(
+            date.fromisoformat(str(payload["pending_signal_date"]))
+            if payload.get("pending_signal_date")
+            else None
+        ),
+        last_processed_date=(
+            date.fromisoformat(str(payload["last_processed_date"]))
+            if payload.get("last_processed_date")
+            else None
         ),
     )
 
@@ -518,6 +553,18 @@ def _equity(
     return float(_nav(date.min, cash, positions, bars)["equity"])
 
 
+def _execution_equity(
+    cash: float,
+    positions: Mapping[str, PaperPosition],
+    bars: Mapping[str, Mapping[str, object]],
+) -> float:
+    return cash + sum(
+        position.shares * _execution_price(bars[symbol])
+        for symbol, position in positions.items()
+        if symbol in bars
+    )
+
+
 def _account_to_json(account: PaperAccount) -> dict[str, object]:
     return {
         "cash": account.cash,
@@ -533,6 +580,13 @@ def _account_to_json(account: PaperAccount) -> dict[str, object]:
         ),
         "dividend_tax_lots": _dividend_tax_lots_to_json(account.dividend_tax_lots),
         "shadow_dividend_tax_lots": _dividend_tax_lots_to_json(account.shadow_dividend_tax_lots),
+        "pending_targets": dict(sorted(account.pending_targets.items())),
+        "pending_signal_date": (
+            account.pending_signal_date.isoformat() if account.pending_signal_date else None
+        ),
+        "last_processed_date": (
+            account.last_processed_date.isoformat() if account.last_processed_date else None
+        ),
     }
 
 
@@ -678,6 +732,13 @@ def _close(bar: Mapping[str, object]) -> float:
     if close <= 0:
         raise ValueError("close must be positive")
     return close
+
+
+def _execution_price(bar: Mapping[str, object]) -> float:
+    price = float(bar.get("execution_price", bar.get("open", bar["close"])))
+    if price <= 0:
+        raise ValueError("execution price must be positive")
+    return price
 
 
 def _truthy(value: object) -> bool:
