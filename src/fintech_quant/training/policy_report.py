@@ -27,6 +27,7 @@ class SymbolPolicyEvaluation:
     positive_rewards: int
     action_counts: dict[str, int] = field(default_factory=dict)
     invested_steps: int = 0
+    decisions: list[dict[str, object]] = field(default_factory=list)
 
 
 class EvaluationPolicy(Protocol):
@@ -43,6 +44,7 @@ def evaluate_symbol_policy(
     equity = 1.0
     equity_curve: list[dict[str, object]] = []
     trades: list[dict[str, object]] = []
+    decisions: list[dict[str, object]] = []
     reward_count = 0
     positive_rewards = 0
     action_counts = {action: 0 for action in AShareBuySellHoldEnvironment.action_space}
@@ -51,7 +53,9 @@ def evaluate_symbol_policy(
         env = AShareBuySellHoldEnvironment(episode, transaction_cost=transaction_cost)
         observation = env.reset()
         if not equity_curve or equity_curve[-1]["trade_date"] != episode[0].trade_date.isoformat():
-            equity_curve.append({"trade_date": episode[0].trade_date.isoformat(), "equity": round(equity, 6)})
+            equity_curve.append(
+                {"trade_date": episode[0].trade_date.isoformat(), "equity": round(equity, 6)}
+            )
         done = False
         while not done:
             previous_position = env.position
@@ -65,6 +69,16 @@ def evaluate_symbol_policy(
                 positive_rewards += 1
             if int(step.info["position"]) > 0:
                 invested_steps += 1
+            decisions.append(
+                {
+                    "trade_date": step.info["trade_date"],
+                    "symbol": selected_symbol,
+                    "action": step.info["action"],
+                    "position": step.info["position"],
+                    "transaction_cost": step.info["transaction_cost"],
+                    "equity": equity,
+                }
+            )
             if step.info["position"] != previous_position:
                 trades.append(
                     {
@@ -76,7 +90,9 @@ def evaluate_symbol_policy(
                         "equity": equity,
                     }
                 )
-            equity_curve.append({"trade_date": step.info["next_trade_date"], "equity": round(equity, 6)})
+            equity_curve.append(
+                {"trade_date": step.info["next_trade_date"], "equity": round(equity, 6)}
+            )
             observation = step.observation or ()
     return SymbolPolicyEvaluation(
         symbol=selected_symbol,
@@ -86,6 +102,7 @@ def evaluate_symbol_policy(
         positive_rewards=positive_rewards,
         action_counts=action_counts,
         invested_steps=invested_steps,
+        decisions=decisions,
     )
 
 
@@ -127,6 +144,10 @@ def build_policy_report(
         [trade for evaluation in evaluations for trade in evaluation.trades],
         key=lambda trade: (str(trade["trade_date"]), str(trade["symbol"])),
     )
+    decisions = sorted(
+        [decision for evaluation in evaluations for decision in evaluation.decisions],
+        key=lambda decision: (str(decision["trade_date"]), str(decision["symbol"])),
+    )
     reward_count = sum(evaluation.reward_count for evaluation in evaluations)
     positive_rewards = sum(evaluation.positive_rewards for evaluation in evaluations)
     action_counts = {
@@ -144,6 +165,7 @@ def build_policy_report(
         "strategy_config": config,
         "equity_curve": equity_curve,
         "trades": trades,
+        "decisions": decisions,
         "summary": {
             "initial_equity": 1.0,
             "ending_equity": ending_equity,
@@ -236,7 +258,9 @@ def _apply_drawdown_control(
     return controlled, payload
 
 
-def _aggregate_equity_curve(evaluations: Sequence[SymbolPolicyEvaluation]) -> list[dict[str, object]]:
+def _aggregate_equity_curve(
+    evaluations: Sequence[SymbolPolicyEvaluation],
+) -> list[dict[str, object]]:
     dates = sorted(
         {
             str(point["trade_date"])

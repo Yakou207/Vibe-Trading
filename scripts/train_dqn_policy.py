@@ -22,20 +22,57 @@ from fintech_quant.backtesting import DrawdownControlPolicy  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Train a DQN policy on the RL state dataset.")
-    parser.add_argument("--input", required=True, help="RL state JSONL produced by scripts/build_rl_dataset.py.")
+    parser.add_argument(
+        "--input", required=True, help="RL state JSONL produced by scripts/build_rl_dataset.py."
+    )
     parser.add_argument("--output", default="outputs/research_runs/linear_q_dqn/run_report.json")
-    parser.add_argument("--backend", choices=("linear", "torch"), default="linear")
+    parser.add_argument("--backend", choices=("linear", "torch"), default="torch")
     parser.add_argument("--symbol", default=None)
-    parser.add_argument("--epochs", type=int, default=50)
-    parser.add_argument("--learning-rate", type=float, default=0.05)
-    parser.add_argument("--gamma", type=float, default=0.0)
-    parser.add_argument("--transaction-cost", type=float, default=0.0)
-    parser.add_argument("--drawdown-penalty", type=float, default=0.0)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--learning-rate", type=float, default=None)
+    parser.add_argument("--gamma", type=float, default=None)
+    parser.add_argument("--transaction-cost", type=float, default=None)
+    parser.add_argument("--drawdown-penalty", type=float, default=None)
+    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--train-frequency", type=int, default=4)
-    parser.add_argument("--eval-start", default=None, help="First trade date used for out-of-sample evaluation.")
+    parser.add_argument(
+        "--eval-start", default=None, help="First trade date used for out-of-sample evaluation."
+    )
     parser.add_argument("--run-id", default="linear-q-dqn")
     parser.add_argument("--no-drawdown-control", action="store_true")
     args = parser.parse_args()
+    defaults = (
+        {
+            "epochs": 5,
+            "learning_rate": 0.001,
+            "gamma": 0.95,
+            "transaction_cost": 0.001,
+            "drawdown_penalty": 0.5,
+        }
+        if args.backend == "torch"
+        else {
+            "epochs": 50,
+            "learning_rate": 0.05,
+            "gamma": 0.0,
+            "transaction_cost": 0.0,
+            "drawdown_penalty": 0.0,
+        }
+    )
+    epochs = args.epochs if args.epochs is not None else int(defaults["epochs"])
+    learning_rate = (
+        args.learning_rate if args.learning_rate is not None else float(defaults["learning_rate"])
+    )
+    gamma = args.gamma if args.gamma is not None else float(defaults["gamma"])
+    transaction_cost = (
+        args.transaction_cost
+        if args.transaction_cost is not None
+        else float(defaults["transaction_cost"])
+    )
+    drawdown_penalty = (
+        args.drawdown_penalty
+        if args.drawdown_penalty is not None
+        else float(defaults["drawdown_penalty"])
+    )
 
     try:
         samples = load_rl_state_jsonl(Path(args.input))
@@ -47,11 +84,12 @@ def main() -> int:
                 run_id=args.run_id,
                 symbol=args.symbol,
                 config=TorchDQNConfig(
-                    episodes=args.epochs,
-                    learning_rate=args.learning_rate,
-                    gamma=args.gamma,
-                    transaction_cost=args.transaction_cost,
-                    drawdown_penalty=args.drawdown_penalty,
+                    episodes=epochs,
+                    learning_rate=learning_rate,
+                    gamma=gamma,
+                    transaction_cost=transaction_cost,
+                    drawdown_penalty=drawdown_penalty,
+                    batch_size=args.batch_size,
                     train_frequency=args.train_frequency,
                 ),
                 drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
@@ -61,11 +99,11 @@ def main() -> int:
                 samples,
                 run_id=args.run_id,
                 symbol=args.symbol,
-                epochs=args.epochs,
-                learning_rate=args.learning_rate,
-                gamma=args.gamma,
-                transaction_cost=args.transaction_cost,
-                drawdown_penalty=args.drawdown_penalty,
+                epochs=epochs,
+                learning_rate=learning_rate,
+                gamma=gamma,
+                transaction_cost=transaction_cost,
+                drawdown_penalty=drawdown_penalty,
                 eval_start=date.fromisoformat(args.eval_start) if args.eval_start else None,
                 drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
             )

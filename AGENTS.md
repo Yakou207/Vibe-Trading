@@ -92,14 +92,19 @@ system for fintech graduate-school portfolio work.
   return in all four reported time segments after modeled costs.
 - The drawdown state is persisted in the paper account together with actual
   and shadow books. Fixed tests cover staged re-entry and repeated liquidation
-  attempts after a limit-down blocked exit. These are still research results,
-  not deployable-profit proof: dividend differential tax, target/RL parity,
-  DQN backend selection, and eight weeks of continuous paper evidence remain
-  required.
-- The next implementation priority is to apply the same persisted controller
-  semantics to target exports and both RL evaluators, diagnose the linear/torch
-  reward and action divergence, model dividend tax, then rerun walk-forward
-  and paper validation before additional strategy tuning.
+  attempts after a limit-down blocked exit. Target exports now record raw and
+  drawdown-scaled weights while paper execution consumes the raw target and
+  applies persisted drawdown state exactly once.
+- Linear and Torch policy evaluation now share one execution, action-ledger,
+  equity, maximum-drawdown, and portfolio drawdown-control path. Daily DQN
+  decisions are recorded separately from position-changing trades; export
+  prefers an exact-date decision and will not carry a stale decision forward.
+  The default trainable backend is Torch; linear fitted-Q remains diagnostic.
+- These are still research results, not deployable-profit proof: dividend
+  differential tax, a validated DQN overlay, and eight weeks of continuous
+  paper evidence remain required. The next implementation priority is dividend
+  tax and fail-closed corporate-action coverage, then baseline-only continuous
+  paper validation while the RL overlay remains disabled.
 
 The system now has the engineering shape of a paper-trading research platform:
 
@@ -114,8 +119,8 @@ The system now has the engineering shape of a paper-trading research platform:
   and resumable DQN checkpoints are available.
 - The completed platform branch was merged and pushed to `main` at `a6a63a9`.
   The point-in-time CSI 300 repair is on
-  `codex/csi300-point-in-time-factors`, 10 commits ahead of `main` before the
-  final reproducibility/status commit.
+  `codex/csi300-point-in-time-factors`, 19 commits ahead of `main` before the
+  current decision-ledger and status update.
 - The repair branch now has official-anchor-plus-adjustment historical
   membership reconstruction, immutable raw/processed manifests with SHA-256,
   disclosure-date joins, common as-of factor lookup for scoring/risk/RL,
@@ -123,9 +128,10 @@ The system now has the engineering shape of a paper-trading research platform:
   command. A fixed fixture reproduces identical factor, score-analysis, and RL
   dataset hashes across two complete runs.
 
-Engineering completion must not be confused with strategy validation. Current
-real-data evidence does not show a strategy that both beats CSI 300 and meets
-the portfolio drawdown target.
+Engineering completion must not be confused with deployable-profit proof. The
+latest historical CSI 300 baseline run beats its benchmark and stays inside the
+10% drawdown target after modeled costs, but it has not yet passed dividend-tax
+modeling or eight weeks of continuous paper validation.
 
 ## Current Real-Data Findings
 
@@ -190,6 +196,27 @@ the portfolio drawdown target.
 - Until reward scale, exploration decay, feature normalization, action
   distribution, and implementation parity explain this divergence, RL signals
   must not be used to increase paper-trading exposure.
+
+### 4. Full CSI 300 Torch diagnostics select cash, not an investable overlay
+
+- The formal five-year CSI 300 RL dataset contains 365,768 point-in-time state
+  samples. With 0.1% transition cost, 0.5 drawdown penalty, and shared 8%/10%
+  portfolio control, a one-episode three-window diagnostic returned -0.0576%
+  mean OOS return. Invested-step rates were only 0.74%-2.93%.
+- Increasing training to five episodes did not repair the behavior. All three
+  windows were non-positive, mean return was -0.1584%, and invested-step rates
+  were 0%, 1.21%, and 0.28%. More training therefore does not explain the
+  near-cash result under the current standalone reward and action semantics.
+- The linear and Torch evaluators previously duplicated their loops and policy
+  reports omitted maximum drawdown, causing walk-forward aggregation to show a
+  false zero drawdown. The shared evaluator and explicit action diagnostics fix
+  those measurement defects; the remaining near-cash behavior is a model
+  outcome, not an accounting discrepancy.
+- Torch is the only backend candidate for future checkpointed DQN work, but it
+  is not approved for paper exposure. Paper trading must run the scored
+  baseline plus the shared risk engine without a DQN report until an overlay
+  evaluated specifically on baseline-selected candidates shows stable positive
+  risk-controlled excess return across windows and seeds.
 
 ## Data Integrity Rules
 

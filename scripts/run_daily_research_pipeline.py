@@ -17,15 +17,29 @@ from fintech_quant.data import UniverseMember, load_universe_csv  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the daily A-share research data pipeline.")
     parser.add_argument("--universe", default=None, help="CSV with selected A-share symbols.")
-    parser.add_argument("--index-universe-code", default=None, help="CSI index code used to build the universe CSV first.")
+    parser.add_argument(
+        "--index-universe-code",
+        default=None,
+        help="CSI index code used to build the universe CSV first.",
+    )
     parser.add_argument("--index-universe-source", choices=("akshare", "csv"), default="akshare")
-    parser.add_argument("--index-universe-input", default=None, help="CSV constituent fixture when --index-universe-source csv.")
-    parser.add_argument("--index-universe-output", default=None, help="Generated index universe CSV path.")
+    parser.add_argument(
+        "--index-universe-input",
+        default=None,
+        help="CSV constituent fixture when --index-universe-source csv.",
+    )
+    parser.add_argument(
+        "--index-universe-output", default=None, help="Generated index universe CSV path."
+    )
     parser.add_argument("--index-universe-max-members", type=int, default=None)
     parser.add_argument("--start", required=True, help="Pipeline start date, YYYY-MM-DD.")
     parser.add_argument("--end", required=True, help="Pipeline end date, YYYY-MM-DD.")
-    parser.add_argument("--price-source", choices=("json", "auto", "akshare", "tushare"), default="akshare")
-    parser.add_argument("--price-input", default=None, help="JSON daily-bar input when --price-source json.")
+    parser.add_argument(
+        "--price-source", choices=("json", "auto", "akshare", "tushare"), default="akshare"
+    )
+    parser.add_argument(
+        "--price-input", default=None, help="JSON daily-bar input when --price-source json."
+    )
     parser.add_argument(
         "--information-source",
         choices=(
@@ -42,34 +56,57 @@ def main() -> int:
         ),
         default="akshare_multi",
     )
-    parser.add_argument("--information-input", default=None, help="JSONL input when --information-source jsonl.")
+    parser.add_argument(
+        "--information-input", default=None, help="JSONL input when --information-source jsonl."
+    )
     parser.add_argument("--market-source", choices=("akshare", "csv"), default="akshare")
     parser.add_argument("--market-input", default=None, help="CSV input when --market-source csv.")
     parser.add_argument("--information-output", default="data/raw/information/information.jsonl")
-    parser.add_argument("--classified-information-output-dir", default="data/raw/information/classified")
-    parser.add_argument("--information-summary-output", default="outputs/information_repository_summary.json")
+    parser.add_argument(
+        "--classified-information-output-dir", default="data/raw/information/classified"
+    )
+    parser.add_argument(
+        "--information-summary-output", default="outputs/information_repository_summary.json"
+    )
     parser.add_argument("--information-summary-recent-days", type=int, default=30)
     parser.add_argument("--document-root", default="data/raw/information/financial_reports")
     parser.add_argument("--daily-output", default="data/processed/akshare_research_daily.csv")
     parser.add_argument("--feature-output", default="data/processed/akshare_research_features.csv")
-    parser.add_argument("--market-output", default="data/raw/market_state/sh000001_market_state.csv")
-    parser.add_argument("--membership", default=None, help="Historical membership intervals for point-in-time research.")
-    parser.add_argument("--fundamentals", default=None, help="Point-in-time fundamental factor table.")
-    parser.add_argument("--capital-flow", default=None, help="Point-in-time capital-flow factor table.")
-    parser.add_argument("--data-health", default=None, help="Point-in-time data-health report output.")
+    parser.add_argument(
+        "--market-output", default="data/raw/market_state/sh000001_market_state.csv"
+    )
+    parser.add_argument(
+        "--membership",
+        default=None,
+        help="Historical membership intervals for point-in-time research.",
+    )
+    parser.add_argument(
+        "--fundamentals", default=None, help="Point-in-time fundamental factor table."
+    )
+    parser.add_argument(
+        "--capital-flow", default=None, help="Point-in-time capital-flow factor table."
+    )
+    parser.add_argument(
+        "--data-health", default=None, help="Point-in-time data-health report output."
+    )
     parser.add_argument("--require-point-in-time", action="store_true")
     parser.add_argument("--rl-output", default="data/processed/rl_state_dataset.jsonl")
     parser.add_argument("--rl-policy-report-output", default=None)
-    parser.add_argument("--rl-policy", choices=("always_hold", "buy_and_hold"), default="buy_and_hold")
+    parser.add_argument(
+        "--rl-policy", choices=("always_hold", "buy_and_hold"), default="buy_and_hold"
+    )
     parser.add_argument("--rl-policy-symbol", default=None)
     parser.add_argument("--rl-policy-transaction-cost", type=float, default=0.0)
     parser.add_argument("--dqn-policy-report-output", default=None)
+    parser.add_argument("--dqn-backend", choices=("torch", "linear"), default="torch")
     parser.add_argument("--dqn-policy-symbol", default=None)
-    parser.add_argument("--dqn-epochs", type=int, default=50)
-    parser.add_argument("--dqn-learning-rate", type=float, default=0.05)
-    parser.add_argument("--dqn-gamma", type=float, default=0.0)
-    parser.add_argument("--dqn-policy-transaction-cost", type=float, default=0.0)
-    parser.add_argument("--dqn-drawdown-penalty", type=float, default=0.0)
+    parser.add_argument("--dqn-epochs", type=int, default=None)
+    parser.add_argument("--dqn-learning-rate", type=float, default=None)
+    parser.add_argument("--dqn-gamma", type=float, default=None)
+    parser.add_argument("--dqn-policy-transaction-cost", type=float, default=None)
+    parser.add_argument("--dqn-drawdown-penalty", type=float, default=None)
+    parser.add_argument("--dqn-batch-size", type=int, default=64)
+    parser.add_argument("--dqn-train-frequency", type=int, default=4)
     parser.add_argument("--dqn-eval-start", default=None)
     parser.add_argument("--strategy-comparison-output", default=None)
     parser.add_argument("--strategy-comparison-align-to-candidate", action="store_true")
@@ -91,7 +128,9 @@ def main() -> int:
     parser.add_argument("--data-source-health-output", default="outputs/data_source_health.json")
     parser.add_argument("--preflight-data-source-strict", action="store_true")
     parser.add_argument("--preflight-information-sources", action="store_true")
-    parser.add_argument("--information-source-health-output", default="outputs/information_source_health.json")
+    parser.add_argument(
+        "--information-source-health-output", default="outputs/information_source_health.json"
+    )
     parser.add_argument("--run-id", default="daily-pipeline-baseline")
     parser.add_argument("--report-output-root", default="outputs/research_runs")
     parser.add_argument("--index-symbol", default="sh000001")
@@ -362,19 +401,24 @@ def main() -> int:
             args.rl_output,
             "--output",
             args.dqn_policy_report_output,
-            "--epochs",
-            str(args.dqn_epochs),
-            "--learning-rate",
-            str(args.dqn_learning_rate),
-            "--gamma",
-            str(args.dqn_gamma),
-            "--transaction-cost",
-            str(args.dqn_policy_transaction_cost),
-            "--drawdown-penalty",
-            str(args.dqn_drawdown_penalty),
+            "--backend",
+            args.dqn_backend,
+            "--batch-size",
+            str(args.dqn_batch_size),
+            "--train-frequency",
+            str(args.dqn_train_frequency),
             "--run-id",
-            f"{args.run_id}-linear-q-dqn",
+            f"{args.run_id}-{'torch-dqn' if args.dqn_backend == 'torch' else 'linear-q-dqn'}",
         ]
+        for option, value in (
+            ("--epochs", args.dqn_epochs),
+            ("--learning-rate", args.dqn_learning_rate),
+            ("--gamma", args.dqn_gamma),
+            ("--transaction-cost", args.dqn_policy_transaction_cost),
+            ("--drawdown-penalty", args.dqn_drawdown_penalty),
+        ):
+            if value is not None:
+                dqn_policy_command.extend([option, str(value)])
         if args.dqn_policy_symbol:
             dqn_policy_command.extend(["--symbol", args.dqn_policy_symbol])
         if args.dqn_eval_start:
@@ -502,7 +546,11 @@ def main() -> int:
 def _validate_args(args: argparse.Namespace) -> None:
     if not args.universe and not args.index_universe_code:
         raise SystemExit("--universe or --index-universe-code is required")
-    if args.index_universe_source == "csv" and args.index_universe_code and not args.index_universe_input:
+    if (
+        args.index_universe_source == "csv"
+        and args.index_universe_code
+        and not args.index_universe_input
+    ):
         raise SystemExit("--index-universe-input is required when --index-universe-source csv")
     if args.price_source == "json" and not args.price_input:
         raise SystemExit("--price-input is required when --price-source json")
@@ -511,7 +559,9 @@ def _validate_args(args: argparse.Namespace) -> None:
     if args.market_source == "csv" and not args.market_input:
         raise SystemExit("--market-input is required when --market-source csv")
     if args.strategy_comparison_output and not args.dqn_policy_report_output:
-        raise SystemExit("--dqn-policy-report-output is required when --strategy-comparison-output is set")
+        raise SystemExit(
+            "--dqn-policy-report-output is required when --strategy-comparison-output is set"
+        )
     if args.require_point_in_time:
         missing = [
             option

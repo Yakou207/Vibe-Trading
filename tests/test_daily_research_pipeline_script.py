@@ -155,6 +155,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     "0.001",
                     "--dqn-policy-report-output",
                     str(dqn_policy_report_output),
+                    "--dqn-backend",
+                    "linear",
                     "--dqn-policy-symbol",
                     "ALL",
                     "--dqn-epochs",
@@ -200,12 +202,18 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
 
             self.assertEqual(result.returncode, 0, msg=result.stderr)
             self.assertIn("pipeline_steps=16", result.stdout)
-            self.assertIn(f"classified_information_output_dir={classified_information_output_dir}", result.stdout)
+            self.assertIn(
+                f"classified_information_output_dir={classified_information_output_dir}",
+                result.stdout,
+            )
             self.assertIn(f"information_summary_output={information_summary_output}", result.stdout)
             self.assertIn(f"dqn_policy_report_output={dqn_policy_report_output}", result.stdout)
             self.assertIn(f"strategy_comparison_output={strategy_comparison_output}", result.stdout)
             self.assertIn(f"stock_analysis_output={stock_analysis_output}", result.stdout)
-            self.assertIn(f"information_source_health_output={information_source_health_output}", result.stdout)
+            self.assertIn(
+                f"information_source_health_output={information_source_health_output}",
+                result.stdout,
+            )
             self.assertTrue(daily_output.exists())
             self.assertTrue(feature_output.exists())
             self.assertTrue(market_output.exists())
@@ -218,8 +226,12 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             self.assertTrue(data_source_health_output.exists())
             self.assertTrue(information_source_health_output.exists())
             self.assertTrue((classified_information_output_dir / "manifest.json").exists())
-            self.assertTrue((classified_information_output_dir / "text_financial_report.jsonl").exists())
-            self.assertTrue((classified_information_output_dir / "selected_universe_stock_data.jsonl").exists())
+            self.assertTrue(
+                (classified_information_output_dir / "text_financial_report.jsonl").exists()
+            )
+            self.assertTrue(
+                (classified_information_output_dir / "selected_universe_stock_data.jsonl").exists()
+            )
             self.assertTrue(information_summary_output.exists())
             self.assertTrue((report_output_root / "fixture-pipeline" / "run_report.json").exists())
             information_records = [
@@ -234,17 +246,23 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
             scoring_coverage = json.loads(scoring_coverage_output.read_text(encoding="utf-8"))
             stock_analysis = json.loads(stock_analysis_output.read_text(encoding="utf-8"))
             data_source_health = json.loads(data_source_health_output.read_text(encoding="utf-8"))
-            information_source_health = json.loads(information_source_health_output.read_text(encoding="utf-8"))
+            information_source_health = json.loads(
+                information_source_health_output.read_text(encoding="utf-8")
+            )
             classified_manifest = json.loads(
                 (classified_information_output_dir / "manifest.json").read_text(encoding="utf-8")
             )
             information_summary = json.loads(information_summary_output.read_text(encoding="utf-8"))
             run_report = json.loads(
-                (report_output_root / "fixture-pipeline" / "run_report.json").read_text(encoding="utf-8")
+                (report_output_root / "fixture-pipeline" / "run_report.json").read_text(
+                    encoding="utf-8"
+                )
             )
 
         titles = {record["title"] for record in information_records}
-        company_record = next(record for record in information_records if record["title"] == "监管问询")
+        company_record = next(
+            record for record in information_records if record["title"] == "监管问询"
+        )
         self.assertIn("监管问询", titles)
         self.assertIn("银行板块监管政策", titles)
         self.assertIn("negative_text_sentiment", company_record["risk_tags"])
@@ -263,8 +281,12 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(dqn_policy_report["summary"]["win_rate_sample_count"], 1)
         self.assertEqual(strategy_comparison["baseline"]["name"], "fixture-pipeline")
         self.assertEqual(strategy_comparison["candidate"]["name"], "fixture-pipeline-linear-q-dqn")
-        self.assertEqual(strategy_comparison["baseline"]["win_rate_basis"], "closed_trades_realized_pnl")
-        self.assertEqual(strategy_comparison["candidate"]["win_rate_basis"], "positive_reward_steps")
+        self.assertEqual(
+            strategy_comparison["baseline"]["win_rate_basis"], "closed_trades_realized_pnl"
+        )
+        self.assertEqual(
+            strategy_comparison["candidate"]["win_rate_basis"], "positive_reward_steps"
+        )
         self.assertIn("excess_return", strategy_comparison)
         self.assertEqual(scoring_coverage["pipeline"], "a_share_daily_factor_pipeline_v0")
         self.assertEqual(scoring_coverage["row_count"], 2)
@@ -277,7 +299,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(information_source_health["summary"]["total_scopes"], 2)
         self.assertEqual(information_source_health["summary"]["ok_sources"], 2)
         self.assertEqual(classified_manifest["classes"]["text_financial_report"]["record_count"], 2)
-        self.assertEqual(information_summary["by_symbol"]["000001.SZ"]["recent_negative_record_count"], 1)
+        self.assertEqual(
+            information_summary["by_symbol"]["000001.SZ"]["recent_negative_record_count"], 1
+        )
         self.assertEqual(information_summary["by_sector"]["银行"]["latest_policy_at"], "2026-01-02")
         self.assertEqual(run_report["strategy_config"]["buy_threshold"], 65.0)
         self.assertEqual(run_report["strategy_config"]["min_confidence"], 0.75)
@@ -404,7 +428,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            market_input.write_text("date,close\n2026-01-01,100\n2026-01-02,101\n", encoding="utf-8")
+            market_input.write_text(
+                "date,close\n2026-01-01,100\n2026-01-02,101\n", encoding="utf-8"
+            )
 
             result = subprocess.run(
                 [
@@ -527,7 +553,9 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
-            market_input.write_text("date,close\n2026-01-01,100\n2026-01-02,101\n2026-01-03,102\n", encoding="utf-8")
+            market_input.write_text(
+                "date,close\n2026-01-01,100\n2026-01-02,101\n2026-01-03,102\n", encoding="utf-8"
+            )
 
             result = subprocess.run(
                 [
@@ -553,6 +581,8 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
                     str(market_input),
                     "--dqn-policy-report-output",
                     str(dqn_policy_report_output),
+                    "--dqn-backend",
+                    "linear",
                     "--dqn-policy-symbol",
                     "000001.SZ",
                     "--dqn-epochs",
@@ -585,11 +615,15 @@ class DailyResearchPipelineScriptTest(unittest.TestCase):
         self.assertEqual(dqn_report["strategy_config"]["eval_sample_count"], 1)
         self.assertEqual(dqn_report["equity_curve"][0]["trade_date"], "2026-01-02")
         self.assertEqual(strategy_comparison["baseline"]["name"], "fixture-pipeline-oos")
-        self.assertEqual(strategy_comparison["candidate"]["name"], "fixture-pipeline-oos-linear-q-dqn")
+        self.assertEqual(
+            strategy_comparison["candidate"]["name"], "fixture-pipeline-oos-linear-q-dqn"
+        )
         self.assertEqual(strategy_comparison["walk_forward"][0]["start_date"], "2026-01-02")
 
 
-def _bar(symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None) -> dict[str, object]:
+def _bar(
+    symbol: str, trade_date: str, close: float, *, limit_up: bool | None = None
+) -> dict[str, object]:
     row: dict[str, object] = {
         "symbol": symbol,
         "trade_date": trade_date,
