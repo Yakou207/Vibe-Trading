@@ -75,7 +75,10 @@ def run_paper_trading_day(
     corporate_actions: tuple[CorporateAction, ...] = (),
     dividend_tax_policy: IndividualAShareDividendTaxPolicy | None = None,
     cost_model: AShareCostModel | None = None,
+    rights_issue_policy: str = "fail_closed",
 ) -> PaperTradingResult:
+    if rights_issue_policy not in {"fail_closed", "do_not_subscribe"}:
+        raise ValueError("unsupported rights_issue_policy")
     if account.last_processed_date is not None and as_of <= account.last_processed_date:
         raise ValueError("paper as_of must be after last processed date")
     if drawdown_policy is not None:
@@ -91,6 +94,7 @@ def run_paper_trading_day(
             corporate_actions=corporate_actions,
             dividend_tax_policy=dividend_tax_policy,
             cost_model=cost_model,
+            rights_issue_policy=rights_issue_policy,
         )
     active_constraints = constraints or AShareTradingConstraints()
     active_cost_model = cost_model or AShareCostModel(
@@ -109,6 +113,7 @@ def run_paper_trading_day(
         dividend_tax_lots,
         cash,
         applied_corporate_actions,
+        rights_issue_policy,
     )
     trades: list[dict[str, object]] = []
     blocked: list[dict[str, object]] = []
@@ -233,6 +238,7 @@ def _run_drawdown_controlled_day(
     corporate_actions: tuple[CorporateAction, ...],
     dividend_tax_policy: IndividualAShareDividendTaxPolicy | None,
     cost_model: AShareCostModel | None,
+    rights_issue_policy: str,
 ) -> PaperTradingResult:
     initial_equity = _equity(account.cash, account.positions, bars)
     state = account.drawdown_control_state or DrawdownControlState.initial(initial_equity)
@@ -258,6 +264,7 @@ def _run_drawdown_controlled_day(
         corporate_actions=corporate_actions,
         dividend_tax_policy=dividend_tax_policy,
         cost_model=cost_model,
+        rights_issue_policy=rights_issue_policy,
     )
     shadow_is_initialized = account.shadow_cash is not None
     shadow_result = run_paper_trading_day(
@@ -281,6 +288,7 @@ def _run_drawdown_controlled_day(
         corporate_actions=corporate_actions,
         dividend_tax_policy=dividend_tax_policy,
         cost_model=cost_model,
+        rights_issue_policy=rights_issue_policy,
     )
     decision = update_drawdown_control(
         state,
@@ -386,6 +394,10 @@ def write_paper_report(path: Path, result: PaperTradingResult) -> None:
                         "shares_after": action.shares_after,
                         "cash_delta": action.cash_delta,
                         "source": action.source,
+                        "action_type": action.action_type,
+                        "rights_ratio": action.rights_ratio,
+                        "rights_price": action.rights_price,
+                        "rights_issue_policy": action.rights_issue_policy,
                     }
                     for action in result.corporate_actions
                 ],
@@ -683,6 +695,7 @@ def _apply_corporate_actions(
     dividend_tax_lots: dict[str, list[DividendTaxLot]],
     cash: float,
     applied: list[AppliedCorporateAction],
+    rights_issue_policy: str,
 ) -> float:
     for action in actions:
         if action.ex_date != as_of:
@@ -691,6 +704,29 @@ def _apply_corporate_actions(
         if position is None or position.shares <= 0:
             continue
         shares_before = position.shares
+        if action.action_type == "rights_issue":
+            if rights_issue_policy == "fail_closed":
+                raise ValueError(
+                    f"rights issue requires explicit policy for {action.symbol} "
+                    f"on {as_of.isoformat()}"
+                )
+            applied.append(
+                AppliedCorporateAction(
+                    symbol=action.symbol,
+                    ex_date=as_of,
+                    cash_dividend_per_share=0.0,
+                    share_multiplier=1.0,
+                    shares_before=shares_before,
+                    shares_after=shares_before,
+                    cash_delta=0.0,
+                    source=action.source,
+                    action_type=action.action_type,
+                    rights_ratio=action.rights_ratio,
+                    rights_price=action.rights_price,
+                    rights_issue_policy=rights_issue_policy,
+                )
+            )
+            continue
         raw_shares_after = shares_before * action.share_multiplier
         shares_after = round(raw_shares_after)
         if abs(raw_shares_after - shares_after) > 1e-6:
@@ -718,6 +754,7 @@ def _apply_corporate_actions(
                 shares_after=shares_after,
                 cash_delta=cash_delta,
                 source=action.source,
+                action_type=action.action_type,
             )
         )
     return cash

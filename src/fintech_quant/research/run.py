@@ -50,6 +50,7 @@ class ResearchRunConfig:
     minimum_commission: float = 5.0
     include_stamp_duty: bool = True
     enable_individual_dividend_tax: bool = False
+    rights_issue_policy: str = "fail_closed"
     slippage_rate: float = 0.0
     execution_delay_sessions: int = 1
     buy_threshold: float = 70.0
@@ -72,6 +73,8 @@ class ResearchRunConfig:
         _require_non_negative("commission_rate", self.commission_rate)
         _require_non_negative("minimum_commission", self.minimum_commission)
         _require_non_negative("slippage_rate", self.slippage_rate)
+        if self.rights_issue_policy not in {"fail_closed", "do_not_subscribe"}:
+            raise ValueError("unsupported rights_issue_policy")
         _require_non_negative_int("execution_delay_sessions", self.execution_delay_sessions)
         _require_non_negative("buy_threshold", self.buy_threshold)
         _require_unit_ratio("min_score_confidence", self.min_score_confidence)
@@ -216,6 +219,7 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
         dividend_tax_policy=(
             IndividualAShareDividendTaxPolicy() if config.enable_individual_dividend_tax else None
         ),
+        rights_issue_policy=config.rights_issue_policy,
     )
     return _report_from_result(config, dataset, scores, result)
 
@@ -343,6 +347,7 @@ def _report_from_result(
             "slippage_rate": config.slippage_rate,
             "include_stamp_duty": config.include_stamp_duty,
             "enable_individual_dividend_tax": config.enable_individual_dividend_tax,
+            "rights_issue_policy": config.rights_issue_policy,
             "enable_drawdown_control": config.enable_drawdown_control,
             "max_portfolio_drawdown": config.max_portfolio_drawdown,
             "liquidate_portfolio_drawdown": (
@@ -529,6 +534,10 @@ def _corporate_action_to_json(action: object) -> dict[str, object]:
         "shares_after": action.shares_after,
         "cash_delta": action.cash_delta,
         "source": action.source,
+        "action_type": action.action_type,
+        "rights_ratio": action.rights_ratio,
+        "rights_price": action.rights_price,
+        "rights_issue_policy": action.rights_issue_policy,
     }
 
 

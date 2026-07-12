@@ -75,6 +75,11 @@ def main() -> int:
     parser.add_argument("--no-drawdown-control", action="store_true")
     parser.add_argument("--corporate-actions", default=None)
     parser.add_argument("--no-dividend-tax", action="store_true")
+    parser.add_argument(
+        "--rights-issue-policy",
+        choices=("fail_closed", "do_not_subscribe"),
+        default="do_not_subscribe",
+    )
     args = parser.parse_args()
     if args.rl_signals and args.dqn_report:
         raise SystemExit("--rl-signals and --dqn-report cannot be used together")
@@ -122,6 +127,7 @@ def main() -> int:
             ),
             include_stamp_duty=not args.no_stamp_duty,
         ),
+        rights_issue_policy=args.rights_issue_policy,
     )
     result.account.pending_targets = {
         str(row["symbol"]): float(row["raw_target_weight"]) for row in targets

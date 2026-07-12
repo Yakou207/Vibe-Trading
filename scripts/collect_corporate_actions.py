@@ -72,9 +72,7 @@ def main() -> int:
             pending.append(symbol)
             continue
         store.copy_artifact(parent_path.parent / str(reusable["artifact"]), relative)
-        scopes.append(
-            {"symbol": symbol, "status": "reused", "artifact": relative, "error": None}
-        )
+        scopes.append({"symbol": symbol, "status": "reused", "artifact": relative, "error": None})
         reused += 1
 
     fetched = 0
@@ -82,7 +80,7 @@ def main() -> int:
     executor_type = ProcessPoolExecutor if args.source != "fixture" else ThreadPoolExecutor
     with executor_type(max_workers=args.workers) as executor:
         future_by_symbol = {
-            executor.submit(_fetch_rows, args.source, fixture, symbol): symbol
+            executor.submit(_fetch_rows, args.source, fixture, symbol, start, end): symbol
             for symbol in pending
         }
         for completed, future in enumerate(as_completed(future_by_symbol), start=1):
@@ -117,6 +115,7 @@ def main() -> int:
             "start": start.isoformat(),
             "end": end.isoformat(),
             "symbols": list(symbols),
+            "action_types": ["distribution", "rights_issue"],
         },
         scopes=sorted(scopes, key=lambda item: str(item["symbol"])),
         created_at=args.created_at or datetime.now(timezone.utc).isoformat(),
@@ -138,6 +137,8 @@ def _fetch_rows(
     source: str,
     fixture: Mapping[str, object] | None,
     symbol: str,
+    start: date,
+    end: date,
 ) -> list[dict[str, object]]:
     if source == "fixture":
         if fixture is None or symbol not in fixture:
@@ -150,12 +151,23 @@ def _fetch_rows(
         return [_safe_row(dict(row)) for row in value]
     ak = importlib.import_module("akshare")
     plain_symbol = symbol.split(".", 1)[0]
-    frame = (
+    dividend_frame = (
         ak.stock_dividend_cninfo(symbol=plain_symbol)
         if source == "akshare-cninfo"
         else ak.stock_history_dividend_detail(symbol=plain_symbol, indicator="分红")
     )
-    return [_safe_row(row) for row in frame.to_dict(orient="records")]
+    rights_frame = ak.stock_allotment_cninfo(
+        symbol=plain_symbol,
+        start_date=start.strftime("%Y%m%d"),
+        end_date=end.strftime("%Y%m%d"),
+    )
+    return [
+        {"_action_type": "distribution", **_safe_row(row)}
+        for row in dividend_frame.to_dict(orient="records")
+    ] + [
+        {"_action_type": "rights_issue", **_safe_row(row)}
+        for row in rights_frame.to_dict(orient="records")
+    ]
 
 
 def _safe_row(row: Mapping[str, object]) -> dict[str, object]:

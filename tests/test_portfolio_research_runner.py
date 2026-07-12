@@ -196,6 +196,46 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual(result.equity_curve[-1].equity, 10000.0)
         self.assertEqual(result.corporate_actions[0].shares_after, 2000)
 
+    def test_portfolio_runner_fails_closed_on_held_rights_issue_without_policy(self) -> None:
+        from fintech_quant.backtesting import (
+            CorporateAction,
+            run_portfolio_scored_baseline_backtest,
+        )
+        from fintech_quant.backtesting.costs import AShareCostModel
+
+        bars = [
+            _bar("600030.SH", "2022-01-18", 20.0),
+            _bar("600030.SH", "2022-01-27", 18.0),
+        ]
+        scores = {
+            (date(2022, 1, 18), "600030.SH"): _score("600030.SH", 80.0),
+            (date(2022, 1, 27), "600030.SH"): _score("600030.SH", 80.0),
+        }
+
+        with self.assertRaisesRegex(ValueError, "rights issue requires explicit policy"):
+            run_portfolio_scored_baseline_backtest(
+                bars,
+                scores,
+                corporate_actions=(
+                    CorporateAction(
+                        symbol="600030.SH",
+                        ex_date=date(2022, 1, 27),
+                        action_type="rights_issue",
+                        rights_ratio=0.15,
+                        rights_price=14.43,
+                        listing_date=date(2022, 2, 15),
+                        source="fixture",
+                    ),
+                ),
+                initial_cash=10000.0,
+                max_position_weight=1.0,
+                cost_model=AShareCostModel(
+                    commission_rate=0.0,
+                    minimum_commission=0.0,
+                    include_stamp_duty=False,
+                ),
+            )
+
     def test_portfolio_runner_stages_reentry_from_shadow_nav_recovery(self) -> None:
         from fintech_quant.backtesting import (
             DrawdownControlPolicy,

@@ -57,9 +57,7 @@ def _run_fixture_pipeline(root: Path) -> dict[str, dict[str, str]]:
             {
                 "layer": "processed",
                 "request": {"adjust": "none"},
-                "artifacts": [
-                    {"path": "daily.csv", "sha256": sha256_file(execution_prices)}
-                ],
+                "artifacts": [{"path": "daily.csv", "sha256": sha256_file(execution_prices)}],
             },
             sort_keys=True,
         ),
@@ -78,7 +76,7 @@ def _run_fixture_pipeline(root: Path) -> dict[str, dict[str, str]]:
         json.dumps(
             {
                 "layer": "processed",
-                "request": {},
+                "request": {"action_types": ["distribution", "rights_issue"]},
                 "artifacts": [
                     {
                         "path": "corporate_actions.csv",

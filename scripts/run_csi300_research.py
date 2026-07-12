@@ -89,6 +89,7 @@ def main() -> int:
     corporate_actions_path = _resolve_processed_artifact(
         corporate_action_manifest_path,
         "corporate_actions.csv",
+        required_request={"action_types": ["distribution", "rights_issue"]},
     )
     benchmark_path = Path(args.benchmark).resolve()
     information_path = Path(args.information).resolve() if args.information else None
@@ -158,6 +159,7 @@ def main() -> int:
         "slippage_rate": args.slippage_rate,
         "execution_delay_sessions": 1,
         "enable_individual_dividend_tax": True,
+        "rights_issue_policy": "do_not_subscribe",
         "buy_threshold": args.buy_threshold,
         "min_score_confidence": args.min_score_confidence,
     }

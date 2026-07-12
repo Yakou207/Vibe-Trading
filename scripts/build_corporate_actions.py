@@ -19,7 +19,17 @@ from fintech_quant.data.corporate_action_store import (  # noqa: E402
 from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file  # noqa: E402
 
 
-FIELDS = ("symbol", "ex_date", "cash_dividend_per_share", "share_multiplier", "source")
+FIELDS = (
+    "symbol",
+    "ex_date",
+    "action_type",
+    "cash_dividend_per_share",
+    "share_multiplier",
+    "rights_ratio",
+    "rights_price",
+    "listing_date",
+    "source",
+)
 
 
 def main() -> int:
@@ -56,8 +66,12 @@ def main() -> int:
             {
                 "symbol": action.symbol,
                 "ex_date": action.ex_date.isoformat(),
+                "action_type": action.action_type,
                 "cash_dividend_per_share": action.cash_dividend_per_share,
                 "share_multiplier": action.share_multiplier,
+                "rights_ratio": action.rights_ratio,
+                "rights_price": action.rights_price,
+                "listing_date": (action.listing_date.isoformat() if action.listing_date else ""),
                 "source": action.source,
             }
             for action in actions
@@ -71,6 +85,7 @@ def main() -> int:
             "membership_sha256": request.get("membership_sha256"),
             "start": start.isoformat(),
             "end": end.isoformat(),
+            "action_types": request.get("action_types", []),
         },
         scopes=[{"group": "corporate_actions", "status": "success", "row_count": len(actions)}],
         created_at=args.created_at or datetime.now(timezone.utc).isoformat(),

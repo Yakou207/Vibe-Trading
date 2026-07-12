@@ -105,6 +105,7 @@ def run_portfolio_scored_baseline_backtest(
     execution_delay_sessions: int = 0,
     cost_model: AShareCostModel | None = None,
     dividend_tax_policy: IndividualAShareDividendTaxPolicy | None = None,
+    rights_issue_policy: str = "fail_closed",
 ) -> PortfolioBacktestResult:
     if initial_cash <= 0:
         raise ValueError("initial_cash must be positive")
@@ -114,6 +115,8 @@ def run_portfolio_scored_baseline_backtest(
         raise ValueError("execution_delay_sessions must be a non-negative integer")
     if execution_delay_sessions < 0:
         raise ValueError("execution_delay_sessions must be a non-negative integer")
+    if rights_issue_policy not in {"fail_closed", "do_not_subscribe"}:
+        raise ValueError("unsupported rights_issue_policy")
     active_cost_model = cost_model or AShareCostModel(
         commission_rate=commission_rate,
         minimum_commission=0.0,
@@ -165,6 +168,7 @@ def run_portfolio_scored_baseline_backtest(
             execution_delay_sessions=execution_delay_sessions,
             cost_model=cost_model,
             dividend_tax_policy=dividend_tax_policy,
+            rights_issue_policy=rights_issue_policy,
         )
         shadow_equity_by_date = {
             point.trade_date: point.equity for point in shadow_result.equity_curve
@@ -192,6 +196,7 @@ def run_portfolio_scored_baseline_backtest(
             dividend_tax_lots,
             cash,
             applied_corporate_actions,
+            rights_issue_policy,
         )
         signal_date = (
             grouped_bars[date_index - execution_delay_sessions][0]
@@ -502,9 +507,9 @@ def _corporate_action_index(
     actions: Sequence[CorporateAction],
 ) -> dict[date, tuple[CorporateAction, ...]]:
     by_date: dict[date, list[CorporateAction]] = {}
-    seen: set[tuple[date, str]] = set()
+    seen: set[tuple[date, str, str]] = set()
     for action in actions:
-        key = (action.ex_date, action.symbol)
+        key = (action.ex_date, action.symbol, action.action_type)
         if key in seen:
             raise ValueError(
                 f"duplicate corporate action for {action.symbol} on {action.ex_date.isoformat()}"
@@ -524,12 +529,36 @@ def _apply_corporate_actions(
     dividend_tax_lots: dict[str, list[DividendTaxLot]],
     cash: float,
     applied: list[AppliedCorporateAction],
+    rights_issue_policy: str,
 ) -> float:
     for action in actions:
         position = positions.get(action.symbol)
         if position is None or position.shares <= 0:
             continue
         shares_before = position.shares
+        if action.action_type == "rights_issue":
+            if rights_issue_policy == "fail_closed":
+                raise ValueError(
+                    f"rights issue requires explicit policy for {action.symbol} "
+                    f"on {trade_date.isoformat()}"
+                )
+            applied.append(
+                AppliedCorporateAction(
+                    symbol=action.symbol,
+                    ex_date=trade_date,
+                    cash_dividend_per_share=0.0,
+                    share_multiplier=1.0,
+                    shares_before=shares_before,
+                    shares_after=shares_before,
+                    cash_delta=0.0,
+                    source=action.source,
+                    action_type=action.action_type,
+                    rights_ratio=action.rights_ratio,
+                    rights_price=action.rights_price,
+                    rights_issue_policy=rights_issue_policy,
+                )
+            )
+            continue
         raw_shares_after = shares_before * action.share_multiplier
         shares_after = round(raw_shares_after)
         if abs(raw_shares_after - shares_after) > 1e-6:
@@ -557,6 +586,7 @@ def _apply_corporate_actions(
                 shares_after=shares_after,
                 cash_delta=cash_delta,
                 source=action.source,
+                action_type=action.action_type,
             )
         )
     return cash

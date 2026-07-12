@@ -45,6 +45,11 @@ def main() -> int:
     parser.add_argument("--no-drawdown-control", action="store_true")
     parser.add_argument("--corporate-actions", default=None)
     parser.add_argument("--no-dividend-tax", action="store_true")
+    parser.add_argument(
+        "--rights-issue-policy",
+        choices=("fail_closed", "do_not_subscribe"),
+        default="do_not_subscribe",
+    )
     args = parser.parse_args()
 
     as_of = date.fromisoformat(args.as_of)
@@ -69,6 +74,7 @@ def main() -> int:
             ),
             include_stamp_duty=not args.no_stamp_duty,
         ),
+        rights_issue_policy=args.rights_issue_policy,
     )
     write_paper_account(account_path, result.account)
     write_paper_report(Path(args.report), result)

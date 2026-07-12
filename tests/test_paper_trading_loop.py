@@ -70,6 +70,44 @@ class PaperTradingLoopTest(unittest.TestCase):
         self.assertEqual(sold.trades[0]["dividend_tax"], 200.0)
         self.assertEqual(sold.account.cash, 10800.0)
 
+    def test_paper_account_fails_closed_on_held_rights_issue_without_policy(self) -> None:
+        from fintech_quant.backtesting import CorporateAction
+        from fintech_quant.execution.paper_account import (
+            PaperAccount,
+            PaperPosition,
+            run_paper_trading_day,
+        )
+
+        account = PaperAccount(
+            cash=90000.0,
+            positions={
+                "600030.SH": PaperPosition(
+                    shares=500,
+                    cost_basis=20.0,
+                    last_buy_date=date(2022, 1, 18),
+                )
+            },
+        )
+
+        with self.assertRaisesRegex(ValueError, "rights issue requires explicit policy"):
+            run_paper_trading_day(
+                account,
+                targets={"600030.SH": 0.05},
+                bars={"600030.SH": _bar("600030.SH", 18.0)},
+                as_of=date(2022, 1, 27),
+                corporate_actions=(
+                    CorporateAction(
+                        symbol="600030.SH",
+                        ex_date=date(2022, 1, 27),
+                        action_type="rights_issue",
+                        rights_ratio=0.15,
+                        rights_price=14.43,
+                        listing_date=date(2022, 2, 15),
+                        source="fixture",
+                    ),
+                ),
+            )
+
     def test_paper_account_applies_persisted_reduced_regime_and_tracks_shadow_book(self) -> None:
         from fintech_quant.backtesting import DrawdownControlPolicy
         from fintech_quant.backtesting.drawdown_control import (

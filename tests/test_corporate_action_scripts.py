@@ -24,7 +24,15 @@ def test_collect_and_build_corporate_actions_preserve_raw_and_normalize_terms(
                         "派息比例": 3.6,
                         "送股比例": 2.0,
                         "转增比例": 1.0,
-                    }
+                    },
+                    {
+                        "_action_type": "rights_issue",
+                        "公告日期": "2026-07-01",
+                        "除权基准日": "2026-07-10",
+                        "配股上市日": "2026-07-20",
+                        "配股比例": 2.0,
+                        "配股价格": 8.0,
+                    },
                 ]
             },
             ensure_ascii=False,
@@ -85,8 +93,23 @@ def test_collect_and_build_corporate_actions_preserve_raw_and_normalize_terms(
         {
             "symbol": "000001.SZ",
             "ex_date": "2026-06-12",
+            "action_type": "distribution",
             "cash_dividend_per_share": "0.36",
             "share_multiplier": "1.3",
+            "rights_ratio": "0.0",
+            "rights_price": "0.0",
+            "listing_date": "",
             "source": "akshare_cninfo_dividend",
-        }
+        },
+        {
+            "symbol": "000001.SZ",
+            "ex_date": "2026-07-10",
+            "action_type": "rights_issue",
+            "cash_dividend_per_share": "0.0",
+            "share_multiplier": "1.0",
+            "rights_ratio": "0.2",
+            "rights_price": "8.0",
+            "listing_date": "2026-07-20",
+            "source": "akshare_cninfo_rights_issue",
+        },
     ]

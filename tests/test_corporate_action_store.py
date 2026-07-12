@@ -3,6 +3,33 @@ from __future__ import annotations
 from datetime import date
 
 
+def test_cninfo_rights_issue_is_preserved_as_explicit_action() -> None:
+    from fintech_quant.data.corporate_action_store import materialize_cninfo_corporate_actions
+
+    actions = materialize_cninfo_corporate_actions(
+        [
+            {
+                "symbol": "600030.SH",
+                "_action_type": "rights_issue",
+                "公告日期": "2022-01-14",
+                "股权登记日": "2022-01-18",
+                "除权基准日": "2022-01-27",
+                "配股上市日": "2022-02-15",
+                "配股比例": 1.5,
+                "配股价格": 14.43,
+            }
+        ],
+        start=date(2021, 1, 1),
+        end=date(2023, 1, 1),
+    )
+
+    assert len(actions) == 1
+    assert actions[0].action_type == "rights_issue"
+    assert actions[0].rights_ratio == 0.15
+    assert actions[0].rights_price == 14.43
+    assert actions[0].listing_date == date(2022, 2, 15)
+
+
 def test_cninfo_terms_are_normalized_from_per_ten_shares() -> None:
     from fintech_quant.data.corporate_action_store import materialize_cninfo_corporate_actions
 

@@ -126,7 +126,7 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
         json.dumps(
             {
                 "layer": "processed",
-                "request": {},
+                "request": {"action_types": ["distribution", "rights_issue"]},
                 "artifacts": [
                     {
                         "path": "corporate_actions.csv",
@@ -195,6 +195,7 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
     )
     assert risk_controlled["strategy_config"]["max_portfolio_drawdown"] == 0.10
     assert risk_controlled["strategy_config"]["liquidate_portfolio_drawdown"] == 0.09
+    assert risk_controlled["strategy_config"]["rights_issue_policy"] == "do_not_subscribe"
     assert manifest["inputs"]["processed_manifest"]["sha256"] == sha256_file(processed_manifest)
     assert manifest["inputs"]["execution_prices"]["sha256"] == sha256_file(execution_prices)
     assert manifest["inputs"]["corporate_actions"]["sha256"] == sha256_file(corporate_actions)
