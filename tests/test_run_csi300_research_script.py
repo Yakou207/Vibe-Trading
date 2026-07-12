@@ -18,10 +18,7 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
     )
     benchmark = tmp_path / "benchmark.csv"
     benchmark.write_text(
-        "trade_date,index_close\n"
-        "2026-01-02,4000\n"
-        "2026-01-05,4040\n"
-        "2026-01-06,4020\n",
+        "trade_date,index_close\n2026-01-02,4000\n2026-01-05,4040\n2026-01-06,4020\n",
         encoding="utf-8",
     )
     raw_store = RunArtifactStore(tmp_path / "raw", "raw-1", layer="raw")
@@ -111,9 +108,7 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
             {
                 "layer": "processed",
                 "request": {"adjust": "none"},
-                "artifacts": [
-                    {"path": "daily.csv", "sha256": sha256_file(execution_prices)}
-                ],
+                "artifacts": [{"path": "daily.csv", "sha256": sha256_file(execution_prices)}],
             }
         ),
         encoding="utf-8",
@@ -189,6 +184,17 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["data_health_passed"] is True
     assert manifest["dqn_overlay_status"] == "diagnostic_only"
+    baseline = json.loads(
+        (output_root / "fixture-csi300" / "baseline" / "run_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert baseline["strategy_config"]["enable_individual_dividend_tax"] is True
+    risk_controlled = json.loads(
+        (run_dir / "risk_controlled" / "run_report.json").read_text(encoding="utf-8")
+    )
+    assert risk_controlled["strategy_config"]["max_portfolio_drawdown"] == 0.10
+    assert risk_controlled["strategy_config"]["liquidate_portfolio_drawdown"] == 0.09
     assert manifest["inputs"]["processed_manifest"]["sha256"] == sha256_file(processed_manifest)
     assert manifest["inputs"]["execution_prices"]["sha256"] == sha256_file(execution_prices)
     assert manifest["inputs"]["corporate_actions"]["sha256"] == sha256_file(corporate_actions)

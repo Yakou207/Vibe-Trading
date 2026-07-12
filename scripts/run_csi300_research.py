@@ -157,6 +157,7 @@ def main() -> int:
         "minimum_commission": args.minimum_commission,
         "slippage_rate": args.slippage_rate,
         "execution_delay_sessions": 1,
+        "enable_individual_dividend_tax": True,
         "buy_threshold": args.buy_threshold,
         "min_score_confidence": args.min_score_confidence,
     }
@@ -167,6 +168,7 @@ def main() -> int:
         ResearchRunConfig(
             run_id="risk_controlled",
             max_portfolio_drawdown=0.10,
+            liquidate_portfolio_drawdown=0.09,
             enable_drawdown_control=True,
             **common_config,
         )

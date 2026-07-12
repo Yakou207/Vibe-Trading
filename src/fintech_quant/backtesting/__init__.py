@@ -25,6 +25,12 @@ from fintech_quant.backtesting.drawdown_control import (
     drawdown_control_state_to_json,
     update_drawdown_control,
 )
+from fintech_quant.backtesting.dividend_tax import (
+    DividendTaxLot,
+    IndividualAShareDividendTaxPolicy,
+    accrue_cash_dividend,
+    settle_dividend_tax,
+)
 from fintech_quant.backtesting.portfolio_research_runner import (
     PortfolioBacktestResult,
     PortfolioBacktestTrade,
@@ -56,7 +62,9 @@ __all__ = [
     "DrawdownResult",
     "DrawdownRegime",
     "DrawdownTransition",
+    "DividendTaxLot",
     "EquityPoint",
+    "IndividualAShareDividendTaxPolicy",
     "PortfolioBacktestResult",
     "PortfolioBacktestTrade",
     "PortfolioDailyEquity",
@@ -64,11 +72,13 @@ __all__ = [
     "ResearchBacktestResult",
     "TradeCost",
     "calculate_drawdown",
+    "accrue_cash_dividend",
     "drawdown_exposure_multiplier",
     "drawdown_control_state_from_json",
     "drawdown_control_state_to_json",
     "load_corporate_actions_csv",
     "run_portfolio_scored_baseline_backtest",
     "run_scored_baseline_backtest",
+    "settle_dividend_tax",
     "update_drawdown_control",
 ]

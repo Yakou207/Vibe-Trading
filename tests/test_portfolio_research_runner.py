@@ -9,7 +9,9 @@ from fintech_quant.trading import TradeAction
 
 
 class PortfolioResearchRunnerTest(unittest.TestCase):
-    def test_portfolio_runner_separates_adjusted_signal_and_unadjusted_execution_prices(self) -> None:
+    def test_portfolio_runner_separates_adjusted_signal_and_unadjusted_execution_prices(
+        self,
+    ) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
         from fintech_quant.backtesting.costs import AShareCostModel
 
@@ -64,7 +66,10 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             )
 
     def test_portfolio_runner_applies_cash_dividend_on_ex_date(self) -> None:
-        from fintech_quant.backtesting import CorporateAction, run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting import (
+            CorporateAction,
+            run_portfolio_scored_baseline_backtest,
+        )
         from fintech_quant.backtesting.costs import AShareCostModel
 
         bars = [
@@ -101,8 +106,62 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual(result.corporate_actions[0].shares_before, 1000)
         self.assertEqual(result.corporate_actions[0].shares_after, 1000)
 
+    def test_portfolio_runner_withholds_dividend_tax_when_short_term_lot_is_sold(self) -> None:
+        from fintech_quant.backtesting import (
+            CorporateAction,
+            IndividualAShareDividendTaxPolicy,
+            run_portfolio_scored_baseline_backtest,
+        )
+        from fintech_quant.backtesting.costs import AShareCostModel
+        from fintech_quant.trading import TradeDecision
+
+        class ThresholdExitStrategy:
+            def decide(self, state: dict[str, object]) -> TradeDecision:
+                score = state["score"]
+                action = TradeAction.BUY if score.total >= 70 else TradeAction.SELL
+                return TradeDecision(action=action, confidence=1.0, reason="fixture threshold")
+
+        bars = [
+            _bar("000001.SZ", "2026-01-01", 10.0),
+            _bar("000001.SZ", "2026-01-10", 10.0),
+            _bar("000001.SZ", "2026-01-20", 10.0),
+        ]
+        scores = {
+            (date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 10), "000001.SZ"): _score("000001.SZ", 80.0),
+            (date(2026, 1, 20), "000001.SZ"): _score("000001.SZ", 10.0),
+        }
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            corporate_actions=(
+                CorporateAction(
+                    symbol="000001.SZ",
+                    ex_date=date(2026, 1, 10),
+                    cash_dividend_per_share=1.0,
+                    source="fixture",
+                ),
+            ),
+            dividend_tax_policy=IndividualAShareDividendTaxPolicy(),
+            strategy=ThresholdExitStrategy(),
+            initial_cash=10000.0,
+            max_position_weight=1.0,
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        self.assertEqual(result.trades[-1].dividend_tax, 200.0)
+        self.assertEqual(result.summary["dividend_tax_cost"], 200.0)
+        self.assertEqual(result.equity_curve[-1].equity, 10800.0)
+
     def test_portfolio_runner_applies_bonus_share_multiplier_on_ex_date(self) -> None:
-        from fintech_quant.backtesting import CorporateAction, run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting import (
+            CorporateAction,
+            run_portfolio_scored_baseline_backtest,
+        )
         from fintech_quant.backtesting.costs import AShareCostModel
 
         bars = [
@@ -151,9 +210,7 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             for index, price in enumerate(prices, start=1)
         ]
         scores = {
-            (date.fromisoformat(f"2026-01-0{index}"), "000001.SZ"): _score(
-                "000001.SZ", 80.0
-            )
+            (date.fromisoformat(f"2026-01-0{index}"), "000001.SZ"): _score("000001.SZ", 80.0)
             for index in range(1, 7)
         }
 
@@ -206,9 +263,7 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             _bar("000001.SZ", "2026-01-04", 8.0),
         ]
         scores = {
-            (date.fromisoformat(f"2026-01-0{index}"), "000001.SZ"): _score(
-                "000001.SZ", 80.0
-            )
+            (date.fromisoformat(f"2026-01-0{index}"), "000001.SZ"): _score("000001.SZ", 80.0)
             for index in range(1, 5)
         }
 
@@ -230,10 +285,13 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             ),
         )
 
-        self.assertEqual([trade.trade_date for trade in result.trades], [
-            date(2026, 1, 1),
-            date(2026, 1, 4),
-        ])
+        self.assertEqual(
+            [trade.trade_date for trade in result.trades],
+            [
+                date(2026, 1, 1),
+                date(2026, 1, 4),
+            ],
+        )
         self.assertEqual(result.trades[-1].action, TradeAction.SELL)
 
     def test_portfolio_runner_executes_signal_on_next_session(self) -> None:
@@ -318,7 +376,10 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
 
     def test_portfolio_runner_scales_new_position_by_decision_confidence(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
-        from fintech_quant.strategies.scored_baseline import ScoredBaselineStrategy, ScoredRlOverlayStrategy
+        from fintech_quant.strategies.scored_baseline import (
+            ScoredBaselineStrategy,
+            ScoredRlOverlayStrategy,
+        )
 
         bars = [_bar("000001.SZ", "2026-01-01", 10.0)]
         scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
@@ -347,7 +408,9 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
         risk_inputs = {(date(2026, 1, 1), "000001.SZ"): RiskInput(single_position_drawdown=0.2)}
 
-        result = run_portfolio_scored_baseline_backtest(bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0)
+        result = run_portfolio_scored_baseline_backtest(
+            bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0
+        )
 
         self.assertNotIn(
             (date(2026, 1, 1), TradeAction.SELL),
@@ -375,7 +438,10 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual(result.trades, [])
 
     def test_portfolio_runner_can_disable_price_limit_and_suspension_filters(self) -> None:
-        from fintech_quant.backtesting import AShareTradingConstraints, run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting import (
+            AShareTradingConstraints,
+            run_portfolio_scored_baseline_backtest,
+        )
 
         bars = [_bar("000001.SZ", "2026-01-01", 10.0, is_suspended=True, limit_up=True)]
         scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
@@ -384,13 +450,18 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             bars,
             scores,
             initial_cash=100000.0,
-            constraints=AShareTradingConstraints(price_limit_required=False, suspension_filter_required=False),
+            constraints=AShareTradingConstraints(
+                price_limit_required=False, suspension_filter_required=False
+            ),
         )
 
         self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
 
     def test_portfolio_runner_keeps_function_lot_size_when_constraints_are_passed(self) -> None:
-        from fintech_quant.backtesting import AShareTradingConstraints, run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting import (
+            AShareTradingConstraints,
+            run_portfolio_scored_baseline_backtest,
+        )
 
         bars = [_bar("000001.SZ", "2026-01-01", 10.0, limit_up=True)]
         scores = {(date(2026, 1, 1), "000001.SZ"): _score("000001.SZ", 80.0)}
@@ -418,7 +489,9 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         }
         risk_inputs = {(date(2026, 1, 2), "000001.SZ"): RiskInput(portfolio_drawdown=0.15)}
 
-        result = run_portfolio_scored_baseline_backtest(bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0)
+        result = run_portfolio_scored_baseline_backtest(
+            bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0
+        )
 
         self.assertEqual(result.trades[-1].action, TradeAction.SELL)
         self.assertEqual(result.trades[-1].shares, 800)
@@ -438,7 +511,9 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         }
         risk_inputs = {(date(2026, 1, 2), "000001.SZ"): RiskInput(portfolio_drawdown=0.15)}
 
-        result = run_portfolio_scored_baseline_backtest(bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0)
+        result = run_portfolio_scored_baseline_backtest(
+            bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0
+        )
 
         self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
         self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
@@ -465,7 +540,9 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             commission_rate=0.0,
         )
 
-        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL])
+        self.assertEqual(
+            [trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL]
+        )
         self.assertIsNone(result.trades[0].realized_pnl)
         self.assertEqual(result.trades[1].realized_pnl, 2000.0)
         self.assertEqual(result.summary["win_rate"], 1.0)
@@ -485,12 +562,16 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         }
         risk_inputs = {(date(2026, 1, 2), "000001.SZ"): RiskInput(portfolio_drawdown=0.15)}
 
-        result = run_portfolio_scored_baseline_backtest(bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0)
+        result = run_portfolio_scored_baseline_backtest(
+            bars, scores, risk_inputs=risk_inputs, initial_cash=100000.0
+        )
 
         self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
         self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
 
-    def test_portfolio_runner_liquidates_when_actual_portfolio_drawdown_crosses_threshold(self) -> None:
+    def test_portfolio_runner_liquidates_when_actual_portfolio_drawdown_crosses_threshold(
+        self,
+    ) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 
         bars = [
@@ -509,10 +590,14 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             max_position_weight=1.0,
         )
 
-        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL])
+        self.assertEqual(
+            [trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL]
+        )
         self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
 
-    def test_portfolio_runner_reduces_when_actual_single_position_drawdown_crosses_threshold(self) -> None:
+    def test_portfolio_runner_reduces_when_actual_single_position_drawdown_crosses_threshold(
+        self,
+    ) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 
         bars = [
@@ -531,7 +616,9 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             max_position_weight=1.0,
         )
 
-        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL])
+        self.assertEqual(
+            [trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL]
+        )
         self.assertEqual(result.risk_warnings[-1].rule, "single_position_drawdown")
 
     def test_portfolio_runner_uses_configured_position_weight_limit_for_dynamic_risk(self) -> None:
@@ -597,7 +684,9 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
 
         self.assertNotIn("position_weight", [warning.rule for warning in result.risk_warnings])
 
-    def test_portfolio_runner_does_not_false_sell_flat_default_position_after_commission(self) -> None:
+    def test_portfolio_runner_does_not_false_sell_flat_default_position_after_commission(
+        self,
+    ) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 
         bars = [
@@ -614,7 +703,9 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY])
         self.assertNotIn("position_weight", [warning.rule for warning in result.risk_warnings])
 
-    def test_portfolio_runner_sells_held_position_on_dynamic_risk_without_same_day_score(self) -> None:
+    def test_portfolio_runner_sells_held_position_on_dynamic_risk_without_same_day_score(
+        self,
+    ) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 
         bars = [
@@ -632,10 +723,14 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
             max_position_weight=1.0,
         )
 
-        self.assertEqual([trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL])
+        self.assertEqual(
+            [trade.action for trade in result.trades], [TradeAction.BUY, TradeAction.SELL]
+        )
         self.assertIn("portfolio_drawdown", [warning.rule for warning in result.risk_warnings])
 
-    def test_portfolio_runner_liquidates_multiple_positions_on_actual_portfolio_drawdown(self) -> None:
+    def test_portfolio_runner_liquidates_multiple_positions_on_actual_portfolio_drawdown(
+        self,
+    ) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 
         bars = [

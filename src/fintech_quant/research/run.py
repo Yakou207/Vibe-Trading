@@ -10,13 +10,19 @@ from typing import Mapping
 from fintech_quant.backtesting import (
     AShareCostModel,
     DrawdownControlPolicy,
+    IndividualAShareDividendTaxPolicy,
     PortfolioBacktestResult,
     load_corporate_actions_csv,
     run_portfolio_scored_baseline_backtest,
 )
 from fintech_quant.features import StockScore
 from fintech_quant.data.research_dataset import load_daily_bars_csv
-from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow, load_research_dataset
+from fintech_quant.research.dataset import (
+    FeatureRow,
+    ResearchDataset,
+    SupplementalRow,
+    load_research_dataset,
+)
 from fintech_quant.research.risk_builder import PortfolioRiskState, build_risk_input
 from fintech_quant.research.scoring import build_stock_scores
 from fintech_quant.research.point_in_time import SupplementalAsOfIndex
@@ -43,11 +49,13 @@ class ResearchRunConfig:
     commission_rate: float = 0.0003
     minimum_commission: float = 5.0
     include_stamp_duty: bool = True
+    enable_individual_dividend_tax: bool = False
     slippage_rate: float = 0.0
     execution_delay_sessions: int = 1
     buy_threshold: float = 70.0
     min_score_confidence: float = 0.8
     max_portfolio_drawdown: float = 0.15
+    liquidate_portfolio_drawdown: float | None = None
     enable_drawdown_control: bool = False
     reduce_portfolio_drawdown: float = 0.08
     recover_reduced_drawdown: float = 0.08
@@ -69,13 +77,24 @@ class ResearchRunConfig:
         _require_unit_ratio("min_score_confidence", self.min_score_confidence)
         _require_positive_unit_ratio("max_portfolio_drawdown", self.max_portfolio_drawdown)
         if self.enable_drawdown_control:
+            liquidate_at = (
+                self.liquidate_portfolio_drawdown
+                if self.liquidate_portfolio_drawdown is not None
+                else self.max_portfolio_drawdown
+            )
+            if liquidate_at > self.max_portfolio_drawdown:
+                raise ValueError(
+                    "liquidate_portfolio_drawdown must not exceed max_portfolio_drawdown"
+                )
             DrawdownControlPolicy(
                 reduce_at=self.reduce_portfolio_drawdown,
-                liquidate_at=self.max_portfolio_drawdown,
+                liquidate_at=liquidate_at,
                 recover_to_reduced_at=self.recover_reduced_drawdown,
                 recover_to_normal_at=self.recover_normal_drawdown,
             )
-        _require_positive_unit_ratio("max_single_position_drawdown", self.max_single_position_drawdown)
+        _require_positive_unit_ratio(
+            "max_single_position_drawdown", self.max_single_position_drawdown
+        )
         _require_unit_ratio("max_goodwill_ratio", self.max_goodwill_ratio)
         _require_unit_ratio("max_pledge_ratio", self.max_pledge_ratio)
         _require_non_negative_int("max_main_outflow_days", self.max_main_outflow_days)
@@ -170,7 +189,11 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
         drawdown_policy=(
             DrawdownControlPolicy(
                 reduce_at=config.reduce_portfolio_drawdown,
-                liquidate_at=config.max_portfolio_drawdown,
+                liquidate_at=(
+                    config.liquidate_portfolio_drawdown
+                    if config.liquidate_portfolio_drawdown is not None
+                    else config.max_portfolio_drawdown
+                ),
                 recover_to_reduced_at=config.recover_reduced_drawdown,
                 recover_to_normal_at=config.recover_normal_drawdown,
             )
@@ -190,6 +213,9 @@ def run_research_baseline(config: ResearchRunConfig) -> ResearchRunReport:
             minimum_commission=config.minimum_commission,
             include_stamp_duty=config.include_stamp_duty,
         ),
+        dividend_tax_policy=(
+            IndividualAShareDividendTaxPolicy() if config.enable_individual_dividend_tax else None
+        ),
     )
     return _report_from_result(config, dataset, scores, result)
 
@@ -198,7 +224,10 @@ def write_run_report(report: ResearchRunReport, output_root: Path) -> Path:
     output_dir = output_root / report.run_id
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / "run_report.json"
-    report_path.write_text(json.dumps(_report_to_json(report), ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    report_path.write_text(
+        json.dumps(_report_to_json(report), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     return report_path
 
 
@@ -257,7 +286,14 @@ def _bar_from_feature(row: FeatureRow) -> dict[str, object]:
         "amount": row.values.get("amount"),
         "source": row.values.get("source", "features"),
     }
-    for flag in ("is_suspended", "suspended", "limit_up", "is_limit_up", "limit_down", "is_limit_down"):
+    for flag in (
+        "is_suspended",
+        "suspended",
+        "limit_up",
+        "is_limit_up",
+        "limit_down",
+        "is_limit_down",
+    ):
         if flag in row.values:
             bar[flag] = row.values[flag]
     return bar
@@ -275,7 +311,10 @@ def _report_from_result(
     scores: Mapping[tuple[date, str], StockScore],
     result: PortfolioBacktestResult,
 ) -> ResearchRunReport:
-    score_rows = [_score_to_json(trade_date, symbol, score) for (trade_date, symbol), score in sorted(scores.items())]
+    score_rows = [
+        _score_to_json(trade_date, symbol, score)
+        for (trade_date, symbol), score in sorted(scores.items())
+    ]
     risk_warnings = [_risk_warning_to_json(warning) for warning in result.risk_warnings]
     return ResearchRunReport(
         run_id=config.run_id,
@@ -303,7 +342,14 @@ def _report_from_result(
             "minimum_commission": config.minimum_commission,
             "slippage_rate": config.slippage_rate,
             "include_stamp_duty": config.include_stamp_duty,
+            "enable_individual_dividend_tax": config.enable_individual_dividend_tax,
             "enable_drawdown_control": config.enable_drawdown_control,
+            "max_portfolio_drawdown": config.max_portfolio_drawdown,
+            "liquidate_portfolio_drawdown": (
+                config.liquidate_portfolio_drawdown
+                if config.liquidate_portfolio_drawdown is not None
+                else config.max_portfolio_drawdown
+            ),
             "reduce_portfolio_drawdown": config.reduce_portfolio_drawdown,
             "recover_reduced_drawdown": config.recover_reduced_drawdown,
             "recover_normal_drawdown": config.recover_normal_drawdown,
@@ -313,7 +359,11 @@ def _report_from_result(
         date_range=_date_range(dataset.features),
         scores=score_rows,
         missing_fields=[
-            {"trade_date": row["trade_date"], "symbol": row["symbol"], "missing_fields": row["missing_fields"]}
+            {
+                "trade_date": row["trade_date"],
+                "symbol": row["symbol"],
+                "missing_fields": row["missing_fields"],
+            }
             for row in score_rows
             if row["missing_fields"]
         ],
@@ -327,20 +377,32 @@ def _report_from_result(
         drawdown={
             "max_drawdown": round(result.drawdown.max_drawdown, 6),
             "max_drawdown_start": (
-                result.drawdown.max_drawdown_start.isoformat() if result.drawdown.max_drawdown_start else None
+                result.drawdown.max_drawdown_start.isoformat()
+                if result.drawdown.max_drawdown_start
+                else None
             ),
             "max_drawdown_end": (
-                result.drawdown.max_drawdown_end.isoformat() if result.drawdown.max_drawdown_end else None
+                result.drawdown.max_drawdown_end.isoformat()
+                if result.drawdown.max_drawdown_end
+                else None
             ),
-            "recovery_date": result.drawdown.recovery_date.isoformat() if result.drawdown.recovery_date else None,
-            "liquidation_date": result.drawdown.liquidation_date.isoformat() if result.drawdown.liquidation_date else None,
+            "recovery_date": result.drawdown.recovery_date.isoformat()
+            if result.drawdown.recovery_date
+            else None,
+            "liquidation_date": result.drawdown.liquidation_date.isoformat()
+            if result.drawdown.liquidation_date
+            else None,
             "current_drawdown": round(result.drawdown.current_drawdown, 6),
             "current_drawdown_start": (
-                result.drawdown.current_drawdown_start.isoformat() if result.drawdown.current_drawdown_start else None
+                result.drawdown.current_drawdown_start.isoformat()
+                if result.drawdown.current_drawdown_start
+                else None
             ),
             "current_underwater_days": result.drawdown.current_underwater_days,
             "points": [_drawdown_point_to_json(point) for point in result.drawdown.points],
-            "episodes": [_drawdown_episode_to_json(episode) for episode in (result.drawdown.episodes or [])],
+            "episodes": [
+                _drawdown_episode_to_json(episode) for episode in (result.drawdown.episodes or [])
+            ],
         },
         summary=result.summary,
     )

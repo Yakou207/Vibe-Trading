@@ -100,11 +100,18 @@ system for fintech graduate-school portfolio work.
   decisions are recorded separately from position-changing trades; export
   prefers an exact-date decision and will not carry a stale decision forward.
   The default trainable backend is Torch; linear fitted-Q remains diagnostic.
-- These are still research results, not deployable-profit proof: dividend
-  differential tax, a validated DQN overlay, and eight weeks of continuous
-  paper evidence remain required. The next implementation priority is dividend
-  tax and fail-closed corporate-action coverage, then baseline-only continuous
-  paper validation while the RL overlay remains disabled.
+- Individual-account dividend tax is now modeled by FIFO acquisition lot and
+  settled on sale at 20%/10%/0% for holdings up to one month, up to one year,
+  and over one year. A formal tax-aware rerun showed that a 10% liquidation
+  trigger left no execution/re-entry buffer and produced 10.592% drawdown.
+  Separating the 10% validation limit from a 9% liquidation trigger reduced
+  formal maximum drawdown to 9.7278% while retaining 105.53% total return,
+  approximately 1.61 Sharpe, and 1,705.92 of modeled dividend tax.
+- These are still research results, not deployable-profit proof: the paper
+  account must share the dividend-lot ledger, unsupported corporate actions
+  must fail closed, and eight weeks of continuous paper evidence remain
+  required. Paper validation remains baseline-only while the RL overlay is
+  disabled.
 
 The system now has the engineering shape of a paper-trading research platform:
 
