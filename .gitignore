@@ -12,6 +12,7 @@ data/raw/
 data/processed/
 data/models/
 data/diagnostics/
+data/paper/
 outputs/
 .worktrees/
 *.sqlite

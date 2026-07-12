@@ -107,11 +107,21 @@ system for fintech graduate-school portfolio work.
   Separating the 10% validation limit from a 9% liquidation trigger reduced
   formal maximum drawdown to 9.7278% while retaining 105.53% total return,
   approximately 1.61 Sharpe, and 1,705.92 of modeled dividend tax.
-- These are still research results, not deployable-profit proof: the paper
-  account must share the dividend-lot ledger, unsupported corporate actions
-  must fail closed, and eight weeks of continuous paper evidence remain
-  required. Paper validation remains baseline-only while the RL overlay is
-  disabled.
+- These are still research results, not deployable-profit proof: unsupported
+  corporate actions must fail closed, and eight weeks of continuous paper
+  evidence remain required. Paper validation remains baseline-only while the
+  RL overlay is disabled.
+- The paper account now shares FIFO dividend-tax lots, minimum commission,
+  date-specific sell stamp duty, corporate-action processing, actual/shadow
+  books, and the 8%/9% drawdown action policy. T-close targets are persisted
+  and execute at the next processed session open; close is used only for NAV.
+  Duplicate or out-of-order processing dates fail closed.
+- A baseline-only account was initialized on the latest available formal date,
+  2026-06-30, with 100,000 cash and no RL report. It correctly queued no
+  target: the only score above the entry gate, 002311.SZ at 73.5 confidence
+  0.8125, was vetoed by the market-wide risk rule after 39 tracked names fell
+  more than 3%. This is a reproducible bootstrap record, not the start of the
+  eight-week evidence clock; fresh post-close data and cycles are required.
 
 The system now has the engineering shape of a paper-trading research platform:
 
@@ -126,8 +136,8 @@ The system now has the engineering shape of a paper-trading research platform:
   and resumable DQN checkpoints are available.
 - The completed platform branch was merged and pushed to `main` at `a6a63a9`.
   The point-in-time CSI 300 repair is on
-  `codex/csi300-point-in-time-factors`, 19 commits ahead of `main` before the
-  current decision-ledger and status update.
+  `codex/csi300-point-in-time-factors`, 23 commits ahead of `main` before the
+  current paper-bootstrap status update.
 - The repair branch now has official-anchor-plus-adjustment historical
   membership reconstruction, immutable raw/processed manifests with SHA-256,
   disclosure-date joins, common as-of factor lookup for scoring/risk/RL,
