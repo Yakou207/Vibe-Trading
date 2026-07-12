@@ -7,7 +7,16 @@ from pathlib import Path
 from typing import Mapping
 
 
-FIELDS = ("symbol", "target_weight", "score", "score_confidence", "rl_action", "reason")
+FIELDS = (
+    "symbol",
+    "raw_target_weight",
+    "target_weight",
+    "portfolio_exposure_multiplier",
+    "score",
+    "score_confidence",
+    "rl_action",
+    "reason",
+)
 
 
 def main() -> int:
@@ -18,6 +27,7 @@ def main() -> int:
     parser.add_argument("--buy-threshold", type=float, default=70.0)
     parser.add_argument("--min-score-confidence", type=float, default=0.8)
     parser.add_argument("--max-position-weight", type=float, default=0.08)
+    parser.add_argument("--portfolio-exposure-multiplier", type=float, default=1.0)
     parser.add_argument("--max-targets", type=int, default=None)
     parser.add_argument("--rl-signals", default=None, help="Optional CSV with symbol,trade_date,rl_action.")
     args = parser.parse_args()
@@ -31,6 +41,7 @@ def main() -> int:
         max_position_weight=args.max_position_weight,
         max_targets=args.max_targets,
         rl_signals=load_rl_signals(Path(args.rl_signals), args.as_of) if args.rl_signals else {},
+        portfolio_exposure_multiplier=args.portfolio_exposure_multiplier,
     )
     write_targets(Path(args.output), targets)
     print(f"target_count={len(targets)}")
@@ -47,7 +58,10 @@ def generate_targets(
     max_position_weight: float,
     max_targets: int | None,
     rl_signals: Mapping[str, str],
+    portfolio_exposure_multiplier: float = 1.0,
 ) -> list[dict[str, object]]:
+    if not 0.0 <= portfolio_exposure_multiplier <= 1.0:
+        raise ValueError("portfolio_exposure_multiplier must be between 0 and 1")
     blocked = _blocked_symbols(report, as_of)
     candidates = []
     for score in report.get("scores", []):
@@ -59,17 +73,23 @@ def generate_targets(
         if symbol in blocked or total < buy_threshold or confidence < min_score_confidence:
             continue
         rl_action = rl_signals.get(symbol, "buy")
-        target_weight = _overlay_weight(max_position_weight, rl_action)
-        if target_weight <= 0:
+        raw_target_weight = _overlay_weight(max_position_weight, rl_action)
+        if raw_target_weight <= 0:
             continue
+        target_weight = raw_target_weight * portfolio_exposure_multiplier
         candidates.append(
             {
                 "symbol": symbol,
+                "raw_target_weight": round(raw_target_weight, 6),
                 "target_weight": round(target_weight, 6),
+                "portfolio_exposure_multiplier": round(portfolio_exposure_multiplier, 6),
                 "score": round(total, 6),
                 "score_confidence": round(confidence, 6),
                 "rl_action": rl_action,
-                "reason": f"score={total:.2f}; confidence={confidence:.2f}; rl_action={rl_action}",
+                "reason": (
+                    f"score={total:.2f}; confidence={confidence:.2f}; "
+                    f"rl_action={rl_action}; exposure_multiplier={portfolio_exposure_multiplier:.2f}"
+                ),
             }
         )
     candidates.sort(key=lambda row: (-float(row["score"]), str(row["symbol"])))

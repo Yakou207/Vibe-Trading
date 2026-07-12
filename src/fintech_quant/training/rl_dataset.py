@@ -8,6 +8,7 @@ from typing import Mapping, Sequence
 
 from fintech_quant.research.dataset import FeatureRow, ResearchDataset, SupplementalRow
 from fintech_quant.research.scoring import build_score_input, build_stock_scores
+from fintech_quant.research.point_in_time import SupplementalAsOfIndex
 
 
 DEFAULT_RL_STATE_FIELDS = (
@@ -58,10 +59,27 @@ def build_rl_state_samples(
 ) -> list[RlStateSample]:
     fields = tuple(state_fields)
     scores = build_stock_scores(dataset)
+    trading_dates = tuple(sorted({row.trade_date for row in dataset.features}))
+    fundamentals = SupplementalAsOfIndex(
+        dataset.fundamentals.values(),
+        trading_dates=trading_dates,
+        allow_undated=not dataset.require_point_in_time,
+    )
+    capital_flow = SupplementalAsOfIndex(
+        dataset.capital_flow.values(),
+        trading_dates=trading_dates,
+        allow_undated=not dataset.require_point_in_time,
+    )
     samples: list[RlStateSample] = []
     for _symbol, rows in _features_by_symbol(dataset.features):
         for current, following in zip(rows, rows[1:], strict=False):
-            state_values = _state_values(dataset, current, scores)
+            state_values = _state_values(
+                dataset,
+                current,
+                scores,
+                fundamentals,
+                capital_flow,
+            )
             close = float(current.values["close"])
             next_close = float(following.values["close"])
             samples.append(
@@ -121,9 +139,11 @@ def _state_values(
     dataset: ResearchDataset,
     row: FeatureRow,
     scores: Mapping[tuple[date, str], object],
+    fundamentals_index: SupplementalAsOfIndex,
+    capital_flow_index: SupplementalAsOfIndex,
 ) -> dict[str, object]:
-    fundamentals = _supplement_for(dataset.fundamentals, row.symbol, row.trade_date)
-    capital_flow = _supplement_for(dataset.capital_flow, row.symbol, row.trade_date)
+    fundamentals = fundamentals_index.lookup(row.symbol, row.trade_date, max_age_days=180)
+    capital_flow = capital_flow_index.lookup(row.symbol, row.trade_date, max_age_sessions=3)
     score_input = build_score_input(row, fundamentals, capital_flow, dataset.information_records)
     score = scores[(row.trade_date, row.symbol)]
     values = dict(row.values)
@@ -150,14 +170,6 @@ def _benchmark_forward_return(dataset: ResearchDataset, trade_date: date, next_t
     if float(current_close) <= 0:
         return 0.0
     return round((float(next_close) - float(current_close)) / float(current_close), 6)
-
-
-def _supplement_for(
-    rows: Mapping[tuple[str, date | None], SupplementalRow],
-    symbol: str,
-    trade_date: date,
-) -> SupplementalRow | None:
-    return rows.get((symbol, trade_date)) or rows.get((symbol, None))
 
 
 def _values(row: SupplementalRow | None) -> Mapping[str, object]:

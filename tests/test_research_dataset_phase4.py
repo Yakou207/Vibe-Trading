@@ -912,6 +912,43 @@ class Phase4ResearchDatasetTest(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 load_research_dataset(features_path, universe_path, information_path=root / "missing.jsonl")
 
+    def test_load_research_dataset_filters_features_by_historical_membership(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            universe_path = root / "universe.csv"
+            features_path = root / "features.csv"
+            membership_path = root / "membership.csv"
+            universe_path.write_text("symbol\n000002\n600519\n", encoding="utf-8")
+            _write_csv(
+                features_path,
+                [
+                    _feature_row("000002", "2026-06-14", 10.0),
+                    _feature_row("600519", "2026-06-14", 10.0),
+                    _feature_row("000002", "2026-06-15", 10.0),
+                    _feature_row("600519", "2026-06-15", 10.0),
+                ],
+            )
+            membership_path.write_text(
+                "index_code,symbol,member_from,member_to,source,source_fetched_at\n"
+                "000300,000002.SZ,2026-06-01,2026-06-15,csindex,2026-07-10T12:00:00+08:00\n"
+                "000300,600519.SH,2026-06-15,,csindex,2026-07-10T12:00:00+08:00\n",
+                encoding="utf-8",
+            )
+
+            dataset = load_research_dataset(
+                features_path,
+                universe_path,
+                membership_path=membership_path,
+                require_point_in_time=True,
+            )
+
+        assert [(row.trade_date.isoformat(), row.symbol) for row in dataset.features] == [
+            ("2026-06-14", "000002.SZ"),
+            ("2026-06-15", "600519.SH"),
+        ]
+
 
 def _information_json(
     symbol: str | None,

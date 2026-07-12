@@ -15,6 +15,7 @@ from fintech_quant.training import (  # noqa: E402
     run_torch_dqn_walk_forward_report,
     write_dqn_walk_forward_report,
 )
+from fintech_quant.backtesting import DrawdownControlPolicy  # noqa: E402
 
 
 def main() -> int:
@@ -31,10 +32,12 @@ def main() -> int:
     parser.add_argument("--min-epsilon", type=float, default=0.05)
     parser.add_argument("--epsilon-decay", type=float, default=0.95)
     parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--train-frequency", type=int, default=4)
     parser.add_argument("--transaction-cost", type=float, default=0.0)
     parser.add_argument("--drawdown-penalty", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--run-id", default="torch-dqn-walk-forward")
+    parser.add_argument("--no-drawdown-control", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -52,10 +55,12 @@ def main() -> int:
                 min_epsilon=args.min_epsilon,
                 epsilon_decay=args.epsilon_decay,
                 batch_size=args.batch_size,
+                train_frequency=args.train_frequency,
                 transaction_cost=args.transaction_cost,
                 drawdown_penalty=args.drawdown_penalty,
                 seed=args.seed,
             ),
+            drawdown_policy=None if args.no_drawdown_control else DrawdownControlPolicy(),
         )
     except (RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)

@@ -63,29 +63,133 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-07-11 CSI 300 execution-price update
+
+- The official CSI 300 history has been reconstructed from a 2026-06-30
+  official anchor plus 186 regular and temporary adjustment pairs. It contains
+  439 unique stocks and 461 membership intervals; every checked effective date
+  has exactly 300 active members.
+- The five-year formal path now has 526,767 adjusted signal-price rows,
+  525,399 point-in-time fundamental rows, and 518,426 explicit price-volume
+  proxy rows. The formal health gate passes with 99.8928% price coverage, 100%
+  fundamental coverage, no stale decision-time factor, and no detected future
+  leakage.
+- Historical PE/PB uses the daily AkShare `stock_value_em` path, with a Baidu
+  valuation fallback for delisted stocks. Financial metrics remain joined by
+  verified public availability date. The price-volume proxy remains visibly
+  labeled and never claims to be actual main-capital net flow.
+- Backtest execution now separates adjusted signal prices from unadjusted
+  transaction and mark-to-market prices. A versioned corporate-action ledger
+  applies cash dividends and bonus/transfer shares on ex-dates. Formal runs
+  require processed manifests proving `adjust=none` for execution prices and
+  recording corporate-action artifact hashes.
+- Under the repaired dual-price path, the scored baseline returned 104.09%
+  over the observed five-year interval with 12.03% maximum drawdown. The
+  shared drawdown controller reduces exposure to 50% after an 8% close,
+  liquidates after a 10% close, and uses an unrestricted shadow strategy NAV
+  for staged 8%/6% recovery. Its formal CSI 300 run returned 107.17% with
+  9.34% maximum drawdown, approximately 1.60 Sharpe, and positive excess
+  return in all four reported time segments after modeled costs.
+- The drawdown state is persisted in the paper account together with actual
+  and shadow books. Fixed tests cover staged re-entry and repeated liquidation
+  attempts after a limit-down blocked exit. Target exports now record raw and
+  drawdown-scaled weights while paper execution consumes the raw target and
+  applies persisted drawdown state exactly once.
+- Linear and Torch policy evaluation now share one execution, action-ledger,
+  equity, maximum-drawdown, and portfolio drawdown-control path. Daily DQN
+  decisions are recorded separately from position-changing trades; export
+  prefers an exact-date decision and will not carry a stale decision forward.
+  The default trainable backend is Torch; linear fitted-Q remains diagnostic.
+- Individual-account dividend tax is now modeled by FIFO acquisition lot and
+  settled on sale at 20%/10%/0% for holdings up to one month, up to one year,
+  and over one year. A formal tax-aware rerun showed that a 10% liquidation
+  trigger left no execution/re-entry buffer and produced 10.592% drawdown.
+  Separating the 10% validation limit from a 9% liquidation trigger reduced
+  formal maximum drawdown to 9.7278% while retaining 105.53% total return,
+  approximately 1.61 Sharpe, and 1,705.92 of modeled dividend tax.
+- These are still research results, not deployable-profit proof: unsupported
+  corporate actions must fail closed, and eight weeks of continuous paper
+  evidence remain required. Paper validation remains baseline-only while the
+  RL overlay is disabled.
+- The paper account now shares FIFO dividend-tax lots, minimum commission,
+  date-specific sell stamp duty, corporate-action processing, actual/shadow
+  books, and the 8%/9% drawdown action policy. T-close targets are persisted
+  and execute at the next processed session open; close is used only for NAV.
+  Duplicate or out-of-order processing dates fail closed.
+- A baseline-only account was initialized on the latest available formal date,
+  2026-06-30, with 100,000 cash and no RL report. It correctly queued no
+  target: the only score above the entry gate, 002311.SZ at 73.5 confidence
+  0.8125, was vetoed by the market-wide risk rule after 39 tracked names fell
+  more than 3%. This is a reproducible bootstrap record, not the start of the
+  eight-week evidence clock; fresh post-close data and cycles are required.
+- Corporate-action collection now covers both distributions and CNInfo rights
+  issues. The complete five-year CSI 300 ledger contains 2,452 events: 2,444
+  distributions and eight rights issues. Eight dividend scopes that failed on
+  CNInfo were completed with Sina dividend data while retaining CNInfo rights
+  coverage; all 439 scopes passed. Formal runs reject older manifests that do
+  not declare both action types.
+- The explicit formal rights policy is `do_not_subscribe`; a held rights issue
+  without an explicit policy fails closed in both backtest and paper execution.
+  None of the eight historical rights events intersected a position in the
+  risk-controlled run, so the complete-action result is unchanged: 105.53%
+  total return, 9.7278% maximum drawdown, and 1,705.92 modeled dividend tax.
+  The authoritative action ledger hash is
+  `d02716c22c0f744815378946282650f6be6f582b94a006afdcce1af99df9f082`.
+
 The system now has the engineering shape of a paper-trading research platform:
 
 - The real-data research pipeline, benchmark-relative comparison, DQN
   walk-forward path, CSI 300 / CSI 800 universe ingestion, paper-trading loop,
   and daily monitoring dashboard have been implemented.
 - Paper execution models A-share constraints including T+1, suspensions,
-  limit-up / limit-down blocking, lot size, commission, and slippage, and it
-  persists positions and NAV.
+  limit-up / limit-down blocking, lot size, minimum commission, date-specific
+  stamp duty, and slippage. Formal research signals execute on the next
+  available session rather than the signal close.
 - DQN rewards and strategy reports support benchmark-relative excess return,
   and resumable DQN checkpoints are available.
-- These changes currently live on
-  `codex/real-data-benchmark-evaluation`. Before this roadmap update, the
-  completed branch was 13 commits ahead of the local `main` branch and 15
-  commits ahead of `origin/main` as of 2026-07-10; this `AGENTS.md` update is
-  an additional documentation commit. Merge the branch into `main` before
-  starting the next strategy iteration, after rerunning the full test suite and
-  reviewing the merge diff.
+- The completed platform branch was merged and pushed to `main` at `a6a63a9`.
+  The point-in-time CSI 300 repair is on
+  `codex/csi300-point-in-time-factors`, 23 commits ahead of `main` before the
+  current paper-bootstrap status update.
+- The repair branch now has official-anchor-plus-adjustment historical
+  membership reconstruction, immutable raw/processed manifests with SHA-256,
+  disclosure-date joins, common as-of factor lookup for scoring/risk/RL,
+  fail-closed coverage/variation checks, and a formal CSI 300 orchestration
+  command. A fixed fixture reproduces identical factor, score-analysis, and RL
+  dataset hashes across two complete runs.
 
-Engineering completion must not be confused with strategy validation. Current
-real-data evidence does not show a strategy that both beats CSI 300 and meets
-the portfolio drawdown target.
+Engineering completion must not be confused with deployable-profit proof. The
+latest historical CSI 300 baseline run beats its benchmark and stays inside the
+10% drawdown target after modeled costs, but it has not yet passed dividend-tax
+modeling or eight weeks of continuous paper validation.
 
 ## Current Real-Data Findings
+
+### 0. The repaired data path fails closed on the latest 30-stock diagnostic
+
+- A new 2026-07-10 diagnostic attempted 90 AkShare scopes for the existing 30
+  STAR Market stocks over the five-year research interval. All 30 financial
+  statement scopes succeeded; all 30 fundamental/valuation scopes and all 30
+  individual capital-flow scopes failed because the upstream Eastmoney proxy
+  closed the connection.
+- The successful statements produced 462 point-in-time fundamental snapshots.
+  Statement-derived trailing/annualized ROE has 455 populated rows and
+  same-period revenue growth has 396; the fundamental score now has three
+  distinct values from 0 to 17.5 instead of being constant at zero. PE/PB still
+  require a separately valid point-in-time valuation path. Capital-flow
+  materialization produced zero rows.
+- The latest preserved health report fails four gates: price coverage
+  `0.806766` versus `0.95`, capital-flow coverage `0.0` versus `0.95`, 1,073
+  stale fundamental observations, and all-zero capital-flow scores.
+  Fundamental row coverage is `0.891751`, with ROE field coverage `0.992839`
+  and growth field coverage `0.888683` among the usable snapshots.
+- The formal orchestrator stopped before baseline, risk-controlled, RL, or
+  benchmark-comparison artifacts were created. This is the intended behavior;
+  the failed provider run and health report are evidence, not a strategy run.
+- Do not start the full CSI 300 provider fan-out until the failed factor scopes
+  can be resumed successfully or a separately validated point-in-time provider
+  is added. Current-constituent backfilling is not an acceptable substitute for
+  official historical membership.
 
 ### 1. The scored baseline produces no trades
 
@@ -123,6 +227,27 @@ the portfolio drawdown target.
   distribution, and implementation parity explain this divergence, RL signals
   must not be used to increase paper-trading exposure.
 
+### 4. Full CSI 300 Torch diagnostics select cash, not an investable overlay
+
+- The formal five-year CSI 300 RL dataset contains 365,768 point-in-time state
+  samples. With 0.1% transition cost, 0.5 drawdown penalty, and shared 8%/10%
+  portfolio control, a one-episode three-window diagnostic returned -0.0576%
+  mean OOS return. Invested-step rates were only 0.74%-2.93%.
+- Increasing training to five episodes did not repair the behavior. All three
+  windows were non-positive, mean return was -0.1584%, and invested-step rates
+  were 0%, 1.21%, and 0.28%. More training therefore does not explain the
+  near-cash result under the current standalone reward and action semantics.
+- The linear and Torch evaluators previously duplicated their loops and policy
+  reports omitted maximum drawdown, causing walk-forward aggregation to show a
+  false zero drawdown. The shared evaluator and explicit action diagnostics fix
+  those measurement defects; the remaining near-cash behavior is a model
+  outcome, not an accounting discrepancy.
+- Torch is the only backend candidate for future checkpointed DQN work, but it
+  is not approved for paper exposure. Paper trading must run the scored
+  baseline plus the shared risk engine without a DQN report until an overlay
+  evaluated specifically on baseline-selected candidates shows stable positive
+  risk-controlled excess return across windows and seeds.
+
 ## Data Integrity Rules
 
 The next experiments must use point-in-time data and remain reproducible:
@@ -152,27 +277,24 @@ The next experiments must use point-in-time data and remain reproducible:
 The next phase is strategy repair and validation, not additional platform
 features. Work in this order:
 
-1. Merge the completed branch into `main`.
-   - Review the 15 pre-roadmap commits relative to `origin/main` together with
-     this documentation update, rerun all tests, merge, and push `main` before
-     making new strategy changes.
-   - Preserve DQN checkpoint/resume support, but do not reintroduce a separate
-     Q-learning strategy path.
+1. Restore the failed real factor scopes and rerun the 30-stock gate.
+   - Resume the immutable `star30-raw-20260710` run after the Eastmoney-backed
+     valuation and capital-flow endpoints recover, or add a separately
+     validated provider that supplies public availability dates and historical
+     rows under the same schema.
+   - Rebuild factors under a new processed run id. Require non-constant
+     fundamental/capital-flow scores, coverage above the configured thresholds,
+     and meaningful target positions before any threshold tuning.
 
-2. Connect real factor data to the scored baseline.
-   - Reuse the existing `akshare_fundamental`,
-     `akshare_financial_statement`, and individual-stock capital-flow
-     collectors.
-   - Map point-in-time fundamental and capital-flow records into the
-     `fundamentals` and `capital_flow` inputs consumed by the scoring engine.
-   - Make missing, constant, stale, and low-coverage factor groups visible and
-     fail closed when required score components are unusable.
-   - Rebuild the 30-stock diagnostic dataset first. Verify that fundamental and
-     capital-flow scores are non-constant, the score distribution can cross the
-     configured entry gates, and the baseline produces economically meaningful
-     target positions before tuning strategy thresholds.
+2. Build the official historical CSI 300 membership artifact.
+   - Acquire a current official CSI anchor plus every official regular and
+     temporary adjustment since the research start date. Preserve source URLs
+     and fetch timestamps.
+   - Do not use the current 300 constituents for the full five-year history.
+     The existing current-universe CSV is suitable only as an anchor after its
+     source and as-of date are verified.
 
-3. Rebuild and rerun the full CSI 300 path.
+3. Rebuild and rerun the full CSI 300 path after steps 1-2 pass.
    - Fetch approximately five years of daily price, fundamental, financial
      statement, capital-flow, and required market-state data for all CSI 300
      constituents.
@@ -228,7 +350,6 @@ until all of the following hold:
 - Every daily decision can be reproduced from immutable input data, recorded
   configuration, and a known code commit.
 
-When opening the next implementation thread, start by merging the completed
-branch and then repair the fundamental and capital-flow data path. Do not add
-new strategy features until the scored baseline can trade on complete,
-point-in-time inputs.
+When resuming implementation, start from the failed 30-stock factor scopes and
+the preserved health report. Do not add new strategy features until the scored
+baseline can trade on complete, point-in-time inputs.

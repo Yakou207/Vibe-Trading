@@ -5,7 +5,23 @@ from datetime import date
 from typing import Mapping, Sequence
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
+from fintech_quant.backtesting.costs import AShareCostModel
+from fintech_quant.backtesting.corporate_actions import AppliedCorporateAction, CorporateAction
 from fintech_quant.backtesting.drawdown import DrawdownResult, EquityPoint, calculate_drawdown
+from fintech_quant.backtesting.drawdown_control import (
+    DrawdownControlPolicy,
+    DrawdownControlState,
+    DrawdownRegime,
+    drawdown_exposure_multiplier,
+    update_drawdown_control,
+)
+from fintech_quant.backtesting.dividend_tax import (
+    DividendTaxLot,
+    IndividualAShareDividendTaxPolicy,
+    accrue_cash_dividend,
+    apply_share_multiplier,
+    settle_dividend_tax,
+)
 from fintech_quant.features import StockScore
 from fintech_quant.risk import RiskAction, RiskInput, RiskLimits, RiskWarning, evaluate_risk
 from fintech_quant.strategies.scored_baseline import ScoredBaselineStrategy
@@ -16,16 +32,20 @@ from fintech_quant.trading import TradeAction
 @dataclass(frozen=True)
 class PortfolioBacktestTrade:
     trade_date: date
+    signal_date: date
     symbol: str
     action: TradeAction
     price: float
     shares: int
     notional: float
     commission: float
+    stamp_duty: float
+    total_cost: float
     cash: float
     position: int
     reason: str
     realized_pnl: float | None = None
+    dividend_tax: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -54,19 +74,24 @@ class PortfolioBacktestResult:
     equity_curve: list[PortfolioDailyEquity]
     risk_warnings: list[PortfolioDatedRiskWarning]
     drawdown: DrawdownResult
-    summary: dict[str, float | int | str]
+    summary: dict[str, object]
+    corporate_actions: list[AppliedCorporateAction]
 
 
 @dataclass
 class _Position:
     shares: int = 0
     cost_basis: float = 0.0
+    acquisition_cost: float = 0.0
 
 
 def run_portfolio_scored_baseline_backtest(
     bars: Sequence[Mapping[str, object]],
     scores: Mapping[tuple[date, str], StockScore],
     *,
+    execution_bars: Sequence[Mapping[str, object]] | None = None,
+    corporate_actions: Sequence[CorporateAction] = (),
+    drawdown_policy: DrawdownControlPolicy | None = None,
     risk_inputs: Mapping[tuple[date, str], RiskInput] | None = None,
     initial_cash: float = 100000.0,
     max_position_weight: float = 0.08,
@@ -77,15 +102,36 @@ def run_portfolio_scored_baseline_backtest(
     strategy: Strategy | None = None,
     strategy_state_overlays: Mapping[tuple[date, str], Mapping[str, object]] | None = None,
     risk_limits: RiskLimits | None = None,
+    execution_delay_sessions: int = 0,
+    cost_model: AShareCostModel | None = None,
+    dividend_tax_policy: IndividualAShareDividendTaxPolicy | None = None,
+    rights_issue_policy: str = "fail_closed",
 ) -> PortfolioBacktestResult:
     if initial_cash <= 0:
         raise ValueError("initial_cash must be positive")
     if lot_size <= 0:
         raise ValueError("lot_size must be positive")
-    active_constraints = replace(constraints, lot_size=lot_size) if constraints else AShareTradingConstraints(lot_size=lot_size)
+    if isinstance(execution_delay_sessions, bool) or not isinstance(execution_delay_sessions, int):
+        raise ValueError("execution_delay_sessions must be a non-negative integer")
+    if execution_delay_sessions < 0:
+        raise ValueError("execution_delay_sessions must be a non-negative integer")
+    if rights_issue_policy not in {"fail_closed", "do_not_subscribe"}:
+        raise ValueError("unsupported rights_issue_policy")
+    active_cost_model = cost_model or AShareCostModel(
+        commission_rate=commission_rate,
+        minimum_commission=0.0,
+        include_stamp_duty=False,
+    )
+    active_constraints = (
+        replace(constraints, lot_size=lot_size)
+        if constraints
+        else AShareTradingConstraints(lot_size=lot_size)
+    )
     ordered = sorted(bars, key=lambda item: (_bar_date(item), str(item["symbol"])))
     if not ordered:
         raise ValueError("bars must contain at least one daily bar")
+    execution_by_key = _execution_bar_index(ordered, execution_bars)
+    corporate_actions_by_date = _corporate_action_index(corporate_actions)
 
     active_strategy = strategy or ScoredBaselineStrategy()
     risk_by_key = risk_inputs or {}
@@ -95,49 +141,122 @@ def run_portfolio_scored_baseline_backtest(
         if risk_limits
         else RiskLimits(max_position_weight=max_position_weight)
     )
+    shadow_equity_by_date: dict[date, float] = {}
+    control_state: DrawdownControlState | None = None
+    if drawdown_policy is not None:
+        shadow_limits = replace(
+            active_risk_limits,
+            max_portfolio_drawdown=1.0,
+            max_single_position_drawdown=1.0,
+        )
+        shadow_result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            execution_bars=execution_bars,
+            corporate_actions=corporate_actions,
+            drawdown_policy=None,
+            risk_inputs=risk_inputs,
+            initial_cash=initial_cash,
+            max_position_weight=max_position_weight,
+            lot_size=lot_size,
+            commission_rate=commission_rate,
+            slippage_rate=slippage_rate,
+            constraints=constraints,
+            strategy=strategy,
+            strategy_state_overlays=strategy_state_overlays,
+            risk_limits=shadow_limits,
+            execution_delay_sessions=execution_delay_sessions,
+            cost_model=cost_model,
+            dividend_tax_policy=dividend_tax_policy,
+            rights_issue_policy=rights_issue_policy,
+        )
+        shadow_equity_by_date = {
+            point.trade_date: point.equity for point in shadow_result.equity_curve
+        }
+        control_state = DrawdownControlState.initial(initial_cash)
+        active_risk_limits = replace(active_risk_limits, max_portfolio_drawdown=1.0)
     cash = float(initial_cash)
     positions: dict[str, _Position] = {}
+    dividend_tax_lots: dict[str, list[DividendTaxLot]] = {}
     trades: list[PortfolioBacktestTrade] = []
     warnings: list[PortfolioDatedRiskWarning] = []
     equity_curve: list[PortfolioDailyEquity] = []
+    applied_corporate_actions: list[AppliedCorporateAction] = []
     total_turnover = 0.0
     closed_wins = 0
     closed_count = 0
     rolling_peak = float(initial_cash)
 
-    for trade_date, daily_bars in _group_by_date(ordered):
-        close_by_symbol = {str(bar["symbol"]): _bar_close(bar) for bar in daily_bars}
+    grouped_bars = _group_by_date(ordered)
+    for date_index, (trade_date, daily_bars) in enumerate(grouped_bars):
+        cash = _apply_corporate_actions(
+            trade_date,
+            corporate_actions_by_date.get(trade_date, ()),
+            positions,
+            dividend_tax_lots,
+            cash,
+            applied_corporate_actions,
+            rights_issue_policy,
+        )
+        signal_date = (
+            grouped_bars[date_index - execution_delay_sessions][0]
+            if date_index >= execution_delay_sessions
+            else None
+        )
+        regime = control_state.regime if control_state else DrawdownRegime.NORMAL
+        exposure_multiplier = drawdown_exposure_multiplier(regime)
+        previous_trade_date = grouped_bars[date_index - 1][0] if date_index else None
+        reentry_day = (
+            control_state is not None
+            and control_state.last_transition_date == previous_trade_date
+            and regime in {DrawdownRegime.REDUCED, DrawdownRegime.NORMAL}
+        )
+        close_by_symbol = {
+            str(bar["symbol"]): _bar_close(execution_by_key[(_bar_date(bar), str(bar["symbol"]))])
+            for bar in daily_bars
+        }
         bought_today: set[str] = set()
         starting_equity = _equity(cash, positions, close_by_symbol)
         rolling_peak = max(rolling_peak, starting_equity)
 
         for bar in daily_bars:
             symbol = str(bar["symbol"])
-            close = _bar_close(bar)
-            score = scores.get((trade_date, symbol))
+            execution_bar = execution_by_key[(trade_date, symbol)]
+            close = _bar_close(execution_bar)
+            strategy_execution_price = (
+                _bar_open(execution_bar) if execution_delay_sessions else close
+            )
+            score = scores.get((signal_date, symbol)) if signal_date is not None else None
             position = positions.get(symbol, _Position())
             risk_input = _merge_risk_inputs(
                 risk_by_key.get((trade_date, symbol), RiskInput()),
-                _dynamic_risk_input(close, position, starting_equity, rolling_peak, commission_rate),
+                _dynamic_risk_input(
+                    close,
+                    position,
+                    starting_equity,
+                    rolling_peak,
+                    active_cost_model.commission_rate,
+                ),
             )
             risk = evaluate_risk(risk_input, active_risk_limits)
             warnings.extend(_dated_warnings(trade_date, symbol, risk.warnings))
 
-            if score is None:
-                if (
-                    position.shares > 0
-                    and _can_sell(bar, active_constraints, symbol in bought_today)
-                    and risk.action in {RiskAction.REDUCE, RiskAction.LIQUIDATE}
+            if regime is DrawdownRegime.LIQUIDATED:
+                if position.shares > 0 and _can_sell(
+                    bar, active_constraints, symbol in bought_today
                 ):
                     trade, cash, notional, closed_win = _sell_position(
                         trade_date=trade_date,
+                        signal_date=signal_date or trade_date,
                         symbol=symbol,
-                        close=close,
+                        close=strategy_execution_price,
                         position=position,
                         cash=cash,
-                        commission_rate=commission_rate,
+                        cost_model=active_cost_model,
                         slippage_rate=slippage_rate,
-                        reason=f"Risk action {risk.action.value} overrides missing score.",
+                        reason="Portfolio drawdown regime requires liquidation.",
+                        dividend_tax_lots=dividend_tax_lots.get(symbol),
+                        dividend_tax_policy=dividend_tax_policy,
                     )
                     total_turnover += notional
                     closed_count += 1
@@ -147,7 +266,64 @@ def run_portfolio_scored_baseline_backtest(
                     positions.pop(symbol, None)
                 continue
 
-            overlay_state = overlays_by_key.get((trade_date, symbol), {})
+            if regime is DrawdownRegime.REDUCED and position.shares > 0:
+                target_value = starting_equity * max_position_weight * exposure_multiplier
+                target_shares = _round_lot(
+                    int(target_value // strategy_execution_price),
+                    active_constraints.lot_size,
+                )
+                shares_to_sell = position.shares - target_shares
+                if shares_to_sell > 0 and _can_sell(
+                    bar, active_constraints, symbol in bought_today
+                ):
+                    trade, cash, notional = _sell_position_shares(
+                        trade_date=trade_date,
+                        signal_date=signal_date or trade_date,
+                        symbol=symbol,
+                        close=strategy_execution_price,
+                        shares=shares_to_sell,
+                        position=position,
+                        cash=cash,
+                        cost_model=active_cost_model,
+                        slippage_rate=slippage_rate,
+                        reason="Portfolio drawdown regime caps exposure at 50%.",
+                        dividend_tax_lots=dividend_tax_lots.get(symbol),
+                        dividend_tax_policy=dividend_tax_policy,
+                    )
+                    total_turnover += notional
+                    trades.append(trade)
+                    if position.shares == 0:
+                        positions.pop(symbol, None)
+                    continue
+
+            if score is None:
+                if (
+                    position.shares > 0
+                    and _can_sell(bar, active_constraints, symbol in bought_today)
+                    and risk.action in {RiskAction.REDUCE, RiskAction.LIQUIDATE}
+                ):
+                    trade, cash, notional, closed_win = _sell_position(
+                        trade_date=trade_date,
+                        signal_date=trade_date,
+                        symbol=symbol,
+                        close=close,
+                        position=position,
+                        cash=cash,
+                        cost_model=active_cost_model,
+                        slippage_rate=slippage_rate,
+                        reason=f"Risk action {risk.action.value} overrides missing score.",
+                        dividend_tax_lots=dividend_tax_lots.get(symbol),
+                        dividend_tax_policy=dividend_tax_policy,
+                    )
+                    total_turnover += notional
+                    closed_count += 1
+                    if closed_win:
+                        closed_wins += 1
+                    trades.append(trade)
+                    positions.pop(symbol, None)
+                continue
+
+            overlay_state = overlays_by_key.get((signal_date, symbol), {})
             state = {
                 "score": score,
                 "risk_action": risk.action,
@@ -155,17 +331,23 @@ def run_portfolio_scored_baseline_backtest(
             }
             state.update(overlay_state)
             decision = active_strategy.decide(state)
-
-            if decision.action is TradeAction.SELL and position.shares > 0 and _can_sell(bar, active_constraints, symbol in bought_today):
+            if (
+                decision.action is TradeAction.SELL
+                and position.shares > 0
+                and _can_sell(bar, active_constraints, symbol in bought_today)
+            ):
                 trade, cash, notional, closed_win = _sell_position(
                     trade_date=trade_date,
+                    signal_date=signal_date,
                     symbol=symbol,
-                    close=close,
+                    close=strategy_execution_price,
                     position=position,
                     cash=cash,
-                    commission_rate=commission_rate,
+                    cost_model=active_cost_model,
                     slippage_rate=slippage_rate,
                     reason=decision.reason,
+                    dividend_tax_lots=dividend_tax_lots.get(symbol),
+                    dividend_tax_policy=dividend_tax_policy,
                 )
                 total_turnover += notional
                 closed_count += 1
@@ -177,41 +359,59 @@ def run_portfolio_scored_baseline_backtest(
 
             if (
                 decision.action is TradeAction.BUY
-                and position.shares == 0
+                and (position.shares == 0 or reentry_day)
                 and _can_buy(bar, active_constraints)
                 and risk.action not in {RiskAction.REDUCE, RiskAction.LIQUIDATE}
             ):
-                buy_price = round(close * (1.0 + slippage_rate), 6)
-                target_weight = max_position_weight
+                buy_price = round(strategy_execution_price * (1.0 + slippage_rate), 6)
+                target_weight = max_position_weight * exposure_multiplier
                 if overlay_state:
                     target_weight *= _decision_weight(decision.confidence)
-                max_notional = min(cash, starting_equity * target_weight)
+                current_value = position.shares * buy_price
+                max_notional = min(
+                    cash,
+                    max(0.0, starting_equity * target_weight - current_value),
+                )
                 shares = _round_lot(int(max_notional // buy_price), active_constraints.lot_size)
                 if shares <= 0:
                     continue
                 notional = round(shares * buy_price, 6)
-                commission = round(notional * commission_rate, 6)
-                while shares > 0 and notional + commission > cash:
+                cost = active_cost_model.buy_cost(notional, trade_date)
+                while shares > 0 and notional + cost.total > cash:
                     shares -= active_constraints.lot_size
                     notional = round(shares * buy_price, 6)
-                    commission = round(notional * commission_rate, 6)
+                    cost = active_cost_model.buy_cost(notional, trade_date)
                 if shares <= 0:
                     continue
-                cash -= notional + commission
+                cash -= notional + cost.total
                 total_turnover += notional
-                positions[symbol] = _Position(shares=shares, cost_basis=buy_price)
+                total_shares = position.shares + shares
+                positions[symbol] = _Position(
+                    shares=total_shares,
+                    cost_basis=(
+                        (position.shares * position.cost_basis + shares * buy_price) / total_shares
+                    ),
+                    acquisition_cost=position.acquisition_cost + notional + cost.total,
+                )
+                if dividend_tax_policy is not None:
+                    dividend_tax_lots.setdefault(symbol, []).append(
+                        DividendTaxLot(shares=shares, acquired_date=trade_date)
+                    )
                 bought_today.add(symbol)
                 trades.append(
                     PortfolioBacktestTrade(
                         trade_date=trade_date,
+                        signal_date=signal_date,
                         symbol=symbol,
                         action=TradeAction.BUY,
                         price=buy_price,
                         shares=shares,
                         notional=notional,
-                        commission=commission,
+                        commission=cost.commission,
+                        stamp_duty=cost.stamp_duty,
+                        total_cost=cost.total,
                         cash=round(cash, 6),
-                        position=shares,
+                        position=total_shares,
                         reason=decision.reason,
                     )
                 )
@@ -225,14 +425,25 @@ def run_portfolio_scored_baseline_backtest(
                 equity=round(cash + positions_value, 6),
             )
         )
+        if control_state is not None and drawdown_policy is not None:
+            control_state = update_drawdown_control(
+                control_state,
+                trade_date=trade_date,
+                actual_equity=equity_curve[-1].equity,
+                shadow_equity=shadow_equity_by_date[trade_date],
+                policy=drawdown_policy,
+            ).state
 
-    drawdown = calculate_drawdown([EquityPoint(point.trade_date, point.equity) for point in equity_curve])
+    drawdown = calculate_drawdown(
+        [EquityPoint(point.trade_date, point.equity) for point in equity_curve]
+    )
     ending_equity = equity_curve[-1].equity
     return PortfolioBacktestResult(
         trades=trades,
         equity_curve=equity_curve,
         risk_warnings=warnings,
         drawdown=drawdown,
+        corporate_actions=applied_corporate_actions,
         summary={
             "initial_cash": float(initial_cash),
             "ending_equity": ending_equity,
@@ -244,37 +455,185 @@ def run_portfolio_scored_baseline_backtest(
             "win_rate": round(closed_wins / closed_count, 6) if closed_count else 0.0,
             "win_rate_basis": "closed_trades_realized_pnl",
             "win_rate_sample_count": closed_count,
+            "commission_cost": round(sum(trade.commission for trade in trades), 6),
+            "stamp_duty_cost": round(sum(trade.stamp_duty for trade in trades), 6),
+            "total_trading_cost": round(sum(trade.total_cost for trade in trades), 6),
+            "dividend_tax_cost": round(sum(trade.dividend_tax for trade in trades), 6),
+            "execution_delay_sessions": execution_delay_sessions,
+            "execution_price_mode": (
+                "unadjusted_external" if execution_bars is not None else "signal_bar"
+            ),
+            "drawdown_control_regime": (
+                control_state.regime.value if control_state else "disabled"
+            ),
+            "drawdown_transitions": (
+                [
+                    {
+                        "trade_date": transition.trade_date.isoformat(),
+                        "from_regime": transition.from_regime.value,
+                        "to_regime": transition.to_regime.value,
+                        "actual_drawdown": transition.actual_drawdown,
+                        "shadow_drawdown": transition.shadow_drawdown,
+                    }
+                    for transition in control_state.transitions
+                ]
+                if control_state
+                else []
+            ),
         },
     )
 
 
-def _group_by_date(rows: Sequence[Mapping[str, object]]) -> list[tuple[date, list[Mapping[str, object]]]]:
+def _execution_bar_index(
+    signal_bars: Sequence[Mapping[str, object]],
+    execution_bars: Sequence[Mapping[str, object]] | None,
+) -> dict[tuple[date, str], Mapping[str, object]]:
+    if execution_bars is None:
+        return {(_bar_date(bar), str(bar["symbol"])): bar for bar in signal_bars}
+    result: dict[tuple[date, str], Mapping[str, object]] = {}
+    for bar in execution_bars:
+        key = (_bar_date(bar), str(bar["symbol"]))
+        if key in result:
+            raise ValueError(f"duplicate execution bar for {key[1]} on {key[0].isoformat()}")
+        result[key] = bar
+    for bar in signal_bars:
+        key = (_bar_date(bar), str(bar["symbol"]))
+        if key not in result:
+            raise ValueError(f"execution bars missing {key[1]} on {key[0].isoformat()}")
+    return result
+
+
+def _corporate_action_index(
+    actions: Sequence[CorporateAction],
+) -> dict[date, tuple[CorporateAction, ...]]:
+    by_date: dict[date, list[CorporateAction]] = {}
+    seen: set[tuple[date, str, str]] = set()
+    for action in actions:
+        key = (action.ex_date, action.symbol, action.action_type)
+        if key in seen:
+            raise ValueError(
+                f"duplicate corporate action for {action.symbol} on {action.ex_date.isoformat()}"
+            )
+        seen.add(key)
+        by_date.setdefault(action.ex_date, []).append(action)
+    return {
+        ex_date: tuple(sorted(items, key=lambda item: item.symbol))
+        for ex_date, items in by_date.items()
+    }
+
+
+def _apply_corporate_actions(
+    trade_date: date,
+    actions: Sequence[CorporateAction],
+    positions: dict[str, _Position],
+    dividend_tax_lots: dict[str, list[DividendTaxLot]],
+    cash: float,
+    applied: list[AppliedCorporateAction],
+    rights_issue_policy: str,
+) -> float:
+    for action in actions:
+        position = positions.get(action.symbol)
+        if position is None or position.shares <= 0:
+            continue
+        shares_before = position.shares
+        if action.action_type == "rights_issue":
+            if rights_issue_policy == "fail_closed":
+                raise ValueError(
+                    f"rights issue requires explicit policy for {action.symbol} "
+                    f"on {trade_date.isoformat()}"
+                )
+            applied.append(
+                AppliedCorporateAction(
+                    symbol=action.symbol,
+                    ex_date=trade_date,
+                    cash_dividend_per_share=0.0,
+                    share_multiplier=1.0,
+                    shares_before=shares_before,
+                    shares_after=shares_before,
+                    cash_delta=0.0,
+                    source=action.source,
+                    action_type=action.action_type,
+                    rights_ratio=action.rights_ratio,
+                    rights_price=action.rights_price,
+                    rights_issue_policy=rights_issue_policy,
+                )
+            )
+            continue
+        raw_shares_after = shares_before * action.share_multiplier
+        shares_after = round(raw_shares_after)
+        if abs(raw_shares_after - shares_after) > 1e-6:
+            raise ValueError(
+                f"corporate action creates fractional shares for {action.symbol} "
+                f"on {trade_date.isoformat()}"
+            )
+        cash_delta = round(shares_before * action.cash_dividend_per_share, 6)
+        cash += cash_delta
+        lots = dividend_tax_lots.get(action.symbol, [])
+        accrue_cash_dividend(
+            lots,
+            cash_dividend_per_share=action.cash_dividend_per_share,
+        )
+        apply_share_multiplier(lots, share_multiplier=action.share_multiplier)
+        position.shares = shares_after
+        position.cost_basis /= action.share_multiplier
+        applied.append(
+            AppliedCorporateAction(
+                symbol=action.symbol,
+                ex_date=trade_date,
+                cash_dividend_per_share=action.cash_dividend_per_share,
+                share_multiplier=action.share_multiplier,
+                shares_before=shares_before,
+                shares_after=shares_after,
+                cash_delta=cash_delta,
+                source=action.source,
+                action_type=action.action_type,
+            )
+        )
+    return cash
+
+
+def _group_by_date(
+    rows: Sequence[Mapping[str, object]],
+) -> list[tuple[date, list[Mapping[str, object]]]]:
     grouped: dict[date, list[Mapping[str, object]]] = {}
     for row in rows:
         grouped.setdefault(_bar_date(row), []).append(row)
     return [(trade_date, grouped[trade_date]) for trade_date in sorted(grouped)]
 
 
-def _equity(cash: float, positions: Mapping[str, _Position], close_by_symbol: Mapping[str, float]) -> float:
+def _equity(
+    cash: float, positions: Mapping[str, _Position], close_by_symbol: Mapping[str, float]
+) -> float:
     return cash + _positions_value(positions, close_by_symbol)
 
 
-def _positions_value(positions: Mapping[str, _Position], close_by_symbol: Mapping[str, float]) -> float:
-    return sum(position.shares * close_by_symbol.get(symbol, position.cost_basis) for symbol, position in positions.items())
+def _positions_value(
+    positions: Mapping[str, _Position], close_by_symbol: Mapping[str, float]
+) -> float:
+    return sum(
+        position.shares * close_by_symbol.get(symbol, position.cost_basis)
+        for symbol, position in positions.items()
+    )
 
 
 def _can_buy(bar: Mapping[str, object], constraints: AShareTradingConstraints) -> bool:
-    if constraints.suspension_filter_required and _truthy_bar_flag(bar, "is_suspended", "suspended"):
+    if constraints.suspension_filter_required and _truthy_bar_flag(
+        bar, "is_suspended", "suspended"
+    ):
         return False
     if constraints.price_limit_required and _truthy_bar_flag(bar, "limit_up", "is_limit_up"):
         return False
     return True
 
 
-def _can_sell(bar: Mapping[str, object], constraints: AShareTradingConstraints, bought_today: bool) -> bool:
+def _can_sell(
+    bar: Mapping[str, object], constraints: AShareTradingConstraints, bought_today: bool
+) -> bool:
     if constraints.t_plus_one and bought_today:
         return False
-    if constraints.suspension_filter_required and _truthy_bar_flag(bar, "is_suspended", "suspended"):
+    if constraints.suspension_filter_required and _truthy_bar_flag(
+        bar, "is_suspended", "suspended"
+    ):
         return False
     if constraints.price_limit_required and _truthy_bar_flag(bar, "limit_down", "is_limit_down"):
         return False
@@ -295,8 +654,12 @@ def _dynamic_risk_input(
     market_value = position.shares * close
     position_weight_equity = equity + (market_value * commission_rate)
     return RiskInput(
-        position_weight=round(market_value / position_weight_equity, 6) if position_weight_equity > 0 else 0.0,
-        portfolio_drawdown=round(max(0.0, (rolling_peak - equity) / rolling_peak), 6) if rolling_peak > 0 else 0.0,
+        position_weight=round(market_value / position_weight_equity, 6)
+        if position_weight_equity > 0
+        else 0.0,
+        portfolio_drawdown=round(max(0.0, (rolling_peak - equity) / rolling_peak), 6)
+        if rolling_peak > 0
+        else 0.0,
         single_position_drawdown=(
             round(max(0.0, (position.cost_basis - close) / position.cost_basis), 6)
             if position.shares > 0 and position.cost_basis > 0
@@ -308,33 +671,123 @@ def _dynamic_risk_input(
 def _sell_position(
     *,
     trade_date: date,
+    signal_date: date,
     symbol: str,
     close: float,
     position: _Position,
     cash: float,
-    commission_rate: float,
+    cost_model: AShareCostModel,
     slippage_rate: float,
     reason: str,
+    dividend_tax_lots: list[DividendTaxLot] | None,
+    dividend_tax_policy: IndividualAShareDividendTaxPolicy | None,
 ) -> tuple[PortfolioBacktestTrade, float, float, bool]:
     sell_price = round(close * (1.0 - slippage_rate), 6)
     notional = round(position.shares * sell_price, 6)
-    commission = round(notional * commission_rate, 6)
-    realized_pnl = round((sell_price - position.cost_basis) * position.shares - commission, 6)
-    next_cash = cash + notional - commission
+    cost = cost_model.sell_cost(notional, trade_date)
+    dividend_tax = _settled_dividend_tax(
+        dividend_tax_lots,
+        shares=position.shares,
+        trade_date=trade_date,
+        policy=dividend_tax_policy,
+    )
+    realized_pnl = round(
+        notional - cost.total - dividend_tax - position.acquisition_cost,
+        6,
+    )
+    next_cash = cash + notional - cost.total - dividend_tax
     trade = PortfolioBacktestTrade(
         trade_date=trade_date,
+        signal_date=signal_date,
         symbol=symbol,
         action=TradeAction.SELL,
         price=sell_price,
         shares=position.shares,
         notional=notional,
-        commission=commission,
+        commission=cost.commission,
+        stamp_duty=cost.stamp_duty,
+        total_cost=round(cost.total + dividend_tax, 6),
         cash=round(next_cash, 6),
         position=0,
         reason=reason,
         realized_pnl=realized_pnl,
+        dividend_tax=dividend_tax,
     )
     return trade, next_cash, notional, realized_pnl > 0
+
+
+def _sell_position_shares(
+    *,
+    trade_date: date,
+    signal_date: date,
+    symbol: str,
+    close: float,
+    shares: int,
+    position: _Position,
+    cash: float,
+    cost_model: AShareCostModel,
+    slippage_rate: float,
+    reason: str,
+    dividend_tax_lots: list[DividendTaxLot] | None,
+    dividend_tax_policy: IndividualAShareDividendTaxPolicy | None,
+) -> tuple[PortfolioBacktestTrade, float, float]:
+    if shares <= 0 or shares > position.shares:
+        raise ValueError("partial sell shares must be positive and no greater than position")
+    shares_before = position.shares
+    allocated_acquisition_cost = position.acquisition_cost * shares / shares_before
+    sell_price = round(close * (1.0 - slippage_rate), 6)
+    notional = round(shares * sell_price, 6)
+    cost = cost_model.sell_cost(notional, trade_date)
+    dividend_tax = _settled_dividend_tax(
+        dividend_tax_lots,
+        shares=shares,
+        trade_date=trade_date,
+        policy=dividend_tax_policy,
+    )
+    realized_pnl = round(
+        notional - cost.total - dividend_tax - allocated_acquisition_cost,
+        6,
+    )
+    next_cash = cash + notional - cost.total - dividend_tax
+    position.shares -= shares
+    position.acquisition_cost -= allocated_acquisition_cost
+    trade = PortfolioBacktestTrade(
+        trade_date=trade_date,
+        signal_date=signal_date,
+        symbol=symbol,
+        action=TradeAction.SELL,
+        price=sell_price,
+        shares=shares,
+        notional=notional,
+        commission=cost.commission,
+        stamp_duty=cost.stamp_duty,
+        total_cost=round(cost.total + dividend_tax, 6),
+        cash=round(next_cash, 6),
+        position=position.shares,
+        reason=reason,
+        realized_pnl=realized_pnl,
+        dividend_tax=dividend_tax,
+    )
+    return trade, next_cash, notional
+
+
+def _settled_dividend_tax(
+    lots: list[DividendTaxLot] | None,
+    *,
+    shares: int,
+    trade_date: date,
+    policy: IndividualAShareDividendTaxPolicy | None,
+) -> float:
+    if policy is None:
+        return 0.0
+    if lots is None:
+        raise ValueError("dividend-tax policy requires acquisition lots")
+    return settle_dividend_tax(
+        lots,
+        shares_sold=shares,
+        sale_date=trade_date,
+        policy=policy,
+    )
 
 
 def _merge_risk_inputs(left: RiskInput, right: RiskInput) -> RiskInput:
@@ -377,6 +830,13 @@ def _bar_close(bar: Mapping[str, object]) -> float:
     if close <= 0:
         raise ValueError("bar close must be positive")
     return close
+
+
+def _bar_open(bar: Mapping[str, object]) -> float:
+    open_price = float(bar.get("open", bar["close"]))
+    if open_price <= 0:
+        raise ValueError("bar open must be positive")
+    return open_price
 
 
 def _dated_warnings(

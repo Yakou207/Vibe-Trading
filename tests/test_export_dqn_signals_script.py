@@ -10,6 +10,58 @@ from pathlib import Path
 
 
 class ExportDqnSignalsScriptTest(unittest.TestCase):
+    def test_export_dqn_signals_prefers_daily_decision_over_position_change_trade(self) -> None:
+        from scripts.export_dqn_signals import export_signals
+
+        rows = export_signals(
+            {
+                "strategy_config": {"symbols": ["000001.SZ"]},
+                "trades": [
+                    {
+                        "trade_date": "2026-01-01",
+                        "symbol": "000001.SZ",
+                        "action": "buy",
+                        "position": 1,
+                    }
+                ],
+                "decisions": [
+                    {
+                        "trade_date": "2026-01-02",
+                        "symbol": "000001.SZ",
+                        "action": "sell",
+                        "position": 0,
+                    }
+                ],
+            },
+            as_of="2026-01-02",
+        )
+
+        self.assertEqual(rows[0]["rl_action"], "sell")
+        self.assertEqual(rows[0]["source_action"], "sell")
+        self.assertEqual(rows[0]["source_trade_date"], "2026-01-02")
+
+    def test_export_dqn_signals_does_not_reuse_stale_daily_decision(self) -> None:
+        from scripts.export_dqn_signals import export_signals
+
+        rows = export_signals(
+            {
+                "strategy_config": {"symbols": ["000001.SZ"]},
+                "decisions": [
+                    {
+                        "trade_date": "2026-01-01",
+                        "symbol": "000001.SZ",
+                        "action": "buy",
+                        "position": 1,
+                    }
+                ],
+            },
+            as_of="2026-01-02",
+            default_action="hold",
+        )
+
+        self.assertEqual(rows[0]["rl_action"], "hold")
+        self.assertEqual(rows[0]["source_trade_date"], "")
+
     def test_export_dqn_signals_writes_daily_overlay_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

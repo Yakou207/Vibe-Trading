@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class DataLayerTest(unittest.TestCase):
@@ -321,6 +321,111 @@ class DataLayerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ProviderFetchError, "akshare"):
             provider.history("000001", date(2026, 6, 1), date(2026, 6, 3))
+
+    def test_akshare_provider_can_use_explicit_sina_backend(self) -> None:
+        from fintech_quant.data.akshare_provider import AkShareProvider
+
+        frame = Mock()
+        frame.to_dict.return_value = [
+            {
+                "date": "2026-06-03",
+                "open": 10.1,
+                "high": 10.8,
+                "low": 9.9,
+                "close": 10.5,
+                "volume": 12345,
+                "amount": 67890.5,
+            }
+        ]
+        akshare = Mock()
+        akshare.stock_zh_a_daily.return_value = frame
+
+        with patch(
+            "fintech_quant.data.akshare_provider.importlib.import_module",
+            return_value=akshare,
+        ):
+            rows = AkShareProvider(backend="sina").history(
+                "000001.SZ", date(2026, 6, 1), date(2026, 6, 3)
+            )
+
+        akshare.stock_zh_a_daily.assert_called_once_with(
+            symbol="sz000001",
+            start_date="20260601",
+            end_date="20260603",
+            adjust="qfq",
+        )
+        self.assertEqual(rows[0]["source"], "akshare-sina-qfq")
+        self.assertEqual(rows[0]["volume"], 12345.0)
+
+    def test_akshare_provider_labels_unadjusted_execution_prices(self) -> None:
+        from fintech_quant.data.akshare_provider import AkShareProvider
+
+        frame = Mock()
+        frame.to_dict.return_value = [
+            {
+                "date": "2026-06-03",
+                "open": 20.0,
+                "high": 20.0,
+                "low": 20.0,
+                "close": 20.0,
+                "volume": 1000,
+                "amount": 20000,
+            }
+        ]
+        akshare = Mock()
+        akshare.stock_zh_a_daily.return_value = frame
+
+        with patch(
+            "fintech_quant.data.akshare_provider.importlib.import_module",
+            return_value=akshare,
+        ):
+            rows = AkShareProvider(backend="sina", adjust="none").history(
+                "000001.SZ", date(2026, 6, 1), date(2026, 6, 3)
+            )
+
+        akshare.stock_zh_a_daily.assert_called_once_with(
+            symbol="sz000001",
+            start_date="20260601",
+            end_date="20260603",
+            adjust="",
+        )
+        self.assertEqual(rows[0]["source"], "akshare-sina-unadjusted")
+
+    def test_akshare_provider_maps_tencent_lots_and_marks_estimated_turnover(self) -> None:
+        from fintech_quant.data.akshare_provider import AkShareProvider
+
+        frame = Mock()
+        frame.to_dict.return_value = [
+            {
+                "date": "2025-02-05",
+                "open": 10.57,
+                "close": 10.41,
+                "high": 10.71,
+                "low": 10.38,
+                "amount": 922953.0,
+            }
+        ]
+        akshare = Mock()
+        akshare.stock_zh_a_hist_tx.return_value = frame
+
+        with patch(
+            "fintech_quant.data.akshare_provider.importlib.import_module",
+            return_value=akshare,
+        ):
+            rows = AkShareProvider(backend="tencent").history(
+                "600837.SH", date(2021, 6, 15), date(2026, 6, 30)
+            )
+
+        akshare.stock_zh_a_hist_tx.assert_called_once_with(
+            symbol="sh600837",
+            start_date="20210615",
+            end_date="20260630",
+            adjust="qfq",
+            timeout=30,
+        )
+        self.assertEqual(rows[0]["source"], "akshare-tencent-qfq-estimated-turnover")
+        self.assertEqual(rows[0]["volume"], 92295300.0)
+        self.assertEqual(rows[0]["amount"], 960794073.0)
 
     def test_tushare_provider_wraps_normalization_failures(self) -> None:
         from fintech_quant.data.errors import ProviderFetchError

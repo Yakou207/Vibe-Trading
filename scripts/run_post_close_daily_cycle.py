@@ -10,12 +10,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the post-close paper-trading and monitoring cycle.")
+    parser = argparse.ArgumentParser(
+        description="Run the post-close paper-trading and monitoring cycle."
+    )
     parser.add_argument("--as-of", required=True)
     parser.add_argument("--research-report", required=True)
     parser.add_argument("--features", required=True)
     parser.add_argument("--comparison", required=True)
     parser.add_argument("--dqn-report", default=None)
+    parser.add_argument("--corporate-actions", default=None)
     parser.add_argument("--walk-forward", default=None)
     parser.add_argument("--data-health", default=None)
     parser.add_argument("--information-health", default=None)
@@ -31,6 +34,7 @@ def main() -> int:
     parser.add_argument("--dqn-flat-action", choices=("buy", "hold", "sell"), default="hold")
     parser.add_argument("--initial-cash", type=float, default=100000.0)
     parser.add_argument("--commission-rate", type=float, default=0.0003)
+    parser.add_argument("--minimum-commission", type=float, default=5.0)
     parser.add_argument("--slippage-rate", type=float, default=0.0)
     args = parser.parse_args()
 
@@ -61,11 +65,15 @@ def main() -> int:
         str(args.initial_cash),
         "--commission-rate",
         str(args.commission_rate),
+        "--minimum-commission",
+        str(args.minimum_commission),
         "--slippage-rate",
         str(args.slippage_rate),
     ]
     if args.max_targets is not None:
         paper_command.extend(["--max-targets", str(args.max_targets)])
+    if args.corporate_actions:
+        paper_command.extend(["--corporate-actions", args.corporate_actions])
     if args.dqn_report:
         paper_command.extend(
             [

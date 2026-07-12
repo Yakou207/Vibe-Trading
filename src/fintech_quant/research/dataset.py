@@ -7,9 +7,11 @@ from datetime import date
 from pathlib import Path
 from typing import Mapping
 
+from fintech_quant.data.historical_universe import MembershipInterval, load_membership_intervals
 from fintech_quant.data.research_dataset import DEFAULT_FEATURE_FIELDS, load_universe_csv
 from fintech_quant.data.symbols import normalize_a_share_symbol
 from fintech_quant.information import InformationCategory, InformationRecord
+from fintech_quant.research.point_in_time import MembershipAsOfIndex
 
 
 _BOOLEAN_FIELDS = {
@@ -30,6 +32,8 @@ _BOOLEAN_FIELDS = {
 }
 _INT_FIELDS = {
     "main_outflow_days",
+    "flow_proxy_window",
+    "price_volume_outflow_days",
     "broad_market_drop_gt_3pct_count",
 }
 _FLOAT_FIELDS = {
@@ -55,9 +59,13 @@ _FLOAT_FIELDS = {
     "goodwill_ratio",
     "pledge_ratio",
     "main_net_inflow",
+    "price_volume_flow_signal",
+    "cmf",
+    "obv_momentum",
     "index_close",
     "index_ma250",
 }
+_DATE_FIELDS = {"available_date", "report_period"}
 _MAX_CONTINUOUS_OUTFLOW_GAP_DAYS = 3
 _BROAD_MARKET_DROP_THRESHOLD = -0.03
 
@@ -90,6 +98,8 @@ class ResearchDataset:
     market_state: dict[date, MarketStateRow]
     information_records: list[InformationRecord]
     universe_symbols: tuple[str, ...]
+    membership_intervals: tuple[MembershipInterval, ...] = ()
+    require_point_in_time: bool = False
 
 
 def load_research_dataset(
@@ -100,21 +110,33 @@ def load_research_dataset(
     capital_flow_path: Path | None = None,
     market_state_path: Path | None = None,
     information_path: Path | None = None,
+    membership_path: Path | None = None,
+    require_point_in_time: bool = False,
 ) -> ResearchDataset:
     universe = load_universe_csv(universe_path)
+    membership_intervals = load_membership_intervals(membership_path) if membership_path else ()
+    if require_point_in_time and not membership_intervals:
+        raise ValueError("membership_path is required in point-in-time mode")
+    membership_symbols = {interval.symbol for interval in membership_intervals}
     universe_symbols = tuple(member.symbol for member in universe)
     universe_set = set(universe_symbols)
+    universe_set.update(membership_symbols)
     universe_sectors = {member.sector for member in universe if member.sector}
     sector_by_symbol = {member.symbol: member.sector for member in universe}
     information_records = _load_information(information_path, universe_set, universe_sectors)
-    fundamentals = _load_supplemental(fundamentals_path, universe_set, allow_missing_trade_date=True)
+    fundamentals = _load_supplemental(
+        fundamentals_path,
+        universe_set,
+        allow_missing_trade_date=not require_point_in_time,
+    )
     _merge_information_fundamentals(fundamentals, information_records, universe_set)
     _merge_information_financial_statements(fundamentals, information_records, universe_set)
     _merge_information_pledge_ratios(fundamentals, information_records, universe_set)
     _merge_information_st_status(fundamentals, information_records, universe_set)
     capital_flow = _load_supplemental(capital_flow_path, universe_set, allow_missing_trade_date=False)
     _merge_information_capital_flow(capital_flow, information_records, universe_set)
-    features = _load_features(features_path, universe_set, sector_by_symbol)
+    membership_index = MembershipAsOfIndex(membership_intervals) if membership_intervals else None
+    features = _load_features(features_path, universe_set, sector_by_symbol, membership_index)
     market_state = _load_market_state(market_state_path)
     _merge_derived_market_state(market_state, features)
     return ResearchDataset(
@@ -123,7 +145,9 @@ def load_research_dataset(
         capital_flow=capital_flow,
         market_state=market_state,
         information_records=information_records,
-        universe_symbols=universe_symbols,
+        universe_symbols=tuple(sorted(universe_set)) if membership_intervals else universe_symbols,
+        membership_intervals=membership_intervals,
+        require_point_in_time=require_point_in_time,
     )
 
 
@@ -131,6 +155,7 @@ def _load_features(
     path: Path,
     universe_symbols: set[str],
     sector_by_symbol: Mapping[str, str | None],
+    membership_index: MembershipAsOfIndex | None,
 ) -> list[FeatureRow]:
     rows = _read_csv(path)
     _require_columns(path, rows.fieldnames, DEFAULT_FEATURE_FIELDS)
@@ -141,6 +166,8 @@ def _load_features(
         if symbol not in universe_symbols:
             continue
         trade_date = _parse_date(row["trade_date"], path, "trade_date")
+        if membership_index is not None and not membership_index.is_active(symbol, trade_date):
+            continue
         key = (symbol, trade_date)
         if key in seen:
             raise ValueError(f"Duplicate feature row for {symbol} on {trade_date.isoformat()}")
@@ -172,7 +199,8 @@ def _load_supplemental(
         values = _coerce_row(row, path)
         values["symbol"] = symbol
         if trade_date is not None:
-            values["trade_date"] = trade_date
+            values["available_date"] = trade_date
+            values.setdefault("trade_date", trade_date)
         result[(symbol, trade_date)] = SupplementalRow(symbol=symbol, trade_date=trade_date, values=values)
     return result
 
@@ -559,7 +587,7 @@ def _require_columns(path: Path, fieldnames: tuple[str, ...], required: tuple[st
 
 
 def _optional_trade_date(row: Mapping[str, str], path: Path, allow_missing: bool) -> date | None:
-    raw_value = row.get("trade_date", "")
+    raw_value = row.get("available_date") or row.get("trade_date", "")
     if raw_value in ("", None):
         if allow_missing:
             return None
@@ -586,6 +614,8 @@ def _coerce_value(key: str, value: object, path: Path) -> object:
             return float(str(value))
         except ValueError as exc:
             raise ValueError(f"{path} has invalid numeric field {key}: {value!r}") from exc
+    if key in _DATE_FIELDS or key == "trade_date":
+        return _parse_date(value, path, key)
     return str(value)
 
 

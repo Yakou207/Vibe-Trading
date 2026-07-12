@@ -7,6 +7,12 @@ from fintech_quant.research.dataset import (
     SupplementalRow,
     load_research_dataset,
 )
+from fintech_quant.research.data_health import (
+    DataHealthIssue,
+    DataHealthReport,
+    DataHealthThresholds,
+    validate_research_data,
+)
 from fintech_quant.research.risk_builder import (
     PortfolioRiskState,
     PositionState,
@@ -22,6 +28,9 @@ from fintech_quant.research.scoring import build_score_input, build_stock_scores
 
 __all__ = [
     "FeatureRow",
+    "DataHealthIssue",
+    "DataHealthReport",
+    "DataHealthThresholds",
     "MarketStateRow",
     "PortfolioRiskState",
     "PositionState",
@@ -35,4 +44,5 @@ __all__ = [
     "load_research_dataset",
     "run_research_baseline",
     "write_run_report",
+    "validate_research_data",
 ]

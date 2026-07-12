@@ -9,6 +9,44 @@ from pathlib import Path
 
 
 class RlDatasetTest(unittest.TestCase):
+    def test_build_rl_state_samples_uses_latest_published_fundamental(self) -> None:
+        from fintech_quant.research.dataset import load_research_dataset
+        from fintech_quant.training import build_rl_state_samples
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = _write_fixture_inputs(root)
+            membership = root / "membership.csv"
+            membership.write_text(
+                "index_code,symbol,member_from,member_to,source,source_fetched_at\n"
+                "000300,000001.SZ,2025-01-01,,csindex,2026-07-10T12:00:00+08:00\n",
+                encoding="utf-8",
+            )
+            paths["fundamentals"].write_text(
+                "symbol,available_date,pe,pb,roe,growth\n"
+                "000001,2025-12-31,18,1.5,0.16,0.12\n"
+                "000001,2026-01-02,1,0.1,0.50,0.50\n",
+                encoding="utf-8",
+            )
+            paths["capital_flow"].write_text(
+                "symbol,trade_date,available_date,main_net_inflow,main_outflow_days,margin_financing_positive\n"
+                "000001,2026-01-01,2026-01-01,1000,0,true\n"
+                "000001,2026-01-02,2026-01-02,800,1,true\n",
+                encoding="utf-8",
+            )
+            dataset = load_research_dataset(
+                paths["features"],
+                paths["universe"],
+                fundamentals_path=paths["fundamentals"],
+                capital_flow_path=paths["capital_flow"],
+                membership_path=membership,
+                require_point_in_time=True,
+            )
+
+        sample = build_rl_state_samples(dataset)[0]
+        state = dict(zip(sample.state_fields, sample.state_vector, strict=True))
+        self.assertEqual(state["pe"], 18.0)
+
     def test_build_rl_state_samples_joins_scores_and_forward_returns(self) -> None:
         from fintech_quant.research.dataset import load_research_dataset
         from fintech_quant.training import DEFAULT_RL_STATE_FIELDS, build_rl_state_samples

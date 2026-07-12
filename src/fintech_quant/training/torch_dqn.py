@@ -7,10 +7,10 @@ from pathlib import Path
 from random import Random
 from typing import Any, Deque, NamedTuple, Sequence
 
+from fintech_quant.backtesting.drawdown_control import DrawdownControlPolicy
 from fintech_quant.training.dqn import DQN_ACTIONS
-from fintech_quant.training.policy_report import SymbolPolicyEvaluation, build_policy_report, selected_symbols
+from fintech_quant.training.policy_report import build_policy_report, evaluate_symbol_policy, selected_symbols
 from fintech_quant.training.rl_dataset import RlStateSample, group_rl_state_samples_by_symbol
-from fintech_quant.training.rl_environment import AShareBuySellHoldEnvironment
 
 
 TORCH_DQN_POLICY_NAME = "torch_dqn_v1"
@@ -27,6 +27,7 @@ class TorchDQNConfig:
     batch_size: int = 64
     replay_capacity: int = 10_000
     target_update_interval: int = 100
+    train_frequency: int = 4
     transaction_cost: float = 0.0
     drawdown_penalty: float = 0.0
     hidden_layers: tuple[int, ...] = (64, 32)
@@ -160,6 +161,8 @@ def train_torch_dqn_policy_run(
         metadata = dict(initial_run.metadata)
         metrics = dict(initial_run.metrics)
 
+    environment_steps = int(metrics.get("environment_steps", 0))
+
     optimizer = torch.optim.Adam(network.parameters(), lr=config.learning_rate)
     if initial_run is not None:
         optimizer.load_state_dict(initial_run.optimizer_state)
@@ -199,7 +202,11 @@ def train_torch_dqn_policy_run(
                             done=sample.terminal or index == len(episode) - 1,
                         )
                     )
-                    if len(replay) >= config.batch_size:
+                    environment_steps += 1
+                    if (
+                        len(replay) >= config.batch_size
+                        and environment_steps % config.train_frequency == 0
+                    ):
                         _train_batch(
                             torch,
                             network,
@@ -230,6 +237,7 @@ def train_torch_dqn_policy_run(
             "episodes_trained": episodes_trained + config.episodes,
             "training_steps": training_steps,
             "replay_size": len(replay),
+            "environment_steps": environment_steps,
         }
     )
     return TorchDQNTrainingRun(
@@ -249,9 +257,16 @@ def train_torch_dqn_policy_report(
     run_id: str = "torch-dqn",
     symbol: str | None = None,
     config: TorchDQNConfig | None = None,
+    drawdown_policy: DrawdownControlPolicy | None = None,
 ) -> dict[str, object]:
     policy = train_torch_dqn_policy(samples, config)
-    report = evaluate_torch_dqn_policy(samples, policy, run_id=run_id, symbol=symbol)
+    report = evaluate_torch_dqn_policy(
+        samples,
+        policy,
+        run_id=run_id,
+        symbol=symbol,
+        drawdown_policy=drawdown_policy,
+    )
     report["model"] = policy.diagnostics()
     return report
 
@@ -262,11 +277,17 @@ def evaluate_torch_dqn_policy(
     *,
     run_id: str = "torch-dqn",
     symbol: str | None = None,
+    drawdown_policy: DrawdownControlPolicy | None = None,
 ) -> dict[str, object]:
     episodes_by_symbol = group_rl_state_samples_by_symbol(samples)
     selected, report_symbol = selected_symbols(episodes_by_symbol, symbol)
     evaluations = [
-        _evaluate_symbol_policy(episodes_by_symbol[selected_symbol], selected_symbol, policy)
+        evaluate_symbol_policy(
+            episodes_by_symbol[selected_symbol],
+            selected_symbol=selected_symbol,
+            policy=policy,
+            transaction_cost=policy.config.transaction_cost,
+        )
         for selected_symbol in selected
     ]
     return build_policy_report(
@@ -280,59 +301,13 @@ def evaluate_torch_dqn_policy(
         },
         evaluations=evaluations,
         win_rate_basis="positive_reward_steps",
+        drawdown_policy=drawdown_policy,
     )
 
 
 def write_torch_dqn_policy_report(path: Path, report: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _evaluate_symbol_policy(
-    episodes: Sequence[Sequence[RlStateSample]],
-    selected_symbol: str,
-    policy: TorchDQNPolicy,
-) -> SymbolPolicyEvaluation:
-    equity = 1.0
-    equity_curve: list[dict[str, object]] = []
-    trades: list[dict[str, object]] = []
-    reward_count = 0
-    positive_rewards = 0
-    for episode in episodes:
-        env = AShareBuySellHoldEnvironment(episode, transaction_cost=policy.config.transaction_cost)
-        observation = env.reset()
-        if not equity_curve or equity_curve[-1]["trade_date"] != episode[0].trade_date.isoformat():
-            equity_curve.append({"trade_date": episode[0].trade_date.isoformat(), "equity": round(equity, 6)})
-        done = False
-        while not done:
-            previous_position = env.position
-            step = env.step(policy.action(observation))
-            done = step.done
-            equity = round(equity * (1.0 + step.reward), 6)
-            reward_count += 1
-            if step.reward > 0:
-                positive_rewards += 1
-            if step.info["position"] != previous_position:
-                trades.append(
-                    {
-                        "trade_date": step.info["trade_date"],
-                        "symbol": selected_symbol,
-                        "action": step.info["action"],
-                        "position": step.info["position"],
-                        "transaction_cost": step.info["transaction_cost"],
-                        "equity": equity,
-                    }
-                )
-            equity_curve.append({"trade_date": step.info["next_trade_date"], "equity": round(equity, 6)})
-            observation = step.observation or ()
-    return SymbolPolicyEvaluation(
-        symbol=selected_symbol,
-        equity_curve=equity_curve,
-        trades=trades,
-        reward_count=reward_count,
-        positive_rewards=positive_rewards,
-    )
-
 
 def _build_network(nn: Any, input_size: int, hidden_layers: tuple[int, ...], output_size: int) -> Any:
     layers: list[Any] = []
@@ -422,6 +397,7 @@ def _validate_config(config: TorchDQNConfig) -> None:
     _require_positive_int("batch_size", config.batch_size)
     _require_positive_int("replay_capacity", config.replay_capacity)
     _require_positive_int("target_update_interval", config.target_update_interval)
+    _require_positive_int("train_frequency", config.train_frequency)
     _require_positive_number("learning_rate", config.learning_rate)
     _require_unit_ratio("gamma", config.gamma)
     _require_unit_ratio("epsilon", config.epsilon)

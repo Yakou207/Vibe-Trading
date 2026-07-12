@@ -10,6 +10,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from fintech_quant.research.dataset import load_research_dataset  # noqa: E402
+from fintech_quant.research.preflight import require_passing_data_health  # noqa: E402
 from fintech_quant.training import build_rl_state_samples, write_rl_state_jsonl  # noqa: E402
 
 
@@ -21,9 +22,14 @@ def main() -> int:
     parser.add_argument("--fundamentals", default=None)
     parser.add_argument("--capital-flow", default=None)
     parser.add_argument("--market-state", default=None)
+    parser.add_argument("--membership", default=None)
+    parser.add_argument("--data-health", default=None)
+    parser.add_argument("--require-point-in-time", action="store_true")
     parser.add_argument("--output", default="data/processed/rl_state_dataset.jsonl")
     args = parser.parse_args()
 
+    if args.require_point_in_time:
+        require_passing_data_health(_optional_path(args.data_health), _research_inputs(args))
     dataset = load_research_dataset(
         Path(args.features),
         Path(args.universe),
@@ -31,6 +37,8 @@ def main() -> int:
         capital_flow_path=_optional_path(args.capital_flow),
         market_state_path=_optional_path(args.market_state),
         information_path=_optional_path(args.information),
+        membership_path=_optional_path(args.membership),
+        require_point_in_time=args.require_point_in_time,
     )
     samples = build_rl_state_samples(dataset)
     write_rl_state_jsonl(Path(args.output), samples)
@@ -41,6 +49,18 @@ def main() -> int:
 
 def _optional_path(value: str | None) -> Path | None:
     return Path(value) if value else None
+
+
+def _research_inputs(args: argparse.Namespace) -> dict[str, Path | None]:
+    return {
+        "features": Path(args.features),
+        "universe": Path(args.universe),
+        "membership": _optional_path(args.membership),
+        "fundamentals": _optional_path(args.fundamentals),
+        "capital_flow": _optional_path(args.capital_flow),
+        "information": _optional_path(args.information),
+        "market_state": _optional_path(args.market_state),
+    }
 
 
 if __name__ == "__main__":

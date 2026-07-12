@@ -65,6 +65,44 @@ class ScoringPipelineTest(unittest.TestCase):
         self.assertIn("rsi", result.missing_fields)
         self.assertIn("relative_strength", result.missing_fields)
 
+    def test_price_volume_proxy_is_scored_without_claiming_main_capital_flow(self) -> None:
+        from fintech_quant.features import ScoreInput, score_stock
+
+        result = score_stock(
+            ScoreInput(
+                symbol="000001",
+                flow_proxy_kind="price_volume_cmf_obv",
+                price_volume_flow_signal=0.2,
+                price_volume_outflow_days=2,
+            )
+        )
+
+        capital = result.components["capital_flow"]
+        self.assertEqual(capital.score, 17.5)
+        self.assertIn("Price-volume proxy is positive; it is not actual main-capital flow.", capital.reasons)
+        self.assertNotIn("Main capital is net inflow.", capital.reasons)
+        self.assertNotIn("main_net_inflow", result.missing_fields)
+
+    def test_real_main_flow_takes_precedence_over_proxy_fields(self) -> None:
+        from fintech_quant.features import ScoreInput, score_stock
+
+        result = score_stock(
+            ScoreInput(
+                symbol="000001",
+                main_net_inflow=-1.0,
+                main_outflow_days=5,
+                flow_proxy_kind="price_volume_cmf_obv",
+                price_volume_flow_signal=0.2,
+                price_volume_outflow_days=0,
+            )
+        )
+
+        self.assertEqual(result.components["capital_flow"].score, 0.0)
+        self.assertNotIn(
+            "Price-volume proxy is positive; it is not actual main-capital flow.",
+            result.components["capital_flow"].reasons,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

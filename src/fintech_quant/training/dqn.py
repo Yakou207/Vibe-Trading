@@ -6,9 +6,9 @@ from datetime import date
 from pathlib import Path
 from typing import Sequence
 
-from fintech_quant.training.policy_report import SymbolPolicyEvaluation, build_policy_report, selected_symbols
+from fintech_quant.backtesting.drawdown_control import DrawdownControlPolicy
+from fintech_quant.training.policy_report import build_policy_report, evaluate_symbol_policy, selected_symbols
 from fintech_quant.training.rl_dataset import RlStateSample, group_rl_state_samples_by_symbol
-from fintech_quant.training.rl_environment import AShareBuySellHoldEnvironment
 
 
 DQN_POLICY_NAME = "linear_q_dqn_v0"
@@ -74,6 +74,7 @@ def train_linear_dqn_policy_report(
     transaction_cost: float = 0.0,
     drawdown_penalty: float = 0.0,
     eval_start: date | None = None,
+    drawdown_policy: DrawdownControlPolicy | None = None,
 ) -> dict[str, object]:
     train_samples, eval_samples = _train_eval_split(samples, eval_start)
     policy = train_linear_dqn_policy(
@@ -90,6 +91,7 @@ def train_linear_dqn_policy_report(
         run_id=run_id,
         symbol=symbol,
         transaction_cost=transaction_cost,
+        drawdown_policy=drawdown_policy,
     )
     report["strategy_config"].update(
         {
@@ -139,11 +141,12 @@ def evaluate_linear_dqn_policy(
     run_id: str = "linear-q-dqn",
     symbol: str | None = None,
     transaction_cost: float = 0.0,
+    drawdown_policy: DrawdownControlPolicy | None = None,
 ) -> dict[str, object]:
     episodes_by_symbol = group_rl_state_samples_by_symbol(samples)
     selected, report_symbol = selected_symbols(episodes_by_symbol, symbol)
     evaluations = [
-        _evaluate_symbol_linear_dqn_policy(
+        evaluate_symbol_policy(
             episodes_by_symbol[selected_symbol],
             selected_symbol=selected_symbol,
             policy=policy,
@@ -160,57 +163,8 @@ def evaluate_linear_dqn_policy(
         },
         evaluations=evaluations,
         win_rate_basis="positive_reward_steps",
+        drawdown_policy=drawdown_policy,
     )
-
-
-def _evaluate_symbol_linear_dqn_policy(
-    episodes: Sequence[Sequence[RlStateSample]],
-    *,
-    selected_symbol: str,
-    policy: LinearQPolicy,
-    transaction_cost: float,
-) -> SymbolPolicyEvaluation:
-    equity = 1.0
-    equity_curve: list[dict[str, object]] = []
-    trades: list[dict[str, object]] = []
-    reward_count = 0
-    positive_rewards = 0
-    for episode in episodes:
-        env = AShareBuySellHoldEnvironment(episode, transaction_cost=transaction_cost)
-        observation = env.reset()
-        if not equity_curve or equity_curve[-1]["trade_date"] != episode[0].trade_date.isoformat():
-            equity_curve.append({"trade_date": episode[0].trade_date.isoformat(), "equity": round(equity, 6)})
-        done = False
-        while not done:
-            previous_position = env.position
-            action = policy.action(observation)
-            step = env.step(action)
-            done = step.done
-            equity = round(equity * (1.0 + step.reward), 6)
-            reward_count += 1
-            if step.reward > 0:
-                positive_rewards += 1
-            if step.info["position"] != previous_position:
-                trades.append(
-                    {
-                        "trade_date": step.info["trade_date"],
-                        "symbol": selected_symbol,
-                        "action": step.info["action"],
-                        "position": step.info["position"],
-                        "transaction_cost": step.info["transaction_cost"],
-                        "equity": equity,
-                    }
-                )
-            equity_curve.append({"trade_date": step.info["next_trade_date"], "equity": round(equity, 6)})
-            observation = step.observation or ()
-    return SymbolPolicyEvaluation(
-        symbol=selected_symbol,
-        equity_curve=equity_curve,
-        trades=trades,
-        reward_count=reward_count,
-        positive_rewards=positive_rewards,
-    )
-
 
 def write_dqn_policy_report(path: Path, report: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

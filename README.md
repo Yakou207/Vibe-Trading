@@ -9,8 +9,78 @@
 - 市场：A 股优先，Phase 1 默认数据源为 AkShare，并保留 Tushare token-ready 适配器用于后续接入。
 - 频率：日频为主，不做高频交易。
 - 策略：第一版支持 RL buy/sell/hold 策略接口，同时保留多因子基线对照。
-- 交易约束：多标的研究回测已建模 T+1、涨跌停、停牌、手续费、滑点；印花税和更细的部分成交仍是后续项。
+- 交易约束：多标的研究回测已建模 T+1、涨跌停、停牌、佣金最低收费、分日期印花税和滑点；更细的部分成交仍是后续项。
 - 执行：先做 paper trading，不接实盘券商。
+
+## Formal CSI 300 Point-in-Time Research
+
+`scripts/run_csi300_research.py` 是正式 CSI 300 研究入口。它先核对 raw/processed manifest 及文件 SHA-256，再执行数据健康门禁；门禁通过后才会生成多因子基线、10% 回撤上限风控基线、逐股评分分析、RL 状态数据和相对 CSI 300 的比较报告。DQN 在后端一致性诊断通过前只保留为 `diagnostic_only`，不会提高模拟仓位。
+
+离线链路测试：
+
+```bash
+python -m pytest tests/test_run_csi300_research_script.py -q
+```
+
+完整 CSI 300 五年研究的命令顺序如下。`anchor.csv` 和 `adjustments.csv` 必须来自可追溯的中证指数成分/调整记录；`csi300_market_state.csv` 同时提供交易日历和基准净值输入。
+
+```bash
+python scripts/build_historical_index_membership.py \
+  --anchor data/raw/csi300/anchor.csv \
+  --adjustments data/raw/csi300/adjustments.csv \
+  --index-code 000300 \
+  --start 2021-01-01 \
+  --expected-members 300 \
+  --output data/processed/csi300_membership.csv
+
+python scripts/collect_point_in_time_factors.py \
+  --source akshare \
+  --membership data/processed/csi300_membership.csv \
+  --start 2021-01-01 \
+  --end 2026-07-10 \
+  --run-id csi300-raw-20260710
+
+python scripts/fetch_market_state.py \
+  --source akshare \
+  --index-symbol sh000300 \
+  --start 2020-01-01 \
+  --end 2026-07-10 \
+  --output data/raw/market_state/csi300_market_state.csv
+
+python scripts/build_point_in_time_factors.py \
+  --raw-manifest data/raw/runs/csi300-raw-20260710/manifest.json \
+  --trading-calendar data/raw/market_state/csi300_market_state.csv \
+  --run-id csi300-processed-20260710
+
+python scripts/refresh_research_data.py \
+  --source akshare \
+  --universe data/processed/csi300_membership.csv \
+  --start 2021-01-01 \
+  --end 2026-07-10 \
+  --daily-output data/processed/csi300_daily.csv \
+  --feature-output data/processed/csi300_features.csv
+
+python scripts/validate_research_data.py \
+  --features data/processed/csi300_features.csv \
+  --universe data/processed/csi300_membership.csv \
+  --membership data/processed/csi300_membership.csv \
+  --fundamentals data/processed/runs/csi300-processed-20260710/fundamentals.csv \
+  --capital-flow data/processed/runs/csi300-processed-20260710/capital_flow.csv \
+  --market-state data/raw/market_state/csi300_market_state.csv \
+  --expected-members 300 \
+  --output outputs/csi300_data_health.json
+
+python scripts/run_csi300_research.py \
+  --processed-manifest data/processed/runs/csi300-processed-20260710/manifest.json \
+  --features data/processed/csi300_features.csv \
+  --benchmark data/raw/market_state/csi300_market_state.csv \
+  --run-id csi300-20260710 \
+  --expected-members 300
+```
+
+30 只科创板股票仅用于快速诊断。为这 30 只股票准备同格式的历史 membership/raw/processed 文件后，将最后一条命令改为 `--index-code diagnostic-star30 --expected-members 30 --run-id star30-diagnostic`；通过它确认因子有覆盖、有变化且能产生目标仓位，再运行 300 只全量链路。
+
+数据健康或策略收益门禁失败是有效研究结果，不等同于工程故障。当前系统不承诺盈利；只有在扣除成本后持续跑赢 CSI 300、最大回撤不超过 10%、跨走窗稳定且完成至少八周连续模拟交易后，才考虑接入实盘券商。
 
 ## Phase 1 Research Loop
 

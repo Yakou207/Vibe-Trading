@@ -20,6 +20,9 @@ class ScoreInput:
     volume_confirmed: bool | None = None
     main_net_inflow: float | None = None
     main_outflow_days: int | None = None
+    flow_proxy_kind: str | None = None
+    price_volume_flow_signal: float | None = None
+    price_volume_outflow_days: int | None = None
     margin_financing_positive: bool | None = None
     limit_up_streak: int | None = None
     dragon_tiger_positive: bool | None = None
@@ -140,16 +143,33 @@ def _technical_score(score_input: ScoreInput, missing: list[str]) -> ComponentSc
 def _capital_flow_score(score_input: ScoreInput, missing: list[str]) -> ComponentScore:
     score = 0.0
     reasons: list[str] = []
-    if score_input.main_net_inflow is None:
-        missing.append("main_net_inflow")
-    elif score_input.main_net_inflow > 0:
-        score += 10.0
-        reasons.append("Main capital is net inflow.")
-    if score_input.main_outflow_days is None:
-        missing.append("main_outflow_days")
-    elif score_input.main_outflow_days <= 3:
-        score += 7.5
-        reasons.append("Main capital outflow is not persistent.")
+    use_proxy = (
+        score_input.main_net_inflow is None
+        and score_input.main_outflow_days is None
+        and score_input.flow_proxy_kind == "price_volume_cmf_obv"
+    )
+    if use_proxy:
+        if score_input.price_volume_flow_signal is None:
+            missing.append("price_volume_flow_signal")
+        elif score_input.price_volume_flow_signal > 0:
+            score += 10.0
+            reasons.append("Price-volume proxy is positive; it is not actual main-capital flow.")
+        if score_input.price_volume_outflow_days is None:
+            missing.append("price_volume_outflow_days")
+        elif score_input.price_volume_outflow_days <= 3:
+            score += 7.5
+            reasons.append("Price-volume proxy selling pressure is not persistent.")
+    else:
+        if score_input.main_net_inflow is None:
+            missing.append("main_net_inflow")
+        elif score_input.main_net_inflow > 0:
+            score += 10.0
+            reasons.append("Main capital is net inflow.")
+        if score_input.main_outflow_days is None:
+            missing.append("main_outflow_days")
+        elif score_input.main_outflow_days <= 3:
+            score += 7.5
+            reasons.append("Main capital outflow is not persistent.")
     score += _bool_points(
         score_input.margin_financing_positive,
         "margin_financing_positive",

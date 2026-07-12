@@ -662,6 +662,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("selected_universe", records[0].risk_tags)
         self.assertIn("capital_flow", records[0].risk_tags)
         self.assertIn("main_inflow", records[0].risk_tags)
+        self.assertEqual(records[0].metadata["raw_row"]["收盘价"], "10.5")
 
     def test_akshare_fundamental_fetcher_maps_selected_stock_data(self) -> None:
         from fintech_quant.information import AkShareFundamentalFetcher, InformationCategory
@@ -699,16 +700,26 @@ class InformationRepositoryTest(unittest.TestCase):
         )
 
         self.assertEqual(calls, ["valuation:000001", "financial:000001"])
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0].category, InformationCategory.STOCK_DATA)
-        self.assertEqual(records[0].normalized_symbol, "000001.SZ")
-        self.assertEqual(records[0].published_at, date(2026, 6, 3))
-        self.assertIn("selected_universe", records[0].risk_tags)
-        self.assertIn("fundamental", records[0].risk_tags)
-        self.assertIn("pe=18.0", records[0].summary)
-        self.assertIn("pb=1.5", records[0].summary)
-        self.assertIn("roe=0.16", records[0].summary)
-        self.assertIn("growth=0.12", records[0].summary)
+        self.assertEqual(len(records), 2)
+        valuation = next(record for record in records if record.metadata["record_kind"] == "valuation")
+        financial = next(
+            record for record in records if record.metadata["record_kind"] == "financial_indicator"
+        )
+        self.assertEqual(valuation.category, InformationCategory.STOCK_DATA)
+        self.assertEqual(valuation.normalized_symbol, "000001.SZ")
+        self.assertEqual(valuation.published_at, date(2026, 6, 3))
+        self.assertEqual(valuation.metadata["available_date_source"], "row_date")
+        self.assertIn("selected_universe", valuation.risk_tags)
+        self.assertIn("fundamental", valuation.risk_tags)
+        self.assertIn("pe=18.0", valuation.summary)
+        self.assertIn("pb=1.5", valuation.summary)
+        self.assertNotIn("roe=", valuation.summary)
+        self.assertEqual(financial.metadata["report_period"], "2026-06-03")
+        self.assertEqual(financial.metadata["availability_verified"], False)
+        self.assertIn("unverified_availability", financial.risk_tags)
+        self.assertNotIn("fundamental", financial.risk_tags)
+        self.assertIn("roe=0.16", financial.summary)
+        self.assertIn("growth=0.12", financial.summary)
 
     def test_akshare_financial_statement_fetcher_maps_three_statement_rows(self) -> None:
         from fintech_quant.information import AkShareFinancialStatementFetcher, InformationCategory
@@ -720,6 +731,7 @@ class InformationRepositoryTest(unittest.TestCase):
             return [
                 {
                     "报告日": "2025-12-31",
+                    "更新日期": "2026-03-20 T18:05:05",
                     "营业收入": "120000",
                     "净利润": "15000",
                     "商誉": "3000",
@@ -730,7 +742,7 @@ class InformationRepositoryTest(unittest.TestCase):
             "000001",
             None,
             date(2025, 1, 1),
-            date(2025, 12, 31),
+            date(2026, 3, 31),
         )
 
         self.assertEqual(
@@ -745,9 +757,29 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertEqual(records[0].category, InformationCategory.STOCK_DATA)
         self.assertIn("selected_universe", records[0].risk_tags)
         self.assertIn("financial_statement", records[0].risk_tags)
+        self.assertEqual(records[0].published_at, date(2026, 3, 20))
         self.assertEqual(records[0].metadata["statement_type"], "资产负债表")
+        self.assertEqual(records[0].metadata["report_period"], "2025-12-31")
+        self.assertEqual(records[0].metadata["available_date_source"], "更新日期")
         self.assertEqual(records[0].metadata["raw_row"]["营业收入"], "120000")
         self.assertIn("revenue=120000", records[1].summary)
+
+    def test_akshare_financial_statement_fetcher_fails_without_public_availability_date(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.information import AkShareFinancialStatementFetcher
+
+        fetcher = AkShareFinancialStatementFetcher(
+            statement_types=("资产负债表",),
+            fetcher=lambda stock, statement_type: [{"报告日": "2025-12-31", "商誉": "3000"}],
+        )
+
+        with self.assertRaisesRegex(ProviderFetchError, "financial-statement fetch failed"):
+            fetcher.fetch(
+                "000001",
+                None,
+                date(2025, 1, 1),
+                date(2026, 3, 31),
+            )
 
     def test_akshare_pledge_ratio_fetcher_maps_selected_stock_data(self) -> None:
         from fintech_quant.information import AkSharePledgeRatioFetcher, InformationCategory
@@ -799,9 +831,15 @@ class InformationRepositoryTest(unittest.TestCase):
 
         class FakeAkShare:
             @staticmethod
-            def stock_zh_a_spot_em():
-                calls.append("valuation:spot")
-                return [{"代码": "000001", "市盈率-动态": "18", "市净率": "1.5"}]
+            def stock_value_em(symbol: str):
+                calls.append(f"valuation:value:{symbol}")
+                return [
+                    {
+                        "数据日期": "2026-06-03",
+                        "PE(TTM)": "18",
+                        "市净率": "1.5",
+                    }
+                ]
 
             @staticmethod
             def stock_financial_analysis_indicator(symbol: str):
@@ -823,8 +861,50 @@ class InformationRepositoryTest(unittest.TestCase):
             else:
                 sys.modules["akshare"] = original_akshare
 
-        self.assertEqual(calls, ["valuation:spot", "financial:000001"])
+        self.assertEqual(calls, ["valuation:value:000001", "financial:000001"])
         self.assertGreaterEqual(len(records), 1)
+        valuation = next(record for record in records if record.metadata["record_kind"] == "valuation")
+        self.assertEqual(valuation.published_at, date(2026, 6, 3))
+        self.assertIn("pe=18.0", valuation.summary)
+
+    def test_akshare_fundamental_fetcher_falls_back_to_baidu_for_delisted_stock(self) -> None:
+        from fintech_quant.information import AkShareFundamentalFetcher
+
+        class FakeAkShare:
+            @staticmethod
+            def stock_value_em(symbol: str):
+                raise TypeError("delisted stock has no Eastmoney valuation payload")
+
+            @staticmethod
+            def stock_zh_valuation_baidu(symbol: str, indicator: str, period: str):
+                assert symbol == "600837"
+                assert period == "全部"
+                value = 12.5 if indicator == "市盈率(TTM)" else 0.84
+                return [{"date": "2025-02-13", "value": value}]
+
+            @staticmethod
+            def stock_financial_analysis_indicator(symbol: str):
+                return []
+
+        original_akshare = sys.modules.get("akshare")
+        sys.modules["akshare"] = FakeAkShare()
+        try:
+            records = AkShareFundamentalFetcher().fetch(
+                "600837.SH",
+                None,
+                date(2025, 1, 1),
+                date(2025, 3, 3),
+            )
+        finally:
+            if original_akshare is None:
+                sys.modules.pop("akshare", None)
+            else:
+                sys.modules["akshare"] = original_akshare
+
+        assert len(records) == 1
+        assert records[0].published_at == date(2025, 2, 13)
+        assert records[0].summary == "pe=12.5; pb=0.84"
+        assert records[0].metadata["valuation_provider"] == "baidu"
 
     def test_akshare_fundamental_fetcher_keeps_partial_valuation_rows(self) -> None:
         from fintech_quant.information import AkShareFundamentalFetcher
@@ -850,7 +930,7 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertIn("pb=1.5", records[0].summary)
         self.assertNotIn("roe=", records[0].summary)
 
-    def test_akshare_fundamental_fetcher_dates_realtime_valuation_at_request_end(self) -> None:
+    def test_akshare_fundamental_fetcher_dates_realtime_valuation_at_fetch_date(self) -> None:
         from fintech_quant.information import AkShareFundamentalFetcher
 
         def valuation_fetcher(symbol: str) -> list[dict[str, object]]:
@@ -862,6 +942,7 @@ class InformationRepositoryTest(unittest.TestCase):
         records = AkShareFundamentalFetcher(
             valuation_fetcher=valuation_fetcher,
             financial_fetcher=financial_fetcher,
+            as_of=date(2026, 6, 30),
         ).fetch(
             "000001",
             None,
@@ -871,6 +952,7 @@ class InformationRepositoryTest(unittest.TestCase):
 
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0].published_at, date(2026, 6, 30))
+        self.assertEqual(records[0].metadata["available_date_source"], "fetch_date")
 
     def test_akshare_fundamental_fetcher_skips_empty_metric_rows(self) -> None:
         from fintech_quant.information import AkShareFundamentalFetcher
