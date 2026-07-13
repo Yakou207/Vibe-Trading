@@ -18,6 +18,7 @@ from fintech_quant.data.historical_universe import (
     load_membership_intervals,
     write_membership_csv,
 )
+from fintech_quant.data.manifest_chain import VerifiedManifest, load_verified_manifest_chain
 from fintech_quant.data.registry import ProviderRegistry
 from fintech_quant.data.realtime import (
     AkShareRealtimeQuoteProvider,
@@ -49,6 +50,7 @@ __all__ = [
     "TushareProvider",
     "UniverseMember",
     "UnknownDataProvider",
+    "VerifiedManifest",
     "active_symbols",
     "build_membership_intervals",
     "collect_universe_history",
@@ -57,6 +59,7 @@ __all__ = [
     "load_membership_adjustments",
     "load_membership_anchor",
     "load_membership_intervals",
+    "load_verified_manifest_chain",
     "normalize_a_share_symbol",
     "normalize_daily_bar",
     "normalize_realtime_quote",
