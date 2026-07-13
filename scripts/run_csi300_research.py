@@ -51,7 +51,7 @@ def main() -> int:
         description="Run the formal point-in-time CSI 300 research chain."
     )
     parser.add_argument("--processed-manifest", required=True)
-    parser.add_argument("--features", required=True)
+    parser.add_argument("--signal-price-manifest", required=True)
     parser.add_argument("--execution-price-manifest", required=True)
     parser.add_argument("--corporate-action-manifest", required=True)
     parser.add_argument("--benchmark", required=True)
@@ -78,7 +78,12 @@ def main() -> int:
     args = parser.parse_args()
 
     processed_manifest_path = Path(args.processed_manifest).resolve()
-    features_path = Path(args.features).resolve()
+    signal_price_manifest_path = Path(args.signal_price_manifest).resolve()
+    features_path = _resolve_processed_artifact(
+        signal_price_manifest_path,
+        "features.csv",
+        required_request={"adjust": "hfq"},
+    )
     execution_price_manifest_path = Path(args.execution_price_manifest).resolve()
     corporate_action_manifest_path = Path(args.corporate_action_manifest).resolve()
     execution_prices_path = _resolve_processed_artifact(
@@ -210,6 +215,7 @@ def main() -> int:
                 for name, path in {
                     "processed_manifest": processed_manifest_path,
                     "membership": membership_path,
+                    "signal_price_manifest": signal_price_manifest_path,
                     "features": features_path,
                     "execution_price_manifest": execution_price_manifest_path,
                     "execution_prices": execution_prices_path,

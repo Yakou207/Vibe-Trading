@@ -12,6 +12,7 @@
 
 - Live brokerage integration and real orders remain forbidden.
 - The scored multi-factor baseline is the only paper stock-selection engine; DQN is diagnostic only.
+- Incremental signal-price chains must use stable `hfq`; `qfq` chains fail closed.
 - Preserve thresholds: buy score 70, confidence 0.8, max position 8%, reduce at 8%, liquidate at 9%, validate at 10%.
 - Signal date D executes no earlier than D+1 open and marks NAV at D+1 close.
 - Any constituent, freshness, coverage, variation, leakage, manifest, timeout, execution, or evidence failure leaves the canonical paper account byte-for-byte unchanged.

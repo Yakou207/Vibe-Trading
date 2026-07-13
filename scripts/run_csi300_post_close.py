@@ -152,7 +152,7 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         date_token=date_token,
         start=start,
         parent=parent_manifests["signal_price"]["raw_manifest"],
-        adjust="qfq",
+        adjust="hfq",
         source="akshare-sina",
         workers=1,
     )

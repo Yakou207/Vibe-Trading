@@ -96,8 +96,21 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
         provider_versions={"fixture": "1"},
     )
 
-    features = tmp_path / "features.csv"
+    signal_dir = tmp_path / "signal-processed"
+    signal_dir.mkdir()
+    features = signal_dir / "features.csv"
     features.write_text(_features_csv(), encoding="utf-8")
+    signal_manifest = signal_dir / "manifest.json"
+    signal_manifest.write_text(
+        json.dumps(
+            {
+                "layer": "processed",
+                "request": {"adjust": "hfq"},
+                "artifacts": [{"path": "features.csv", "sha256": sha256_file(features)}],
+            }
+        ),
+        encoding="utf-8",
+    )
     execution_dir = tmp_path / "execution-processed"
     execution_dir.mkdir()
     execution_prices = execution_dir / "daily.csv"
@@ -145,8 +158,8 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
             "scripts/run_csi300_research.py",
             "--processed-manifest",
             str(processed_manifest),
-            "--features",
-            str(features),
+            "--signal-price-manifest",
+            str(signal_manifest),
             "--execution-price-manifest",
             str(execution_manifest),
             "--corporate-action-manifest",
@@ -198,6 +211,9 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
     assert risk_controlled["strategy_config"]["liquidate_portfolio_drawdown"] == 0.09
     assert risk_controlled["strategy_config"]["rights_issue_policy"] == "do_not_subscribe"
     assert manifest["inputs"]["processed_manifest"]["sha256"] == sha256_file(processed_manifest)
+    assert manifest["inputs"]["signal_price_manifest"]["sha256"] == sha256_file(
+        signal_manifest
+    )
     assert manifest["inputs"]["execution_prices"]["sha256"] == sha256_file(execution_prices)
     assert manifest["inputs"]["corporate_actions"]["sha256"] == sha256_file(corporate_actions)
 
@@ -207,8 +223,8 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
             "scripts/run_csi300_research.py",
             "--processed-manifest",
             str(processed_manifest),
-            "--features",
-            str(features),
+            "--signal-price-manifest",
+            str(signal_manifest),
             "--execution-price-manifest",
             str(execution_manifest),
             "--corporate-action-manifest",
@@ -233,6 +249,37 @@ def test_run_csi300_research_writes_formal_point_in_time_outputs(tmp_path: Path)
     assert failed.returncode == 2
     assert (failed_dir / "data_health.json").exists()
     assert not (failed_dir / "baseline").exists()
+
+    signal_payload = json.loads(signal_manifest.read_text(encoding="utf-8"))
+    signal_payload["request"]["adjust"] = "qfq"
+    signal_manifest.write_text(json.dumps(signal_payload), encoding="utf-8")
+    unstable = subprocess.run(
+        [
+            sys.executable,
+            "scripts/run_csi300_research.py",
+            "--processed-manifest",
+            str(processed_manifest),
+            "--signal-price-manifest",
+            str(signal_manifest),
+            "--execution-price-manifest",
+            str(execution_manifest),
+            "--corporate-action-manifest",
+            str(corporate_action_manifest),
+            "--benchmark",
+            str(benchmark),
+            "--run-id",
+            "unstable-qfq",
+            "--output-root",
+            str(output_root),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert unstable.returncode != 0
+    assert "processed manifest request must set adjust=hfq" in unstable.stderr
+    assert not (output_root / "unstable-qfq").exists()
 
 
 def _features_csv() -> str:

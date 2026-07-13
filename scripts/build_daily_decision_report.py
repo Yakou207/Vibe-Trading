@@ -72,7 +72,7 @@ def main() -> int:
     fundamentals = _required_artifact(factor_manifest, "fundamentals.csv")
     capital_flow = _required_artifact(factor_manifest, "capital_flow.csv")
     corporate_actions = _required_artifact(action_manifest, "corporate_actions.csv")
-    _require_request(signal_manifest, "adjust", "qfq")
+    _require_request(signal_manifest, "adjust", "hfq")
     _require_request(execution_manifest, "adjust", "none")
     _require_request(action_manifest, "action_types", ["distribution", "rights_issue"])
     action_end = date.fromisoformat(str(_request(action_manifest)["end"]))

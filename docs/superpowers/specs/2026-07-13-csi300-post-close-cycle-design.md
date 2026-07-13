@@ -33,6 +33,10 @@ JSONL、manifest 和执行引擎，并把运行状态显式保存在 paper pipel
 哈希，检测循环与不兼容请求，并按“父级在先、子级覆盖同一业务键”合并后生成新的完整
 processed snapshot。
 
+信号价格父链只允许后复权（`hfq`）。后复权不会因未来公司行为重写既有历史尺度；前复权
+（`qfq`）会随新除权事件改变过去价格，违反 immutable 父链假设，因此只能作为单次诊断
+快照，不能 append。成交价格继续使用 `adjust=none`。
+
 业务键如下：
 
 - 价格：`(symbol, trade_date)`；

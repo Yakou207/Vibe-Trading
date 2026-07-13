@@ -63,6 +63,25 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-07-13 stable signal-price correction
+
+- The daily incremental signal-price chain now requires `hfq`. Incremental `qfq` is rejected by
+  both collection and processed-snapshot construction because future corporate actions rewrite its
+  historical scale and violate the immutable parent-chain assumption.
+- A full 439-symbol `hfq` bootstrap produced 530,682 signal rows. Sina supplied 436 scopes; three
+  explicit Sina failures (`600705.SH`, `600837.SH`, `601989.SH`) were completed through the Tencent
+  backend under a separate resumable manifest. No scope was silently backfilled.
+- The formal `hfq` validation passed the same point-in-time health gate: 99.8914% price coverage,
+  100% fundamental coverage, 98.4549% price-volume proxy coverage, no stale factor and no detected
+  future leakage.
+- The earlier 2026-07-13 `qfq` rerun (142.59% risk-controlled return) is rejected as an unstable
+  research result. The stable `hfq` rerun returned 118.30% with 9.65% maximum drawdown and about
+  1.71 Sharpe; excess return remained positive in all four reported segments. These remain
+  historical research results, not proof of deployable profit.
+- On 2026-07-13, eight names passed the 70/0.8 entry gate, but the broad-market drop rule emitted a
+  `reduce` warning for all 300 active members. The baseline paper account therefore remained at
+  100,000 cash with no positions, targets, trades, blocked orders or applied corporate actions.
+
 ### 2026-07-11 CSI 300 execution-price update
 
 - The official CSI 300 history has been reconstructed from a 2026-06-30

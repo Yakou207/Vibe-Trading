@@ -117,7 +117,7 @@ def test_collect_historical_prices_appends_a_new_raw_delta_without_reusing_scope
         json.dumps({"000001.SZ": [_bar("000001.SZ", "2026-01-02", 10.0)]}),
         encoding="utf-8",
     )
-    first = _run_collect(tmp_path, membership, first_fixture, "prices-1")
+    first = _run_collect(tmp_path, membership, first_fixture, "prices-1", adjust="hfq")
     assert first.returncode == 0, first.stderr
 
     child_fixture = tmp_path / "child.json"
@@ -134,6 +134,7 @@ def test_collect_historical_prices_appends_a_new_raw_delta_without_reusing_scope
         append_from=parent_manifest,
         start="2026-01-05",
         end="2026-01-05",
+        adjust="hfq",
     )
 
     assert child.returncode == 0, child.stderr
@@ -148,6 +149,29 @@ def test_collect_historical_prices_appends_a_new_raw_delta_without_reusing_scope
     )
     assert "2026-01-05" in child_rows
     assert "2026-01-02" not in child_rows
+
+
+def test_collect_historical_prices_rejects_incremental_qfq_chain(tmp_path: Path) -> None:
+    membership = tmp_path / "membership.csv"
+    membership.write_text("symbol\n000001.SZ\n", encoding="utf-8")
+    fixture = tmp_path / "prices.json"
+    fixture.write_text(
+        json.dumps({"000001.SZ": [_bar("000001.SZ", "2026-01-02", 10.0)]}),
+        encoding="utf-8",
+    )
+    first = _run_collect(tmp_path, membership, fixture, "prices-1")
+    assert first.returncode == 0, first.stderr
+
+    child = _run_collect(
+        tmp_path,
+        membership,
+        fixture,
+        "prices-2",
+        append_from=tmp_path / "raw/prices-1/manifest.json",
+    )
+
+    assert child.returncode != 0
+    assert "qfq cannot be appended" in child.stderr
 
 
 def test_collect_historical_prices_rejects_parallel_sina_runtime(tmp_path: Path) -> None:
@@ -183,6 +207,30 @@ def test_collect_historical_prices_rejects_parallel_sina_runtime(tmp_path: Path)
     assert "akshare-sina requires --workers 1" in completed.stderr
 
 
+def test_collect_historical_prices_records_hfq_signal_adjustment(tmp_path: Path) -> None:
+    membership = tmp_path / "membership.csv"
+    membership.write_text("symbol\n000001.SZ\n", encoding="utf-8")
+    fixture = tmp_path / "prices.json"
+    fixture.write_text(
+        json.dumps({"000001.SZ": [_bar("000001.SZ", "2026-01-02", 10.0)]}),
+        encoding="utf-8",
+    )
+
+    completed = _run_collect(
+        tmp_path,
+        membership,
+        fixture,
+        "hfq-prices",
+        adjust="hfq",
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    manifest = json.loads(
+        (tmp_path / "raw/hfq-prices/manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["request"]["adjust"] == "hfq"
+
+
 def _run_collect(
     root: Path,
     membership: Path,
@@ -193,6 +241,7 @@ def _run_collect(
     append_from: Path | None = None,
     start: str = "2026-01-01",
     end: str = "2026-01-03",
+    adjust: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -216,6 +265,8 @@ def _run_collect(
         command.extend(("--resume-from", str(resume_from)))
     if append_from is not None:
         command.extend(("--append-from", str(append_from)))
+    if adjust is not None:
+        command.extend(("--adjust", adjust))
     return subprocess.run(
         command,
         cwd=Path(__file__).resolve().parents[1],

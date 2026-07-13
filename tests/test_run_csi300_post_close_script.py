@@ -48,6 +48,15 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
                 for command, _ in runner.calls
                 if Path(command[0]).name.startswith("collect_")
             ]
+            price_commands = [
+                command
+                for command in collect_commands
+                if Path(command[0]).name == "collect_historical_prices.py"
+            ]
+            self.assertEqual(
+                [_argument(command, "--adjust") for command in price_commands],
+                ["hfq", "none"],
+            )
             self.assertTrue(
                 all(
                     _argument(command, "--start") == "2026-01-03"

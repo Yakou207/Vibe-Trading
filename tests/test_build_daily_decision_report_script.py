@@ -134,7 +134,7 @@ def _write_inputs(root: Path, *, fresh_benchmark: bool) -> dict[str, Path]:
         fieldnames=OUTPUT_FEATURE_FIELDS,
     )
     signal_manifest = signal.write_manifest(
-        request={"adjust": "qfq", "start": dates[0], "end": dates[-1]},
+        request={"adjust": "hfq", "start": dates[0], "end": dates[-1]},
         scopes=[],
         created_at="2026-01-05T17:30:00+08:00",
         git_sha="fixture",

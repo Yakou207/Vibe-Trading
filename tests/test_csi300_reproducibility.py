@@ -45,8 +45,22 @@ def _run_fixture_pipeline(root: Path) -> dict[str, dict[str, str]]:
         json.dumps(_factor_fixture(), ensure_ascii=False, sort_keys=True),
         encoding="utf-8",
     )
-    features = root / "features.csv"
+    signal_dir = root / "signal"
+    signal_dir.mkdir()
+    features = signal_dir / "features.csv"
     features.write_text(_features_csv(), encoding="utf-8")
+    signal_manifest = signal_dir / "manifest.json"
+    signal_manifest.write_text(
+        json.dumps(
+            {
+                "layer": "processed",
+                "request": {"adjust": "hfq"},
+                "artifacts": [{"path": "features.csv", "sha256": sha256_file(features)}],
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
     execution_dir = root / "execution"
     execution_dir.mkdir()
     execution_prices = execution_dir / "daily.csv"
@@ -133,8 +147,8 @@ def _run_fixture_pipeline(root: Path) -> dict[str, dict[str, str]]:
             "scripts/run_csi300_research.py",
             "--processed-manifest",
             str(processed_root / "processed/manifest.json"),
-            "--features",
-            str(features),
+            "--signal-price-manifest",
+            str(signal_manifest),
             "--execution-price-manifest",
             str(execution_manifest),
             "--corporate-action-manifest",

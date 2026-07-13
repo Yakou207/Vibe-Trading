@@ -42,7 +42,7 @@ def main() -> int:
     parser.add_argument("--append-from", default=None)
     parser.add_argument("--created-at", default=None)
     parser.add_argument("--workers", type=int, default=8)
-    parser.add_argument("--adjust", choices=("qfq", "none"), default="qfq")
+    parser.add_argument("--adjust", choices=("qfq", "hfq", "none"), default="qfq")
     args = parser.parse_args()
 
     if args.source == "fixture" and not args.fixture_input:
@@ -65,6 +65,8 @@ def main() -> int:
     parent = _parent_manifest(parent_path)
     append_path = Path(args.append_from).resolve() if args.append_from else None
     if append_path is not None:
+        if args.adjust == "qfq":
+            raise ValueError("qfq cannot be appended because its historical scale is not stable")
         append_chain = load_verified_manifest_chain(append_path, expected_layer="raw")
         append_request = append_chain[-1].payload.get("request", {})
         if not isinstance(append_request, Mapping) or append_request.get("adjust") != args.adjust:

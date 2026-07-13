@@ -72,11 +72,16 @@ python scripts/validate_research_data.py \
 
 python scripts/run_csi300_research.py \
   --processed-manifest data/processed/runs/csi300-processed-20260710/manifest.json \
-  --features data/processed/csi300_features.csv \
+  --signal-price-manifest data/processed/price-runs/csi300-signal-hfq/manifest.json \
   --benchmark data/raw/market_state/csi300_market_state.csv \
   --run-id csi300-20260710 \
   --expected-members 300
 ```
+
+正式信号价格必须使用后复权（`hfq`）processed manifest。后复权保持已发生历史价格的
+尺度稳定，适合 immutable 增量父链；前复权会在未来除权事件发生后改写历史尺度，因此
+只允许单次诊断快照，采集器和构建器都会拒绝增量 `qfq` 父链。成交和每日估值仍使用
+未复权价格，并由独立公司行为账本处理分红、送转和配股。
 
 30 只科创板股票仅用于快速诊断。为这 30 只股票准备同格式的历史 membership/raw/processed 文件后，将最后一条命令改为 `--index-code diagnostic-star30 --expected-members 30 --run-id star30-diagnostic`；通过它确认因子有覆盖、有变化且能产生目标仓位，再运行 300 只全量链路。
 
@@ -86,7 +91,7 @@ python scripts/run_csi300_research.py \
 
 `scripts/run_csi300_post_close.py` 是日常 CSI 300 唯一入口。它从
 `pipeline_state.json` 指向的最后一次成功 manifest 开始增量采集，核对当日 300 只成分，
-刷新双价格、点时因子、公司行为和基准，只有数据健康通过后才执行上一交易日目标并生成
+刷新后复权信号价、未复权成交价、点时因子、公司行为和基准，只有数据健康通过后才执行上一交易日目标并生成
 下一交易日目标。DQN 不进入这条链路。
 
 状态文件必须先由一套已验证的完整研究数据初始化。此后每个交易日只运行一条命令：

@@ -43,6 +43,8 @@ def main() -> int:
     adjust_modes = {item.get("adjust") for item in chain_requests}
     if len(chain) > 1 and (None in adjust_modes or len(adjust_modes) != 1):
         raise ValueError("raw price chain mixes adjustment modes")
+    if len(chain) > 1 and adjust_modes == {"qfq"}:
+        raise ValueError("qfq raw price chains are not point-in-time stable")
     rows = _verified_price_rows(chain)
     features = enrich_daily_bars(rows)
     store = RunArtifactStore(

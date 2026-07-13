@@ -22,8 +22,8 @@ class AkShareProvider(MarketDataProvider):
     ) -> None:
         if backend not in {"eastmoney", "sina", "tencent"}:
             raise ValueError("AkShare backend must be eastmoney, sina, or tencent")
-        if adjust not in {"qfq", "none"}:
-            raise ValueError("AkShare adjustment must be qfq or none")
+        if adjust not in {"qfq", "hfq", "none"}:
+            raise ValueError("AkShare adjustment must be qfq, hfq, or none")
         self._fetcher = fetcher
         self._backend = backend
         self._adjust = adjust
@@ -124,8 +124,10 @@ def _load_hist_rows(
 
 def _provider_name(backend: str, adjust: str) -> str:
     if backend == "eastmoney":
-        return "akshare" if adjust == "qfq" else "akshare-eastmoney-unadjusted"
+        if adjust == "qfq":
+            return "akshare"
+        return f"akshare-eastmoney-{'hfq' if adjust == 'hfq' else 'unadjusted'}"
     if backend == "sina":
-        return f"akshare-sina-{'qfq' if adjust == 'qfq' else 'unadjusted'}"
-    suffix = "qfq" if adjust == "qfq" else "unadjusted"
+        return f"akshare-sina-{adjust if adjust != 'none' else 'unadjusted'}"
+    suffix = adjust if adjust != "none" else "unadjusted"
     return f"akshare-tencent-{suffix}-estimated-turnover"
