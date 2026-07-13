@@ -15,6 +15,16 @@ class VerifiedManifest:
     artifacts: Mapping[str, Path]
 
 
+def load_verified_manifest(path: Path, *, expected_layer: str) -> VerifiedManifest:
+    resolved = path.resolve()
+    payload = _load_manifest(resolved, expected_layer)
+    return VerifiedManifest(
+        path=resolved,
+        payload=payload,
+        artifacts=_verified_artifacts(resolved, payload, expected_layer),
+    )
+
+
 def load_verified_manifest_chain(
     path: Path,
     *,
@@ -27,14 +37,9 @@ def load_verified_manifest_chain(
         if current in seen:
             raise ValueError(f"manifest parent cycle: {current}")
         seen.add(current)
-        payload = _load_manifest(current, expected_layer)
-        newest_first.append(
-            VerifiedManifest(
-                path=current,
-                payload=payload,
-                artifacts=_verified_artifacts(current, payload, expected_layer),
-            )
-        )
+        verified = load_verified_manifest(current, expected_layer=expected_layer)
+        payload = verified.payload
+        newest_first.append(verified)
         parent = payload.get("parent_manifest")
         if parent in (None, ""):
             current = None

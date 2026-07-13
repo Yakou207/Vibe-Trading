@@ -13,6 +13,7 @@ from fintech_quant.research.data_health import (
     DataHealthThresholds,
     validate_research_data,
 )
+from fintech_quant.research.daily_decision import build_daily_decision_report
 from fintech_quant.research.risk_builder import (
     PortfolioRiskState,
     PositionState,
@@ -39,6 +40,7 @@ __all__ = [
     "ResearchRunReport",
     "SupplementalRow",
     "build_risk_input",
+    "build_daily_decision_report",
     "build_score_input",
     "build_stock_scores",
     "load_research_dataset",

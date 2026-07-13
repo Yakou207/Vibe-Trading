@@ -52,6 +52,25 @@ def test_rejects_wrong_manifest_layer(tmp_path: Path) -> None:
         load_verified_manifest_chain(manifest, expected_layer="raw")
 
 
+def test_load_verified_manifest_does_not_follow_a_processed_runs_raw_parent(
+    tmp_path: Path,
+) -> None:
+    from fintech_quant.data.manifest_chain import load_verified_manifest
+
+    raw_manifest = _write_run(tmp_path, "raw")
+    processed_manifest = _write_run(
+        tmp_path,
+        "processed",
+        parent=raw_manifest,
+        layer="processed",
+    )
+
+    verified = load_verified_manifest(processed_manifest, expected_layer="processed")
+
+    assert verified.payload["run_id"] == "processed"
+    assert verified.artifacts["rows.jsonl"] == processed_manifest.parent / "rows.jsonl"
+
+
 def _write_run(
     root: Path,
     run_id: str,
