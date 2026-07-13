@@ -222,6 +222,109 @@ def test_build_point_in_time_factors_can_explicitly_build_price_volume_proxy(tmp
     assert rows[0]["main_net_inflow"] == ""
 
 
+def test_build_point_in_time_factors_merges_parent_records_before_materializing(
+    tmp_path: Path,
+) -> None:
+    from fintech_quant.data.run_artifacts import RunArtifactStore
+
+    parent_store = RunArtifactStore(tmp_path / "raw", "parent", layer="raw")
+    parent_store.write_jsonl(
+        "financial_statements/000001.SZ.jsonl",
+        [
+            _record_json(
+                source="akshare_financial_statement",
+                published_at="2026-01-03",
+                summary="net_profit=12; total_assets=100; total_liabilities=0; revenue=50",
+                risk_tags=["selected_universe", "financial_statement"],
+                metadata={
+                    "record_kind": "financial_statement",
+                    "statement_type": "利润表",
+                    "report_period": "2025-12-31",
+                    "available_date_source": "更新日期",
+                },
+            )
+        ],
+    )
+    parent_store.write_jsonl(
+        "fundamentals/000001.SZ.jsonl",
+        [
+            _record_json(
+                source="akshare_fundamental",
+                published_at="2026-01-02",
+                summary="pe=10; pb=1",
+                risk_tags=["selected_universe", "valuation"],
+                metadata={"record_kind": "valuation", "available_date_source": "row_date"},
+            )
+        ],
+    )
+    parent_manifest = parent_store.write_manifest(
+        request={"start": "2026-01-01", "end": "2026-01-03"},
+        scopes=[],
+        created_at="2026-01-03T17:30:00+08:00",
+        git_sha="parent",
+        provider_versions={"fixture": "1"},
+    )
+    child_store = RunArtifactStore(
+        tmp_path / "raw",
+        "child",
+        layer="raw",
+        parent_manifest=str(parent_manifest),
+    )
+    child_store.write_jsonl(
+        "fundamentals/000001.SZ.jsonl",
+        [
+            _record_json(
+                source="akshare_fundamental",
+                published_at="2026-01-05",
+                summary="pe=9; pb=0.9",
+                risk_tags=["selected_universe", "valuation"],
+                metadata={"record_kind": "valuation", "available_date_source": "row_date"},
+            )
+        ],
+    )
+    child_manifest = child_store.write_manifest(
+        request={"start": "2026-01-05", "end": "2026-01-05"},
+        scopes=[],
+        created_at="2026-01-05T17:30:00+08:00",
+        git_sha="child",
+        provider_versions={"fixture": "1"},
+    )
+    calendar = tmp_path / "calendar.csv"
+    calendar.write_text("trade_date\n2026-01-02\n2026-01-05\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_point_in_time_factors.py",
+            "--raw-manifest",
+            str(child_manifest),
+            "--trading-calendar",
+            str(calendar),
+            "--run-id",
+            "factors",
+            "--processed-root",
+            str(tmp_path / "processed"),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    with (tmp_path / "processed/factors/fundamentals.csv").open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows[-1]["available_date"] == "2026-01-05"
+    assert rows[-1]["pe"] == "9.0"
+    assert rows[-1]["roe"] == "0.12"
+    manifest = json.loads(
+        (tmp_path / "processed/factors/manifest.json").read_text(encoding="utf-8")
+    )
+    assert len(manifest["request"]["raw_manifest_chain"]) == 2
+
+
 def _record_json(
     *,
     source: str,

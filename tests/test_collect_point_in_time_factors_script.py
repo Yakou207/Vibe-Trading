@@ -69,6 +69,41 @@ def test_collect_point_in_time_factors_resume_reuses_success_and_retries_failure
     assert len(manifest["artifacts"]) == 6
 
 
+def test_collect_point_in_time_factors_appends_new_scopes_without_reusing_parent(
+    tmp_path: Path,
+) -> None:
+    membership_path = _write_membership(tmp_path)
+    first_fixture = _write_fixture(tmp_path / "first.json", fail_scope=None)
+    child_fixture = _write_fixture(tmp_path / "child.json", fail_scope=None)
+    raw_root = tmp_path / "raw-runs"
+    first = _run_collector(
+        membership_path,
+        first_fixture,
+        raw_root,
+        run_id="raw-1",
+    )
+    assert first.returncode == 0, first.stderr
+    parent_manifest = raw_root / "raw-1/manifest.json"
+
+    child = _run_collector(
+        membership_path,
+        child_fixture,
+        raw_root,
+        run_id="raw-2",
+        append_from=parent_manifest,
+        start="2026-07-01",
+        end="2026-07-01",
+    )
+
+    assert child.returncode == 0, child.stderr
+    manifest = json.loads((raw_root / "raw-2/manifest.json").read_text(encoding="utf-8"))
+    assert manifest["parent_manifest"] == str(parent_manifest.resolve())
+    assert manifest["request"]["start"] == "2026-07-01"
+    assert {scope["status"] for scope in manifest["scopes"]} == {"success"}
+    assert "fetched_scopes=6" in child.stdout
+    assert "reused_scopes=0" in child.stdout
+
+
 def test_real_fundamental_collection_uses_requested_end_as_snapshot_date() -> None:
     from scripts.collect_point_in_time_factors import _fetch_rows
 
@@ -141,7 +176,10 @@ def _run_collector(
     *,
     run_id: str,
     resume_from: Path | None = None,
+    append_from: Path | None = None,
     groups: tuple[str, ...] | None = None,
+    start: str = "2026-01-01",
+    end: str = "2026-06-30",
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -153,9 +191,9 @@ def _run_collector(
         "--membership",
         str(membership_path),
         "--start",
-        "2026-01-01",
+        start,
         "--end",
-        "2026-06-30",
+        end,
         "--run-id",
         run_id,
         "--raw-root",
@@ -165,6 +203,8 @@ def _run_collector(
     ]
     if resume_from is not None:
         command.extend(["--resume-from", str(resume_from)])
+    if append_from is not None:
+        command.extend(["--append-from", str(append_from)])
     if groups is not None:
         command.extend(["--groups", *groups])
     return subprocess.run(

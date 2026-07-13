@@ -97,6 +97,129 @@ def test_build_historical_price_features_rejects_tampered_raw_artifact(tmp_path:
     assert "raw artifact hash mismatch" in completed.stderr
 
 
+def test_build_historical_price_features_merges_parent_chain_and_child_overrides(
+    tmp_path: Path,
+) -> None:
+    from fintech_quant.data.run_artifacts import RunArtifactStore
+
+    parent_store = RunArtifactStore(tmp_path / "raw", "parent", layer="raw")
+    parent_store.write_jsonl(
+        "prices/000001.SZ.jsonl",
+        [_bar("2026-01-02", 10.0), _bar("2026-01-03", 10.5)],
+    )
+    parent_manifest = parent_store.write_manifest(
+        request={"start": "2026-01-01", "end": "2026-01-03", "adjust": "qfq"},
+        scopes=[],
+        created_at="2026-01-03T17:30:00+08:00",
+        git_sha="parent",
+        provider_versions={"fixture": "1"},
+    )
+    child_store = RunArtifactStore(
+        tmp_path / "raw",
+        "child",
+        layer="raw",
+        parent_manifest=str(parent_manifest),
+    )
+    child_store.write_jsonl(
+        "prices/000001.SZ.jsonl",
+        [_bar("2026-01-02", 11.0), _bar("2026-01-05", 12.0)],
+    )
+    child_manifest = child_store.write_manifest(
+        request={"start": "2026-01-02", "end": "2026-01-05", "adjust": "qfq"},
+        scopes=[],
+        created_at="2026-01-05T17:30:00+08:00",
+        git_sha="child",
+        provider_versions={"fixture": "1"},
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_historical_price_features.py",
+            "--raw-manifest",
+            str(child_manifest),
+            "--run-id",
+            "features",
+            "--processed-root",
+            str(tmp_path / "processed"),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    with (tmp_path / "processed/features/daily.csv").open(
+        encoding="utf-8", newline=""
+    ) as handle:
+        rows = list(csv.DictReader(handle))
+    assert [(row["trade_date"], row["close"]) for row in rows] == [
+        ("2026-01-02", "11.0"),
+        ("2026-01-03", "10.5"),
+        ("2026-01-05", "12.0"),
+    ]
+    manifest = json.loads(
+        (tmp_path / "processed/features/manifest.json").read_text(encoding="utf-8")
+    )
+    assert [item["path"] for item in manifest["request"]["raw_manifest_chain"]] == [
+        str(parent_manifest.resolve()),
+        str(child_manifest.resolve()),
+    ]
+    assert manifest["request"]["start"] == "2026-01-01"
+    assert manifest["request"]["end"] == "2026-01-05"
+
+
+def test_build_historical_price_features_rejects_mixed_adjustment_chain(
+    tmp_path: Path,
+) -> None:
+    from fintech_quant.data.run_artifacts import RunArtifactStore
+
+    parent_store = RunArtifactStore(tmp_path / "raw", "parent", layer="raw")
+    parent_store.write_jsonl("prices/000001.SZ.jsonl", [_bar("2026-01-02", 10.0)])
+    parent_manifest = parent_store.write_manifest(
+        request={"start": "2026-01-02", "end": "2026-01-02", "adjust": "qfq"},
+        scopes=[],
+        created_at="2026-01-02T17:30:00+08:00",
+        git_sha="parent",
+        provider_versions={"fixture": "1"},
+    )
+    child_store = RunArtifactStore(
+        tmp_path / "raw",
+        "child",
+        layer="raw",
+        parent_manifest=str(parent_manifest),
+    )
+    child_store.write_jsonl("prices/000001.SZ.jsonl", [_bar("2026-01-05", 12.0)])
+    child_manifest = child_store.write_manifest(
+        request={"start": "2026-01-05", "end": "2026-01-05", "adjust": "none"},
+        scopes=[],
+        created_at="2026-01-05T17:30:00+08:00",
+        git_sha="child",
+        provider_versions={"fixture": "1"},
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_historical_price_features.py",
+            "--raw-manifest",
+            str(child_manifest),
+            "--run-id",
+            "features",
+            "--processed-root",
+            str(tmp_path / "processed"),
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "raw price chain mixes adjustment modes" in completed.stderr
+
+
 def _bar(trade_date: str, close: float) -> dict[str, object]:
     return {
         "symbol": "000001.SZ",

@@ -17,6 +17,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.data.manifest_chain import load_verified_manifest_chain  # noqa: E402
 from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file  # noqa: E402
 from fintech_quant.data.symbols import normalize_a_share_symbol  # noqa: E402
 from fintech_quant.information import (  # noqa: E402
@@ -42,6 +43,7 @@ def main() -> int:
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--raw-root", default="data/raw/runs")
     parser.add_argument("--resume-from", default=None)
+    parser.add_argument("--append-from", default=None)
     parser.add_argument("--created-at", default=None)
     parser.add_argument("--groups", nargs="+", choices=GROUPS, default=list(GROUPS))
     parser.add_argument("--workers", type=int, default=1)
@@ -49,6 +51,8 @@ def main() -> int:
 
     if args.source == "fixture" and not args.fixture_input:
         raise SystemExit("--fixture-input is required when --source fixture")
+    if args.resume_from and args.append_from:
+        raise SystemExit("--resume-from and --append-from cannot be used together")
     if args.workers < 1:
         raise SystemExit("--workers must be positive")
 
@@ -59,13 +63,16 @@ def main() -> int:
     symbols = _membership_symbols(Path(args.membership))
     parent_path = Path(args.resume_from).resolve() if args.resume_from else None
     parent = _load_parent_manifest(parent_path)
+    append_path = Path(args.append_from).resolve() if args.append_from else None
+    if append_path is not None:
+        load_verified_manifest_chain(append_path, expected_layer="raw")
     fixture = _load_fixture(Path(args.fixture_input)) if args.fixture_input else None
     created_at = args.created_at or datetime.now(timezone.utc).isoformat()
     store = RunArtifactStore(
         Path(args.raw_root),
         args.run_id,
         layer="raw",
-        parent_manifest=str(parent_path) if parent_path else None,
+        parent_manifest=str(parent_path or append_path) if parent_path or append_path else None,
     )
 
     scopes: list[dict[str, object]] = []

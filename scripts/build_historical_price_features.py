@@ -18,6 +18,10 @@ from fintech_quant.data.research_dataset import (  # noqa: E402
     DAILY_BAR_FIELDS,
     OUTPUT_FEATURE_FIELDS,
 )
+from fintech_quant.data.manifest_chain import (  # noqa: E402
+    VerifiedManifest,
+    load_verified_manifest_chain,
+)
 from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file  # noqa: E402
 from fintech_quant.features import enrich_daily_bars  # noqa: E402
 
@@ -33,10 +37,13 @@ def main() -> int:
     args = parser.parse_args()
 
     raw_manifest_path = Path(args.raw_manifest).resolve()
-    raw_manifest = json.loads(raw_manifest_path.read_text(encoding="utf-8"))
-    if raw_manifest.get("layer") != "raw":
-        raise SystemExit("--raw-manifest must describe a raw run")
-    rows = _verified_price_rows(raw_manifest_path, raw_manifest)
+    chain = load_verified_manifest_chain(raw_manifest_path, expected_layer="raw")
+    raw_manifest = chain[-1].payload
+    chain_requests = [_request(item) for item in chain]
+    adjust_modes = {item.get("adjust") for item in chain_requests}
+    if len(chain) > 1 and (None in adjust_modes or len(adjust_modes) != 1):
+        raise ValueError("raw price chain mixes adjustment modes")
+    rows = _verified_price_rows(chain)
     features = enrich_daily_bars(rows)
     store = RunArtifactStore(
         Path(args.processed_root),
@@ -54,9 +61,10 @@ def main() -> int:
             "parent_manifest_sha256": sha256_file(raw_manifest_path),
             "membership": request.get("membership"),
             "membership_sha256": request.get("membership_sha256"),
-            "start": request.get("start"),
-            "end": request.get("end"),
+            "start": min(str(item["start"]) for item in chain_requests),
+            "end": max(str(item["end"]) for item in chain_requests),
             "adjust": request.get("adjust"),
+            "raw_manifest_chain": _chain_references(chain),
         },
         scopes=[
             {"group": "daily", "status": "success", "row_count": len(rows)},
@@ -73,41 +81,45 @@ def main() -> int:
 
 
 def _verified_price_rows(
-    manifest_path: Path,
-    manifest: Mapping[str, object],
+    chain: tuple[VerifiedManifest, ...],
 ) -> list[dict[str, object]]:
-    result: list[dict[str, object]] = []
-    seen: set[tuple[str, str]] = set()
-    artifacts = manifest.get("artifacts", [])
-    if not isinstance(artifacts, list):
-        raise ValueError("raw manifest artifacts must be a list")
-    for artifact in artifacts:
-        if not isinstance(artifact, dict) or not str(artifact.get("path", "")).startswith("prices/"):
-            continue
-        relative = str(artifact["path"])
-        path = (manifest_path.parent / relative).resolve()
-        if manifest_path.parent not in path.parents:
-            raise ValueError("raw artifact path escapes the raw run")
-        if sha256_file(path) != artifact.get("sha256"):
-            raise ValueError(f"raw artifact hash mismatch: {relative}")
-        with path.open(encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                payload = json.loads(line)
-                row = normalize_daily_bar(
-                    str(payload["symbol"]),
-                    payload,
-                    str(payload.get("source", "unknown")),
-                )
-                key = (str(row["symbol"]), str(row["trade_date"]))
-                if key in seen:
-                    raise ValueError(f"duplicate raw price row: {key[0]} {key[1]}")
-                seen.add(key)
-                result.append(row)
+    result: dict[tuple[str, str], dict[str, object]] = {}
+    for verified in chain:
+        run_rows: dict[tuple[str, str], dict[str, object]] = {}
+        for relative, path in verified.artifacts.items():
+            if not relative.startswith("prices/"):
+                continue
+            with path.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    payload = json.loads(line)
+                    row = normalize_daily_bar(
+                        str(payload["symbol"]),
+                        payload,
+                        str(payload.get("source", "unknown")),
+                    )
+                    key = (str(row["symbol"]), str(row["trade_date"]))
+                    if key in run_rows:
+                        raise ValueError(f"duplicate raw price row: {key[0]} {key[1]}")
+                    run_rows[key] = row
+        result.update(run_rows)
     if not result:
         raise ValueError("raw run contains no price rows")
-    return sorted(result, key=lambda row: (str(row["symbol"]), str(row["trade_date"])))
+    return [result[key] for key in sorted(result)]
+
+
+def _chain_references(chain: tuple[VerifiedManifest, ...]) -> list[dict[str, str]]:
+    return [{"path": str(item.path), "sha256": sha256_file(item.path)} for item in chain]
+
+
+def _request(manifest: VerifiedManifest) -> Mapping[str, object]:
+    request = manifest.payload.get("request", {})
+    if not isinstance(request, Mapping):
+        raise ValueError("raw manifest request must be an object")
+    if not request.get("start") or not request.get("end"):
+        raise ValueError("raw manifest request must contain start and end")
+    return request
 
 
 def _git_sha() -> str:

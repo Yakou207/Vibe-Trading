@@ -107,6 +107,49 @@ def test_collect_historical_prices_resumes_completed_symbols_and_retries_failure
     assert status_by_symbol == {"000001.SZ": "reused", "600000.SH": "success"}
 
 
+def test_collect_historical_prices_appends_a_new_raw_delta_without_reusing_scopes(
+    tmp_path: Path,
+) -> None:
+    membership = tmp_path / "membership.csv"
+    membership.write_text("symbol\n000001.SZ\n", encoding="utf-8")
+    first_fixture = tmp_path / "first.json"
+    first_fixture.write_text(
+        json.dumps({"000001.SZ": [_bar("000001.SZ", "2026-01-02", 10.0)]}),
+        encoding="utf-8",
+    )
+    first = _run_collect(tmp_path, membership, first_fixture, "prices-1")
+    assert first.returncode == 0, first.stderr
+
+    child_fixture = tmp_path / "child.json"
+    child_fixture.write_text(
+        json.dumps({"000001.SZ": [_bar("000001.SZ", "2026-01-05", 11.0)]}),
+        encoding="utf-8",
+    )
+    parent_manifest = tmp_path / "raw/prices-1/manifest.json"
+    child = _run_collect(
+        tmp_path,
+        membership,
+        child_fixture,
+        "prices-2",
+        append_from=parent_manifest,
+        start="2026-01-05",
+        end="2026-01-05",
+    )
+
+    assert child.returncode == 0, child.stderr
+    manifest = json.loads((tmp_path / "raw/prices-2/manifest.json").read_text(encoding="utf-8"))
+    assert manifest["parent_manifest"] == str(parent_manifest.resolve())
+    assert manifest["request"]["start"] == "2026-01-05"
+    assert manifest["request"]["end"] == "2026-01-05"
+    assert manifest["scopes"][0]["status"] == "success"
+    assert "reused_scopes=0" in child.stdout
+    child_rows = (tmp_path / "raw/prices-2/prices/000001.SZ.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert "2026-01-05" in child_rows
+    assert "2026-01-02" not in child_rows
+
+
 def test_collect_historical_prices_rejects_parallel_sina_runtime(tmp_path: Path) -> None:
     membership = tmp_path / "membership.csv"
     membership.write_text("symbol\n000001.SZ\n", encoding="utf-8")
@@ -147,6 +190,9 @@ def _run_collect(
     run_id: str,
     *,
     resume_from: Path | None = None,
+    append_from: Path | None = None,
+    start: str = "2026-01-01",
+    end: str = "2026-01-03",
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -158,9 +204,9 @@ def _run_collect(
         "--membership",
         str(membership),
         "--start",
-        "2026-01-01",
+        start,
         "--end",
-        "2026-01-03",
+        end,
         "--run-id",
         run_id,
         "--raw-root",
@@ -168,6 +214,8 @@ def _run_collect(
     ]
     if resume_from is not None:
         command.extend(("--resume-from", str(resume_from)))
+    if append_from is not None:
+        command.extend(("--append-from", str(append_from)))
     return subprocess.run(
         command,
         cwd=Path(__file__).resolve().parents[1],

@@ -16,6 +16,10 @@ if str(SRC) not in sys.path:
 from fintech_quant.data.corporate_action_store import (  # noqa: E402
     materialize_cninfo_corporate_actions,
 )
+from fintech_quant.data.manifest_chain import (  # noqa: E402
+    VerifiedManifest,
+    load_verified_manifest_chain,
+)
 from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file  # noqa: E402
 
 
@@ -41,19 +45,23 @@ def main() -> int:
     args = parser.parse_args()
 
     raw_manifest_path = Path(args.raw_manifest).resolve()
-    manifest = json.loads(raw_manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("layer") != "raw":
-        raise SystemExit("--raw-manifest must describe a raw run")
+    chain = load_verified_manifest_chain(raw_manifest_path, expected_layer="raw")
+    manifest = chain[-1].payload
     request = manifest.get("request", {})
     if not isinstance(request, Mapping):
         raise ValueError("raw manifest request must be an object")
-    start = date.fromisoformat(str(request["start"]))
-    end = date.fromisoformat(str(request["end"]))
-    actions = materialize_cninfo_corporate_actions(
-        _verified_rows(raw_manifest_path, manifest),
-        start=start,
-        end=end,
-    )
+    requests = [_request(item) for item in chain]
+    start = min(date.fromisoformat(str(item["start"])) for item in requests)
+    end = max(date.fromisoformat(str(item["end"])) for item in requests)
+    actions_by_key = {}
+    for verified in chain:
+        for action in materialize_cninfo_corporate_actions(
+            _verified_rows(verified),
+            start=start,
+            end=end,
+        ):
+            actions_by_key[(action.symbol, action.ex_date, action.action_type)] = action
+    actions = sorted(actions_by_key.values(), key=lambda item: (item.ex_date, item.symbol))
     store = RunArtifactStore(
         Path(args.processed_root),
         args.run_id,
@@ -86,6 +94,7 @@ def main() -> int:
             "start": start.isoformat(),
             "end": end.isoformat(),
             "action_types": request.get("action_types", []),
+            "raw_manifest_chain": _chain_references(chain),
         },
         scopes=[{"group": "corporate_actions", "status": "success", "row_count": len(actions)}],
         created_at=args.created_at or datetime.now(timezone.utc).isoformat(),
@@ -98,27 +107,28 @@ def main() -> int:
 
 
 def _verified_rows(
-    manifest_path: Path,
-    manifest: Mapping[str, object],
+    manifest: VerifiedManifest,
 ) -> list[dict[str, object]]:
     result: list[dict[str, object]] = []
-    artifacts = manifest.get("artifacts", [])
-    if not isinstance(artifacts, list):
-        raise ValueError("raw manifest artifacts must be a list")
-    for artifact in artifacts:
-        if not isinstance(artifact, dict):
-            continue
-        relative = str(artifact.get("path", ""))
+    for relative, path in manifest.artifacts.items():
         if not relative.startswith("corporate_actions/"):
             continue
-        path = (manifest_path.parent / relative).resolve()
-        if manifest_path.parent not in path.parents:
-            raise ValueError("raw artifact path escapes the raw run")
-        if sha256_file(path) != artifact.get("sha256"):
-            raise ValueError(f"raw artifact hash mismatch: {relative}")
         with path.open(encoding="utf-8") as handle:
             result.extend(json.loads(line) for line in handle if line.strip())
     return result
+
+
+def _request(manifest: VerifiedManifest) -> Mapping[str, object]:
+    request = manifest.payload.get("request", {})
+    if not isinstance(request, Mapping):
+        raise ValueError("raw manifest request must be an object")
+    if not request.get("start") or not request.get("end"):
+        raise ValueError("raw manifest request must contain start and end")
+    return request
+
+
+def _chain_references(chain: tuple[VerifiedManifest, ...]) -> list[dict[str, str]]:
+    return [{"path": str(item.path), "sha256": sha256_file(item.path)} for item in chain]
 
 
 def _git_sha() -> str:

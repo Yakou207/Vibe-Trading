@@ -32,7 +32,7 @@ def load_verified_manifest_chain(
             VerifiedManifest(
                 path=current,
                 payload=payload,
-                artifacts=_verified_artifacts(current, payload),
+                artifacts=_verified_artifacts(current, payload, expected_layer),
             )
         )
         parent = payload.get("parent_manifest")
@@ -60,6 +60,7 @@ def _load_manifest(path: Path, expected_layer: str) -> dict[str, object]:
 def _verified_artifacts(
     manifest_path: Path,
     manifest: Mapping[str, object],
+    layer: str,
 ) -> dict[str, Path]:
     raw_artifacts = manifest.get("artifacts", [])
     if not isinstance(raw_artifacts, list):
@@ -81,6 +82,6 @@ def _verified_artifacts(
         if not artifact_path.is_file():
             raise ValueError(f"manifest artifact is missing: {relative_text}")
         if sha256_file(artifact_path) != item.get("sha256"):
-            raise ValueError(f"artifact hash mismatch: {relative_text}")
+            raise ValueError(f"{layer} artifact hash mismatch: {relative_text}")
         result[relative_text] = artifact_path
     return result
