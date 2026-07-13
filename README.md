@@ -82,6 +82,32 @@ python scripts/run_csi300_research.py \
 
 数据健康或策略收益门禁失败是有效研究结果，不等同于工程故障。当前系统不承诺盈利；只有在扣除成本后持续跑赢 CSI 300、最大回撤不超过 10%、跨走窗稳定且完成至少八周连续模拟交易后，才考虑接入实盘券商。
 
+## CSI 300 收盘后模拟交易
+
+`scripts/run_csi300_post_close.py` 是日常 CSI 300 唯一入口。它从
+`pipeline_state.json` 指向的最后一次成功 manifest 开始增量采集，核对当日 300 只成分，
+刷新双价格、点时因子、公司行为和基准，只有数据健康通过后才执行上一交易日目标并生成
+下一交易日目标。DQN 不进入这条链路。
+
+状态文件必须先由一套已验证的完整研究数据初始化。此后每个交易日只运行一条命令：
+
+```bash
+python scripts/run_csi300_post_close.py \
+  --as-of 2026-07-14 \
+  --state data/paper/csi300_baseline/pipeline_state.json \
+  --account data/paper/csi300_baseline/account.json \
+  --membership data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20260630.csv \
+  --comparison outputs/csi300_research/formal-20260713/benchmark_comparison.json
+```
+
+成功证据写入 `outputs/paper_trading/csi300_baseline/cycles/<日期>/`，包含当日决策、
+数据健康、目标、paper 日报、dashboard 和带哈希的 cycle manifest。失败时查看该日期目录
+以及对应 immutable raw run 的 `manifest.json`/scope error；正式 paper 账户和 pipeline state
+不会因为失败的数据或报告向前推进。重复提交已完成日期只做证据一致性检查，不会重复成交。
+
+这个入口只更新本地模拟账户，从不连接券商或发送真实订单。连续八周证据、扣费后相对
+CSI 300 正超额收益和不高于 10% 的回撤门禁全部通过前，禁止接入实盘。
+
 ## Phase 1 Research Loop
 
 The first working slice is a daily A-share research loop:

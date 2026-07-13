@@ -177,6 +177,14 @@ def main() -> int:
         _write_json(staged_manifest, manifest_payload)
         _load_json(staged_manifest)
 
+        for staged in (
+            staged_targets,
+            staged_report,
+            staged_dashboard,
+            staged_manifest,
+            staged_account,
+        ):
+            _fsync_file(staged)
         for staged, canonical in (
             (staged_targets, targets),
             (staged_report, paper_report),
@@ -186,6 +194,8 @@ def main() -> int:
         ):
             canonical.parent.mkdir(parents=True, exist_ok=True)
             os.replace(staged, canonical)
+        for parent in {path.parent for path in canonical_paths}:
+            _fsync_directory(parent)
 
         print(f"targets_path={targets}")
         print(f"paper_report_path={paper_report}")
@@ -279,6 +289,19 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+
+
+def _fsync_file(path: Path) -> None:
+    with path.open("rb") as handle:
+        os.fsync(handle.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def _git_sha() -> str:
