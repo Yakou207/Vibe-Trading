@@ -14,6 +14,7 @@ for path in (ROOT, SRC):
         sys.path.insert(0, str(path))
 
 from fintech_quant.execution.paper_account import (  # noqa: E402
+    PaperAccount,
     load_paper_account,
     run_paper_trading_day,
     write_paper_account,
@@ -27,6 +28,7 @@ from fintech_quant.backtesting import (  # noqa: E402
     load_corporate_actions_csv,
     standard_drawdown_control_policy,
 )
+from fintech_quant.risk import RiskInput, RiskLimits, evaluate_risk  # noqa: E402
 from scripts.generate_strategy_targets import (  # noqa: E402
     generate_targets,
     load_rl_signals,
@@ -91,27 +93,12 @@ def main() -> int:
     research_report = _load_json(Path(args.research_report))
     account_path = Path(args.account)
     account = load_paper_account(account_path, initial_cash=args.initial_cash)
-    exposure_multiplier = (
-        1.0
-        if args.no_drawdown_control or account.drawdown_control_state is None
-        else drawdown_exposure_multiplier(account.drawdown_control_state)
-    )
-    targets = generate_targets(
-        research_report,
-        as_of=args.as_of,
-        buy_threshold=args.buy_threshold,
-        min_score_confidence=args.min_score_confidence,
-        max_position_weight=args.max_position_weight,
-        max_targets=args.max_targets,
-        rl_signals=_load_overlay_signals(args),
-        portfolio_exposure_multiplier=exposure_multiplier,
-    )
-    write_targets(targets_path, targets)
+    bars = _load_feature_bars(Path(args.features), as_of)
 
     result = run_paper_trading_day(
         account,
         targets=account.pending_targets,
-        bars=_load_feature_bars(Path(args.features), as_of),
+        bars=bars,
         as_of=as_of,
         commission_rate=args.commission_rate,
         slippage_rate=args.slippage_rate,
@@ -129,6 +116,30 @@ def main() -> int:
         ),
         rights_issue_policy=args.rights_issue_policy,
     )
+    target_risk_warnings = _actual_position_risk_warnings(result.account, bars, as_of)
+    target_report = {
+        **research_report,
+        "risk_warnings": [
+            *list(research_report.get("risk_warnings", [])),
+            *target_risk_warnings,
+        ],
+    }
+    exposure_multiplier = (
+        1.0
+        if args.no_drawdown_control or result.account.drawdown_control_state is None
+        else drawdown_exposure_multiplier(result.account.drawdown_control_state)
+    )
+    targets = generate_targets(
+        target_report,
+        as_of=args.as_of,
+        buy_threshold=args.buy_threshold,
+        min_score_confidence=args.min_score_confidence,
+        max_position_weight=args.max_position_weight,
+        max_targets=args.max_targets,
+        rl_signals=_load_overlay_signals(args),
+        portfolio_exposure_multiplier=exposure_multiplier,
+    )
+    write_targets(targets_path, targets)
     result.account.pending_targets = {
         str(row["symbol"]): float(row["raw_target_weight"]) for row in targets
     }
@@ -138,7 +149,11 @@ def main() -> int:
     )
     result.nav["queued_signal_date"] = as_of.isoformat()
     write_paper_account(account_path, result.account)
-    write_paper_report(paper_report_path, result)
+    write_paper_report(
+        paper_report_path,
+        result,
+        target_risk_warnings=target_risk_warnings,
+    )
 
     print(f"account_path={account_path}")
     print(f"targets_path={targets_path}")
@@ -158,6 +173,36 @@ def _load_feature_bars(path: Path, as_of: date) -> dict[str, dict[str, object]]:
             for row in reader
             if date.fromisoformat(str(row["trade_date"])) == as_of
         }
+
+
+def _actual_position_risk_warnings(
+    account: PaperAccount,
+    bars: dict[str, dict[str, object]],
+    as_of: date,
+) -> list[dict[str, object]]:
+    warnings: list[dict[str, object]] = []
+    for symbol, position in sorted(account.positions.items()):
+        bar = bars.get(symbol)
+        if bar is None or float(position.cost_basis) <= 0:
+            continue
+        close = float(bar["close"])
+        drawdown = round(
+            max(0.0, (float(position.cost_basis) - close) / float(position.cost_basis)),
+            6,
+        )
+        evaluation = evaluate_risk(RiskInput(single_position_drawdown=drawdown), RiskLimits())
+        for warning in evaluation.warnings:
+            warnings.append(
+                {
+                    "trade_date": as_of.isoformat(),
+                    "symbol": symbol,
+                    "rule": warning.rule,
+                    "action": warning.action.value,
+                    "observed_value": warning.observed_value,
+                    "threshold_value": warning.threshold_value,
+                }
+            )
+    return warnings
 
 
 def _load_overlay_signals(args: argparse.Namespace) -> dict[str, str]:

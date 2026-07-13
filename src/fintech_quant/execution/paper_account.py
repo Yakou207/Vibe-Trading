@@ -375,7 +375,12 @@ def write_paper_account(path: Path, account: PaperAccount) -> None:
     )
 
 
-def write_paper_report(path: Path, result: PaperTradingResult) -> None:
+def write_paper_report(
+    path: Path,
+    result: PaperTradingResult,
+    *,
+    target_risk_warnings: list[dict[str, object]] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -402,6 +407,11 @@ def write_paper_report(path: Path, result: PaperTradingResult) -> None:
                     for action in result.corporate_actions
                 ],
                 "account": _account_to_json(result.account),
+                **(
+                    {"target_risk_warnings": target_risk_warnings}
+                    if target_risk_warnings is not None
+                    else {}
+                ),
             },
             ensure_ascii=False,
             indent=2,

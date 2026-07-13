@@ -10,6 +10,96 @@ from pathlib import Path
 
 
 class DailyPaperTradingScriptTest(unittest.TestCase):
+    def test_daily_paper_trading_applies_close_risk_to_actual_position_before_queuing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            research_report = root / "run_report.json"
+            features = root / "features.csv"
+            account = root / "account.json"
+            targets = root / "targets.csv"
+            paper_report = root / "paper_report.json"
+            research_report.write_text(
+                json.dumps(
+                    {
+                        "scores": [_score("2026-01-02", "000001.SZ", 82.0, 1.0)],
+                        "risk_warnings": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            features.write_text(
+                "symbol,trade_date,open,close,limit_up,limit_down,is_suspended\n"
+                "000001.SZ,2026-01-02,9,9,false,false,false\n",
+                encoding="utf-8",
+            )
+            account.write_text(
+                json.dumps(
+                    {
+                        "cash": 90000.0,
+                        "positions": {
+                            "000001.SZ": {
+                                "shares": 1000,
+                                "cost_basis": 10.0,
+                                "last_buy_date": "2025-12-01",
+                            }
+                        },
+                        "nav_history": [],
+                        "pending_targets": {"000001.SZ": 0.09},
+                        "pending_signal_date": "2026-01-01",
+                        "last_processed_date": "2026-01-01",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_daily_paper_trading.py",
+                    "--research-report",
+                    str(research_report),
+                    "--features",
+                    str(features),
+                    "--as-of",
+                    "2026-01-02",
+                    "--account",
+                    str(account),
+                    "--targets-output",
+                    str(targets),
+                    "--paper-report",
+                    str(paper_report),
+                    "--max-position-weight",
+                    "0.10",
+                    "--commission-rate",
+                    "0",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            account_payload = json.loads(account.read_text(encoding="utf-8"))
+            paper_payload = json.loads(paper_report.read_text(encoding="utf-8"))
+            with targets.open(encoding="utf-8", newline="") as handle:
+                target_rows = list(csv.DictReader(handle))
+
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        self.assertEqual(target_rows, [])
+        self.assertEqual(account_payload["pending_targets"], {})
+        self.assertEqual(
+            paper_payload["target_risk_warnings"],
+            [
+                {
+                    "action": "reduce",
+                    "observed_value": 0.1,
+                    "rule": "single_position_drawdown",
+                    "symbol": "000001.SZ",
+                    "threshold_value": 0.08,
+                    "trade_date": "2026-01-02",
+                }
+            ],
+        )
+
     def test_daily_paper_trading_records_scaled_target_without_double_scaling(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -87,8 +177,8 @@ class DailyPaperTradingScriptTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, msg=completed.stderr)
         self.assertEqual(target_rows[0]["raw_target_weight"], "0.1")
-        self.assertEqual(target_rows[0]["target_weight"], "0.05")
-        self.assertEqual(target_rows[0]["portfolio_exposure_multiplier"], "0.5")
+        self.assertEqual(target_rows[0]["target_weight"], "0.1")
+        self.assertEqual(target_rows[0]["portfolio_exposure_multiplier"], "1.0")
         self.assertEqual(account_payload["positions"]["000001.SZ"]["shares"], 500)
         self.assertEqual(account_payload["shadow_positions"]["000001.SZ"]["shares"], 1000)
 
