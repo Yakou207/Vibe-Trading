@@ -48,6 +48,7 @@ class PipelineConfig:
     processed_action_root: Path
     cycle_root: Path
     benchmark_start: date
+    pnl_curve: Path | None = None
     constituent_timeout: int = 60
     stage_timeout: int = 1800
     paper_timeout: int = 600
@@ -78,6 +79,7 @@ def main() -> int:
     parser.add_argument("--account", required=True)
     parser.add_argument("--membership", required=True)
     parser.add_argument("--comparison", required=True)
+    parser.add_argument("--pnl-curve", default=None)
     parser.add_argument("--raw-price-root", default="data/diagnostics/raw-price-runs")
     parser.add_argument(
         "--processed-price-root", default="data/diagnostics/processed-price-runs"
@@ -115,6 +117,7 @@ def main() -> int:
         processed_action_root=Path(args.processed_action_root),
         cycle_root=Path(args.cycle_root),
         benchmark_start=date.fromisoformat(args.benchmark_start),
+        pnl_curve=Path(args.pnl_curve) if args.pnl_curve else None,
         constituent_timeout=args.constituent_timeout,
         stage_timeout=args.stage_timeout,
         paper_timeout=args.paper_timeout,
@@ -128,6 +131,7 @@ def main() -> int:
 def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dict[str, object]:
     active_runner = runner or _run
     _require_positive_timeouts(config)
+    pnl_curve = _resolve_pnl_curve(config)
     state = _load_state(config.state)
     validation_anchor = _verified_reference(state, "validation_anchor")
     previous_as_of = date.fromisoformat(str(state["last_successful_as_of"]))
@@ -262,42 +266,42 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
     if _load_json(data_health).get("passed") is not True:
         raise ValueError("daily data health did not pass")
 
-    active_runner(
-        [
-            "scripts/run_post_close_daily_cycle.py",
-            "--as-of",
-            config.as_of.isoformat(),
-            "--research-report",
-            str(decision_report),
-            "--features",
-            str(execution_processed.parent / "daily.csv"),
-            "--comparison",
-            str(config.comparison),
-            "--current-universe",
-            str(current_universe),
-            "--benchmark",
-            str(benchmark),
-            "--evidence-parent",
-            str(evidence_parent),
-            "--corporate-actions",
-            str(action_processed.parent / "corporate_actions.csv"),
-            "--data-health",
-            str(data_health),
-            "--account",
-            str(config.account),
-            "--targets-output",
-            str(targets),
-            "--paper-report",
-            str(paper_report),
-            "--dashboard-output",
-            str(dashboard),
-            "--cycle-manifest",
-            str(cycle_manifest),
-            "--slippage-rate",
-            "0.0005",
-        ],
-        timeout=config.paper_timeout,
-    )
+    paper_command = [
+        "scripts/run_post_close_daily_cycle.py",
+        "--as-of",
+        config.as_of.isoformat(),
+        "--research-report",
+        str(decision_report),
+        "--features",
+        str(execution_processed.parent / "daily.csv"),
+        "--comparison",
+        str(config.comparison),
+        "--current-universe",
+        str(current_universe),
+        "--benchmark",
+        str(benchmark),
+        "--evidence-parent",
+        str(evidence_parent),
+        "--corporate-actions",
+        str(action_processed.parent / "corporate_actions.csv"),
+        "--data-health",
+        str(data_health),
+        "--account",
+        str(config.account),
+        "--targets-output",
+        str(targets),
+        "--paper-report",
+        str(paper_report),
+        "--dashboard-output",
+        str(dashboard),
+        "--cycle-manifest",
+        str(cycle_manifest),
+        "--slippage-rate",
+        "0.0005",
+    ]
+    if pnl_curve is not None:
+        paper_command.extend(["--pnl-curve", str(pnl_curve)])
+    active_runner(paper_command, timeout=config.paper_timeout)
     _require_processed_account(config.account, config.as_of)
     if _load_json(cycle_manifest).get("as_of") != config.as_of.isoformat():
         raise ValueError("paper cycle manifest as_of mismatch")
@@ -336,6 +340,15 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         "validation_status": validation_status,
         "validation_report": str(validation_report),
     }
+
+
+def _resolve_pnl_curve(config: PipelineConfig) -> Path | None:
+    if config.pnl_curve is not None:
+        if not config.pnl_curve.is_file():
+            raise ValueError(f"explicit PnL curve does not exist: {config.pnl_curve}")
+        return config.pnl_curve
+    sibling = config.comparison.with_name("pnl_curve.json")
+    return sibling if sibling.is_file() else None
 
 
 def _price_stage(

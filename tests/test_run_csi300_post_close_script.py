@@ -6,6 +6,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -79,6 +80,7 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
                 state["validation_anchor"]["path"],
             )
             self.assertEqual(_argument(paper_command, "--slippage-rate"), "0.0005")
+            self.assertNotIn("--pnl-curve", paper_command)
             self.assertEqual(
                 _argument(paper_command, "--current-universe"),
                 str(config.cycle_root / "2026-01-05" / "current_universe.csv"),
@@ -89,6 +91,36 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             self.assertEqual(result["status"], "completed")
             self.assertEqual(result["validation_status"], "COLLECTING")
             self.assertNotEqual(state_after, state)
+
+    def test_pipeline_passes_sibling_pnl_curve_to_paper_cycle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            _seed_state(config, date(2026, 1, 2))
+            curve = config.comparison.with_name("pnl_curve.json")
+            _write_json(curve, {"schema_version": 1})
+            runner = RecordingRunner(config)
+
+            run_pipeline(config, runner=runner)
+
+            paper_command = next(
+                command
+                for command, _ in runner.calls
+                if Path(command[0]).name == "run_post_close_daily_cycle.py"
+            )
+            self.assertEqual(_argument(paper_command, "--pnl-curve"), str(curve))
+
+    def test_pipeline_rejects_missing_explicit_pnl_curve_before_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = replace(_config(root), pnl_curve=root / "missing-pnl-curve.json")
+            _seed_state(config, date(2026, 1, 2))
+            runner = RecordingRunner(config)
+
+            with self.assertRaisesRegex(ValueError, "PnL curve does not exist"):
+                run_pipeline(config, runner=runner)
+
+            self.assertEqual(runner.calls, [])
 
     def test_pipeline_rejects_missing_validation_anchor_before_fetch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
