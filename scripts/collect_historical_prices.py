@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import importlib.metadata
 import json
 import subprocess
@@ -19,8 +18,8 @@ if str(SRC) not in sys.path:
 from fintech_quant.data.akshare_provider import AkShareProvider  # noqa: E402
 from fintech_quant.data.base import normalize_daily_bar  # noqa: E402
 from fintech_quant.data.manifest_chain import load_verified_manifest_chain  # noqa: E402
+from fintech_quant.data.historical_universe import membership_symbols_for_range  # noqa: E402
 from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file  # noqa: E402
-from fintech_quant.data.symbols import normalize_a_share_symbol  # noqa: E402
 
 
 def main() -> int:
@@ -59,7 +58,7 @@ def main() -> int:
         raise SystemExit("--end must not be earlier than --start")
 
     membership_path = Path(args.membership).resolve()
-    symbols = _membership_symbols(membership_path)
+    symbols = _membership_symbols(membership_path, start, end)
     fixture = _fixture(Path(args.fixture_input)) if args.fixture_input else None
     parent_path = Path(args.resume_from).resolve() if args.resume_from else None
     parent = _parent_manifest(parent_path)
@@ -164,17 +163,8 @@ def main() -> int:
     return 2 if failed else 0
 
 
-def _membership_symbols(path: Path) -> tuple[str, ...]:
-    with path.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    symbols = {
-        normalize_a_share_symbol(str(row.get("symbol", "")).strip())
-        for row in rows
-        if str(row.get("symbol", "")).strip()
-    }
-    if not symbols:
-        raise ValueError("membership CSV must contain at least one symbol")
-    return tuple(sorted(symbols))
+def _membership_symbols(path: Path, start: date, end: date) -> tuple[str, ...]:
+    return membership_symbols_for_range(path, start, end)
 
 
 def _fixture(path: Path) -> dict[str, object]:

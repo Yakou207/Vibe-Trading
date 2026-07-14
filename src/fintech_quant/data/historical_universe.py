@@ -188,6 +188,34 @@ def load_membership_intervals(path: Path) -> tuple[MembershipInterval, ...]:
     return tuple(sorted(intervals, key=lambda item: (item.symbol, item.member_from)))
 
 
+def membership_symbols_for_range(path: Path, start: date, end: date) -> tuple[str, ...]:
+    if end < start:
+        raise ValueError("end must not be earlier than start")
+    with path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = set(reader.fieldnames or ())
+        rows = list(reader)
+    if not rows:
+        raise ValueError("membership CSV must contain at least one row")
+
+    if "member_from" not in fieldnames:
+        symbols = {
+            normalize_a_share_symbol(str(row.get("symbol", "")).strip())
+            for row in rows
+            if str(row.get("symbol", "")).strip()
+        }
+    else:
+        symbols = {
+            interval.symbol
+            for interval in load_membership_intervals(path)
+            if interval.member_from <= end
+            and (interval.member_to is None or start < interval.member_to)
+        }
+    if not symbols:
+        raise ValueError("membership CSV has no members overlapping the requested date range")
+    return tuple(sorted(symbols))
+
+
 def write_membership_csv(path: Path, intervals: Iterable[MembershipInterval]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="") as handle:
