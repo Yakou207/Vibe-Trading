@@ -108,6 +108,142 @@ class ResearchDashboardReportTest(unittest.TestCase):
         self.assertIn("portfolio_drawdown", html)
         self.assertIn("Mean WF Return", html)
         self.assertIn("0.030000", html)
+        self.assertIn("PnL curve unavailable", html)
+        self.assertNotIn("chart.umd.min.js", html)
+
+    def test_build_research_dashboard_embeds_interactive_pnl_curve(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comparison = root / "comparison.json"
+            pnl_curve = root / "pnl_curve.json"
+            output = root / "dashboard.html"
+            comparison.write_text(
+                json.dumps(
+                    {
+                        "candidate": {"name": "risk", "total_return": 0.15},
+                        "baseline": {"name": "baseline", "total_return": 0.10},
+                        "candidate_vs_benchmark": {
+                            "CSI 300": {
+                                "excess_return": 0.20,
+                                "tracking_max_drawdown": 0.08,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            pnl_curve.write_text(
+                json.dumps(_valid_pnl_curve()),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/build_research_dashboard.py",
+                    "--comparison",
+                    str(comparison),
+                    "--pnl-curve",
+                    str(pnl_curve),
+                    "--output",
+                    str(output),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            html = output.read_text(encoding="utf-8")
+
+        self.assertIn(
+            "https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js",
+            html,
+        )
+        self.assertIn('id="pnl-chart"', html)
+        self.assertIn('id="pnl-curve-data"', html)
+        self.assertIn("Normalized Cumulative PnL", html)
+        self.assertIn("CNY 100,000", html)
+        self.assertIn("Risk-Controlled", html)
+        self.assertIn("Baseline", html)
+        self.assertIn("CSI 300", html)
+        self.assertIn("borderDash: [8, 5]", html)
+        self.assertIn("borderDash: [2, 4]", html)
+        self.assertIn("normalized equity", html.lower())
+        self.assertIn("cumulative return", html.lower())
+        self.assertIn("context.tick.value === 0", html)
+        self.assertIn("Chart renderer unavailable", html)
+
+    def test_build_research_dashboard_rejects_malformed_curve_with_visible_fallback(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            comparison = root / "comparison.json"
+            pnl_curve = root / "pnl_curve.json"
+            output = root / "dashboard.html"
+            comparison.write_text(
+                json.dumps({"candidate": {}, "baseline": {}}),
+                encoding="utf-8",
+            )
+            pnl_curve.write_text(json.dumps({"schema_version": 1}), encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/build_research_dashboard.py",
+                    "--comparison",
+                    str(comparison),
+                    "--pnl-curve",
+                    str(pnl_curve),
+                    "--output",
+                    str(output),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            html = output.read_text(encoding="utf-8")
+
+        self.assertIn("PnL curve unavailable", html)
+        self.assertNotIn("chart.umd.min.js", html)
+
+
+def _valid_pnl_curve() -> dict[str, object]:
+    dates = ["2026-01-02", "2026-01-05"]
+    return {
+        "schema_version": 1,
+        "initial_equity": 100000.0,
+        "dates": dates,
+        "series": {
+            "risk_controlled": {
+                "label": "Risk-Controlled",
+                "equity": [100000.0, 115000.0],
+                "pnl": [0.0, 15000.0],
+                "return": [0.0, 0.15],
+            },
+            "baseline": {
+                "label": "Baseline",
+                "equity": [100000.0, 110000.0],
+                "pnl": [0.0, 10000.0],
+                "return": [0.0, 0.10],
+            },
+            "csi300": {
+                "label": "CSI 300",
+                "equity": [100000.0, 95000.0],
+                "pnl": [0.0, -5000.0],
+                "return": [0.0, -0.05],
+            },
+        },
+        "inputs": {
+            name: {"path": f"/{name}", "bytes": 1, "sha256": "a" * 64}
+            for name in ("baseline_report", "risk_controlled_report", "benchmark")
+        },
+    }
 
 
 if __name__ == "__main__":

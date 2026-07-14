@@ -20,6 +20,7 @@ def main() -> int:
     parser.add_argument("--run-report", default=None)
     parser.add_argument("--data-health", default=None)
     parser.add_argument("--information-health", default=None)
+    parser.add_argument("--pnl-curve", default=None)
     parser.add_argument("--output", default="outputs/research_dashboard.html")
     args = parser.parse_args()
 
@@ -30,6 +31,7 @@ def main() -> int:
         run_report=load_json(Path(args.run_report)) if args.run_report else None,
         data_health=load_json(Path(args.data_health)) if args.data_health else None,
         information_health=load_json(Path(args.information_health)) if args.information_health else None,
+        pnl_curve=load_json(Path(args.pnl_curve)) if args.pnl_curve else None,
     )
     output_path = Path(args.output)
     write_dashboard(output_path, html)
