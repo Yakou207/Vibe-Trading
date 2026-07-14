@@ -72,7 +72,7 @@ def main() -> int:
     parser.add_argument("--initial-cash", type=float, default=100000.0)
     parser.add_argument("--commission-rate", type=float, default=0.0003)
     parser.add_argument("--minimum-commission", type=float, default=None)
-    parser.add_argument("--slippage-rate", type=float, default=0.0)
+    parser.add_argument("--slippage-rate", type=float, default=0.0005)
     parser.add_argument("--no-stamp-duty", action="store_true")
     parser.add_argument("--no-drawdown-control", action="store_true")
     parser.add_argument("--corporate-actions", default=None)

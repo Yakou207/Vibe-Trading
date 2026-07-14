@@ -10,6 +10,66 @@ from pathlib import Path
 
 
 class DailyPaperTradingScriptTest(unittest.TestCase):
+    def test_daily_paper_trading_defaults_to_formal_slippage_rate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            research_report = root / "run_report.json"
+            features = root / "features.csv"
+            account = root / "account.json"
+            targets = root / "targets.csv"
+            paper_report = root / "paper_report.json"
+            research_report.write_text(
+                json.dumps({"scores": [], "risk_warnings": []}),
+                encoding="utf-8",
+            )
+            features.write_text(
+                "symbol,trade_date,open,close,limit_up,limit_down,is_suspended\n"
+                "000001.SZ,2026-01-02,10,10,false,false,false\n",
+                encoding="utf-8",
+            )
+            account.write_text(
+                json.dumps(
+                    {
+                        "cash": 100000.0,
+                        "positions": {},
+                        "nav_history": [],
+                        "pending_targets": {"000001.SZ": 0.08},
+                        "pending_signal_date": "2026-01-01",
+                        "last_processed_date": "2026-01-01",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "scripts/run_daily_paper_trading.py",
+                    "--research-report",
+                    str(research_report),
+                    "--features",
+                    str(features),
+                    "--as-of",
+                    "2026-01-02",
+                    "--account",
+                    str(account),
+                    "--targets-output",
+                    str(targets),
+                    "--paper-report",
+                    str(paper_report),
+                    "--commission-rate",
+                    "0",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            paper_payload = json.loads(paper_report.read_text(encoding="utf-8"))
+
+        self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+        self.assertEqual(paper_payload["trades"][0]["price"], 10.005)
+
     def test_daily_paper_trading_applies_close_risk_to_actual_position_before_queuing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -164,6 +224,8 @@ class DailyPaperTradingScriptTest(unittest.TestCase):
                     "--max-position-weight",
                     "0.10",
                     "--commission-rate",
+                    "0",
+                    "--slippage-rate",
                     "0",
                 ],
                 cwd=Path(__file__).resolve().parents[1],

@@ -11,6 +11,54 @@ from pathlib import Path
 
 
 class RunPostCloseDailyCycleScriptTest(unittest.TestCase):
+    def test_v2_cycle_records_policy_inputs_parent_and_account_consistency(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _write_v2_inputs(Path(tmp))
+
+            completed = _run_v2_cycle(paths)
+
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            manifest = json.loads(paths["cycle_manifest"].read_text(encoding="utf-8"))
+            report = json.loads(paths["paper_report"].read_text(encoding="utf-8"))
+            canonical_account = (
+                json.dumps(report["account"], ensure_ascii=False, indent=2, sort_keys=True)
+                + "\n"
+            ).encode("utf-8")
+            self.assertEqual(manifest["schema_version"], 2)
+            self.assertEqual(manifest["kind"], "paper_trading_cycle")
+            self.assertEqual(
+                manifest["evidence_parent"]["sha256"],
+                hashlib.sha256(paths["evidence_parent"].read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                manifest["inputs"]["current_universe"]["sha256"],
+                hashlib.sha256(paths["current_universe"].read_bytes()).hexdigest(),
+            )
+            self.assertEqual(
+                manifest["inputs"]["benchmark"]["sha256"],
+                hashlib.sha256(paths["benchmark"].read_bytes()).hexdigest(),
+            )
+            self.assertEqual(manifest["policy"]["slippage_rate"], 0.0005)
+            self.assertFalse(manifest["policy"]["dqn_exposure_enabled"])
+            self.assertEqual(
+                manifest["account_after_sha256"],
+                hashlib.sha256(canonical_account).hexdigest(),
+            )
+
+    def test_v2_cycle_rejects_dqn_without_mutating_account(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _write_v2_inputs(Path(tmp))
+            dqn_report = Path(tmp) / "dqn_report.json"
+            dqn_report.write_text("{}\n", encoding="utf-8")
+            account_before = paths["account"].read_bytes()
+
+            completed = _run_v2_cycle(paths, dqn_report=dqn_report)
+
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("DQN", completed.stderr)
+            self.assertEqual(paths["account"].read_bytes(), account_before)
+            self.assertFalse(paths["cycle_manifest"].exists())
+
     def test_post_close_cycle_leaves_canonical_account_unchanged_when_dashboard_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -274,6 +322,127 @@ def _score(trade_date: str, symbol: str, total: float, confidence: float) -> dic
         "confidence": confidence,
         "missing_fields": [],
     }
+
+
+def _write_v2_inputs(root: Path) -> dict[str, Path]:
+    paths = {
+        name: root / filename
+        for name, filename in {
+            "research_report": "run_report.json",
+            "features": "features.csv",
+            "comparison": "comparison.json",
+            "current_universe": "current_universe.csv",
+            "benchmark": "benchmark.csv",
+            "data_health": "data_health.json",
+            "evidence_parent": "anchor_manifest.json",
+            "account": "account.json",
+            "targets": "targets.csv",
+            "paper_report": "paper_report.json",
+            "dashboard": "dashboard.html",
+            "cycle_manifest": "cycle_manifest.json",
+        }.items()
+    }
+    paths["research_report"].write_text(
+        json.dumps(
+            {
+                "date_range": ["2026-01-01", "2026-01-02"],
+                "scores": [_score("2026-01-02", "000001.SZ", 82.0, 1.0)],
+                "risk_warnings": [],
+                "risk_summary": {"total_warnings": 0, "by_rule": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    paths["features"].write_text(
+        "symbol,trade_date,open,close,limit_up,limit_down,is_suspended\n"
+        "000001.SZ,2026-01-02,10,10,false,false,false\n",
+        encoding="utf-8",
+    )
+    paths["comparison"].write_text(
+        json.dumps(
+            {
+                "candidate": {"name": "baseline", "total_return": 0.01},
+                "baseline": {"name": "baseline", "total_return": 0.01},
+                "candidate_vs_benchmark": {
+                    "csi300": {"excess_return": 0.005, "tracking_max_drawdown": 0.02}
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    paths["current_universe"].write_text(
+        "symbol,name\n000001.SZ,Ping An Bank\n", encoding="utf-8"
+    )
+    paths["benchmark"].write_text(
+        "trade_date,close\n2026-01-02,4000\n", encoding="utf-8"
+    )
+    paths["data_health"].write_text(
+        json.dumps({"passed": True}), encoding="utf-8"
+    )
+    paths["evidence_parent"].write_text(
+        json.dumps({"kind": "paper_validation_anchor"}), encoding="utf-8"
+    )
+    paths["account"].write_text(
+        json.dumps(
+            {
+                "cash": 100000.0,
+                "positions": {},
+                "nav_history": [],
+                "pending_targets": {},
+                "pending_signal_date": None,
+                "last_processed_date": "2026-01-01",
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return paths
+
+
+def _run_v2_cycle(
+    paths: dict[str, Path], *, dqn_report: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        "scripts/run_post_close_daily_cycle.py",
+        "--as-of",
+        "2026-01-02",
+        "--research-report",
+        str(paths["research_report"]),
+        "--features",
+        str(paths["features"]),
+        "--comparison",
+        str(paths["comparison"]),
+        "--current-universe",
+        str(paths["current_universe"]),
+        "--benchmark",
+        str(paths["benchmark"]),
+        "--data-health",
+        str(paths["data_health"]),
+        "--evidence-parent",
+        str(paths["evidence_parent"]),
+        "--account",
+        str(paths["account"]),
+        "--targets-output",
+        str(paths["targets"]),
+        "--paper-report",
+        str(paths["paper_report"]),
+        "--dashboard-output",
+        str(paths["dashboard"]),
+        "--cycle-manifest",
+        str(paths["cycle_manifest"]),
+    ]
+    if dqn_report is not None:
+        command.extend(["--dqn-report", str(dqn_report)])
+    return subprocess.run(
+        command,
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 if __name__ == "__main__":
