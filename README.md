@@ -94,7 +94,20 @@ python scripts/run_csi300_research.py \
 刷新后复权信号价、未复权成交价、点时因子、公司行为和基准，只有数据健康通过后才执行上一交易日目标并生成
 下一交易日目标。DQN 不进入这条链路。
 
-状态文件必须先由一套已验证的完整研究数据初始化。此后每个交易日只运行一条命令：
+正式计时前必须创建一次不可变启动锚点。锚点复制账户、pipeline state、正式运行清单、
+正式比较和基准，验证 `hfq` 信号价、未复权成交价及文件哈希，但自身不计入八周证据：
+
+```bash
+python scripts/initialize_csi300_paper_validation.py \
+  --account data/paper/csi300_baseline/account.json \
+  --state data/paper/csi300_baseline/pipeline_state.json \
+  --formal-run-manifest outputs/csi300_research/hfq-formal-20260713/manifest.json \
+  --comparison outputs/csi300_research/hfq-formal-20260713/benchmark_comparison.json \
+  --benchmark data/diagnostics/csi300_market_state_sina_20200601_20260713.csv \
+  --output-root data/paper/csi300_baseline/validation
+```
+
+锚点成功附加到状态文件后，每个交易日只运行一条命令：
 
 ```bash
 python scripts/run_csi300_post_close.py \
@@ -102,16 +115,33 @@ python scripts/run_csi300_post_close.py \
   --state data/paper/csi300_baseline/pipeline_state.json \
   --account data/paper/csi300_baseline/account.json \
   --membership data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20260630.csv \
-  --comparison outputs/csi300_research/formal-20260713/benchmark_comparison.json
+  --comparison outputs/csi300_research/hfq-formal-20260713/benchmark_comparison.json
 ```
 
 成功证据写入 `outputs/paper_trading/csi300_baseline/cycles/<日期>/`，包含当日决策、
-数据健康、目标、paper 日报、dashboard 和带哈希的 cycle manifest。失败时查看该日期目录
+数据健康、目标、paper 日报、dashboard、V2 cycle manifest 和 `validation_report.json`。
+每个 V2 manifest 精确引用启动锚点或前一日 manifest，固定使用 0.03% 佣金、5 元最低佣金、
+分日期卖出印花税、个人股息税、0.05% 滑点和 `do_not_subscribe` 配股策略。失败时查看该日期目录
 以及对应 immutable raw run 的 `manifest.json`/scope error；正式 paper 账户和 pipeline state
 不会因为失败的数据或报告向前推进。重复提交已完成日期只做证据一致性检查，不会重复成交。
 
+可随时独立重跑审计：
+
+```bash
+python scripts/audit_csi300_paper_validation.py \
+  --anchor data/paper/csi300_baseline/validation/anchor-20260713/anchor_manifest.json \
+  --cycle-root outputs/paper_trading/csi300_baseline/cycles \
+  --output outputs/paper_trading/csi300_baseline/validation_report.json
+```
+
+审计状态只有四种：`NO_EVIDENCE` 表示尚无新 V2 交易日；`COLLECTING` 表示证据完整但
+未满 40 个交易日/56 个自然日或绩效门槛尚未满足；`FAILED` 表示证据、执行、数据、风险
+或完整窗口绩效门槛失败；`ELIGIBLE_FOR_REVIEW` 仅表示可以人工复核，绝不等于实盘授权。
+审计在模拟成交提交后运行，因此审计故障会显式报错，但不会擦除已经提交的账户和交易记录。
+
 这个入口只更新本地模拟账户，从不连接券商或发送真实订单。连续八周证据、扣费后相对
-CSI 300 正超额收益和不高于 10% 的回撤门禁全部通过前，禁止接入实盘。
+CSI 300 正超额收益和不高于 10% 的回撤门禁全部通过前，禁止接入实盘。即使状态达到
+`ELIGIBLE_FOR_REVIEW`，系统仍保持 `live_trading_authorized=false`，DQN 也不得增加模拟仓位。
 
 ## Phase 1 Research Loop
 

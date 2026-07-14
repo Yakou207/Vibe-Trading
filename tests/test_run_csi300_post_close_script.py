@@ -38,6 +38,7 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
                     "build_corporate_actions.py",
                     "build_daily_decision_report.py",
                     "run_post_close_daily_cycle.py",
+                    "audit_csi300_paper_validation.py",
                 ],
             )
             self.assertTrue(
@@ -82,6 +83,7 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             self.assertEqual(state_after["last_successful_as_of"], "2026-01-05")
             self.assertEqual(state_after["validation_anchor"], state["validation_anchor"])
             self.assertEqual(result["status"], "completed")
+            self.assertEqual(result["validation_status"], "COLLECTING")
             self.assertNotEqual(state_after, state)
 
     def test_pipeline_rejects_missing_validation_anchor_before_fetch(self) -> None:
@@ -150,11 +152,54 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             self.assertEqual(config.state.read_bytes(), state_before)
             self.assertFalse(config.account.exists())
 
+    def test_audit_failure_preserves_committed_account_and_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            _seed_state(config, date(2026, 1, 2))
+            runner = RecordingRunner(
+                config, fail_on="audit_csi300_paper_validation.py"
+            )
+
+            with self.assertRaises(subprocess.CalledProcessError):
+                run_pipeline(config, runner=runner)
+
+            account = json.loads(config.account.read_text(encoding="utf-8"))
+            state = json.loads(config.state.read_text(encoding="utf-8"))
+            self.assertEqual(account["last_processed_date"], "2026-01-05")
+            self.assertEqual(state["last_successful_as_of"], "2026-01-05")
+
+    def test_same_date_replay_only_reaudits_committed_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            _seed_state(config, date(2026, 1, 2))
+            run_pipeline(config, runner=RecordingRunner(config))
+            account_before = config.account.read_bytes()
+            replay_runner = RecordingRunner(config)
+
+            result = run_pipeline(config, runner=replay_runner)
+
+            self.assertEqual(
+                [Path(command[0]).name for command, _ in replay_runner.calls],
+                ["audit_csi300_paper_validation.py"],
+            )
+            self.assertEqual(config.account.read_bytes(), account_before)
+            self.assertEqual(result["status"], "already_completed")
+            self.assertEqual(result["validation_status"], "COLLECTING")
+
 
 class RecordingRunner:
-    def __init__(self, config: PipelineConfig, *, timeout_on: str | None = None) -> None:
+    def __init__(
+        self,
+        config: PipelineConfig,
+        *,
+        timeout_on: str | None = None,
+        fail_on: str | None = None,
+    ) -> None:
         self.config = config
         self.timeout_on = timeout_on
+        self.fail_on = fail_on
         self.calls: list[tuple[list[str], int]] = []
 
     def __call__(self, command: list[str], *, timeout: int) -> None:
@@ -162,6 +207,8 @@ class RecordingRunner:
         script = Path(command[0]).name
         if script == self.timeout_on:
             raise subprocess.TimeoutExpired(command, timeout)
+        if script == self.fail_on:
+            raise subprocess.CalledProcessError(1, command)
         if script == "fetch_index_universe.py":
             _write_current_universe(Path(_argument(command, "--output")))
         elif script.startswith("collect_"):
@@ -195,6 +242,15 @@ class RecordingRunner:
             _write_json(
                 Path(_argument(command, "--cycle-manifest")),
                 {"as_of": self.config.as_of.isoformat()},
+            )
+        elif script == "audit_csi300_paper_validation.py":
+            _write_json(
+                Path(_argument(command, "--output")),
+                {
+                    "status": "COLLECTING",
+                    "live_trading_authorized": False,
+                    "metrics": {"valid_sessions": 1},
+                },
             )
 
 

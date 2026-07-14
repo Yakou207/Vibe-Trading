@@ -119,7 +119,17 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         raise ValueError("as_of must not precede pipeline state")
     if config.as_of == previous_as_of:
         _validate_completed_state(state, config)
-        return {"status": "already_completed", "as_of": config.as_of.isoformat()}
+        validation_status, validation_report = _run_validation_audit(
+            config,
+            anchor=validation_anchor,
+            runner=active_runner,
+        )
+        return {
+            "status": "already_completed",
+            "as_of": config.as_of.isoformat(),
+            "validation_status": validation_status,
+            "validation_report": str(validation_report),
+        }
 
     parent_manifests = _verified_state_manifests(state)
     evidence_parent = (
@@ -296,11 +306,18 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         },
     }
     _write_state_atomic(config.state, new_state)
+    validation_status, validation_report = _run_validation_audit(
+        config,
+        anchor=validation_anchor,
+        runner=active_runner,
+    )
     return {
         "status": "completed",
         "as_of": config.as_of.isoformat(),
         "state": str(config.state),
         "cycle_manifest": str(cycle_manifest),
+        "validation_status": validation_status,
+        "validation_report": str(validation_report),
     }
 
 
@@ -568,6 +585,35 @@ def _require_file(path: Path, label: str) -> None:
 def _require_processed_account(path: Path, as_of: date) -> None:
     if _load_json(path).get("last_processed_date") != as_of.isoformat():
         raise ValueError("paper account did not commit the requested date")
+
+
+def _run_validation_audit(
+    config: PipelineConfig,
+    *,
+    anchor: Path,
+    runner: Runner,
+) -> tuple[str, Path]:
+    output = config.cycle_root / config.as_of.isoformat() / "validation_report.json"
+    runner(
+        [
+            "scripts/audit_csi300_paper_validation.py",
+            "--anchor",
+            str(anchor),
+            "--cycle-root",
+            str(config.cycle_root),
+            "--output",
+            str(output),
+        ],
+        timeout=config.paper_timeout,
+    )
+    _require_file(output, "paper validation report")
+    payload = _load_json(output)
+    status = str(payload.get("status", ""))
+    if status not in {"NO_EVIDENCE", "COLLECTING", "FAILED", "ELIGIBLE_FOR_REVIEW"}:
+        raise ValueError("paper validation report status is invalid")
+    if payload.get("live_trading_authorized") is not False:
+        raise ValueError("paper validation report must not authorize live trading")
+    return status, output
 
 
 def _manifest_state(raw: Path, processed: Path) -> dict[str, str]:

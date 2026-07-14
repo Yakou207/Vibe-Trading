@@ -63,6 +63,25 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-07-14 CSI 300 paper-evidence V2
+
+- A non-counted immutable validation anchor now snapshots and hashes the formal paper account,
+  pipeline state, formal run manifest, benchmark comparison, and CSI 300 benchmark before the
+  evidence clock starts.
+- Counted post-close cycles use schema-version-2 manifests. They bind the exact parent record,
+  material inputs, approved baseline-only policy, account transition, targets, paper report, and
+  dashboard. The first fresh cycle chains to the anchor; later cycles chain to the prior cycle.
+- Paper execution now defaults to the same 0.05% slippage as the formal backtest. V2 additionally
+  fixes 0.03% commission, CNY 5 minimum commission, date-specific sell stamp duty, individual FIFO
+  dividend tax, `do_not_subscribe` rights handling, 8% maximum stock weight, and the 8%/9%/10%
+  drawdown policy. DQN exposure and live trading remain disabled.
+- The deterministic auditor verifies hashes, account continuity, CSI 300 trading-session coverage,
+  data health, point-in-time input references, 300-member scope, D+1 open execution, costs,
+  corporate actions, NAV, drawdown, turnover, CSI 300 excess return, and anchored walk-forward
+  excess. Its strongest result is `ELIGIBLE_FOR_REVIEW`, never live-trading authorization.
+- The 2026-07-13 bootstrap and every V1 or rejected qfq record remain non-counted. The eight-week
+  evidence clock is still zero until the first fresh post-anchor V2 cycle passes its audit.
+
 ### 2026-07-13 stable signal-price correction
 
 - The daily incremental signal-price chain now requires `hfq`. Incremental `qfq` is rejected by
