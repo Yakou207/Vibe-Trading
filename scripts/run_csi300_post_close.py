@@ -115,6 +115,7 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
     state = _load_state(config.state)
     validation_anchor = _verified_reference(state, "validation_anchor")
     previous_as_of = date.fromisoformat(str(state["last_successful_as_of"]))
+    _require_account_state_alignment(config.account, previous_as_of)
     if config.as_of < previous_as_of:
         raise ValueError("as_of must not precede pipeline state")
     if config.as_of == previous_as_of:
@@ -585,6 +586,13 @@ def _require_file(path: Path, label: str) -> None:
 def _require_processed_account(path: Path, as_of: date) -> None:
     if _load_json(path).get("last_processed_date") != as_of.isoformat():
         raise ValueError("paper account did not commit the requested date")
+
+
+def _require_account_state_alignment(path: Path, state_date: date) -> None:
+    if not path.is_file():
+        raise ValueError("paper account is missing")
+    if _load_json(path).get("last_processed_date") != state_date.isoformat():
+        raise ValueError("paper account and pipeline state dates differ")
 
 
 def _run_validation_audit(

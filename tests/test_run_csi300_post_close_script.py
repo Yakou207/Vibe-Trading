@@ -98,6 +98,22 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
 
             self.assertEqual(runner.calls, [])
 
+    def test_pipeline_rejects_account_state_date_divergence_before_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            _seed_state(config, date(2026, 1, 2))
+            _write_json(
+                config.account,
+                {"cash": 100000.0, "last_processed_date": "2026-01-03"},
+            )
+            runner = RecordingRunner(config)
+
+            with self.assertRaisesRegex(ValueError, "account and pipeline state dates differ"):
+                run_pipeline(config, runner=runner)
+
+            self.assertEqual(runner.calls, [])
+
     def test_later_v2_cycle_chains_to_prior_cycle_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -138,6 +154,7 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             config = _config(root)
             _seed_state(config, date(2026, 1, 2))
             state_before = config.state.read_bytes()
+            account_before = config.account.read_bytes()
             runner = RecordingRunner(config, timeout_on="collect_point_in_time_factors.py")
 
             with self.assertRaises(subprocess.TimeoutExpired):
@@ -150,7 +167,7 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
                 )
             )
             self.assertEqual(config.state.read_bytes(), state_before)
-            self.assertFalse(config.account.exists())
+            self.assertEqual(config.account.read_bytes(), account_before)
 
     def test_audit_failure_preserves_committed_account_and_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -315,6 +332,17 @@ def _seed_state(
             "sha256": hashlib.sha256(anchor.read_bytes()).hexdigest(),
         }
     _write_json(config.state, payload)
+    _write_json(
+        config.account,
+        {
+            "cash": 100000.0,
+            "positions": {},
+            "nav_history": [],
+            "pending_targets": {},
+            "pending_signal_date": None,
+            "last_processed_date": as_of.isoformat(),
+        },
+    )
     return payload
 
 
