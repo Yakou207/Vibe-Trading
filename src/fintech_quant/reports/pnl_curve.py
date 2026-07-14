@@ -145,22 +145,51 @@ def _load_json_array(path: Path, key: str) -> list[object]:
         if path.stat().st_size == 0:
             raise ValueError(f"{path} is empty")
         with mmap.mmap(handle.fileno(), 0, access=mmap.ACCESS_READ) as data:
-            offset = 0
-            while True:
-                key_start = data.find(marker, offset)
-                if key_start < 0:
-                    raise ValueError(f"{path} must contain {key}")
-                cursor = key_start + len(marker)
-                cursor = _skip_whitespace(data, cursor)
-                if cursor < len(data) and data[cursor] == ord(":"):
-                    cursor = _skip_whitespace(data, cursor + 1)
-                    if cursor < len(data) and data[cursor] == ord("["):
-                        end = _array_end(data, cursor)
-                        payload = json.loads(data[cursor : end + 1].decode("utf-8"))
-                        if not isinstance(payload, list):
-                            raise ValueError(f"{path} {key} must be an array")
-                        return payload
-                offset = key_start + len(marker)
+            cursor = _top_level_array_start(data, marker, path=path, key=key)
+            end = _array_end(data, cursor)
+            payload = json.loads(data[cursor : end + 1].decode("utf-8"))
+            if not isinstance(payload, list):
+                raise ValueError(f"{path} {key} must be an array")
+            return payload
+
+
+def _top_level_array_start(
+    data: mmap.mmap,
+    marker: bytes,
+    *,
+    path: Path,
+    key: str,
+) -> int:
+    depth = 0
+    in_string = False
+    escaped = False
+    cursor = 0
+    while cursor < len(data):
+        value = data[cursor]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif value == ord("\\"):
+                escaped = True
+            elif value == ord('"'):
+                in_string = False
+            cursor += 1
+            continue
+        if value == ord('"'):
+            if depth == 1 and data[cursor : cursor + len(marker)] == marker:
+                after_key = _skip_whitespace(data, cursor + len(marker))
+                if after_key < len(data) and data[after_key] == ord(":"):
+                    array_start = _skip_whitespace(data, after_key + 1)
+                    if array_start >= len(data) or data[array_start] != ord("["):
+                        raise ValueError(f"{path} {key} must be an array")
+                    return array_start
+            in_string = True
+        elif value in (ord("{"), ord("[")):
+            depth += 1
+        elif value in (ord("}"), ord("]")):
+            depth -= 1
+        cursor += 1
+    raise ValueError(f"{path} must contain top-level {key}")
 
 
 def _skip_whitespace(data: mmap.mmap, cursor: int) -> int:

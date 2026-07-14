@@ -66,6 +66,41 @@ def test_build_pnl_curve_rejects_strategy_date_mismatch(tmp_path: Path) -> None:
         )
 
 
+def test_build_pnl_curve_ignores_nested_equity_curve_key(tmp_path: Path) -> None:
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps(
+            {
+                "metadata": {
+                    "equity_curve": [{"trade_date": "2020-01-01", "equity": 1.0}]
+                },
+                "equity_curve": [
+                    {"trade_date": "2026-01-02", "equity": 100.0},
+                    {"trade_date": "2026-01-05", "equity": 110.0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    risk = _write_report(
+        tmp_path / "risk.json",
+        [("2026-01-02", 100.0), ("2026-01-05", 110.0)],
+    )
+    benchmark = _write_benchmark(
+        tmp_path / "benchmark.csv",
+        [("2026-01-02", 1000.0), ("2026-01-05", 1100.0)],
+    )
+
+    payload = build_pnl_curve(
+        baseline_report=baseline,
+        risk_controlled_report=risk,
+        benchmark=benchmark,
+    )
+
+    assert payload["dates"] == ["2026-01-02", "2026-01-05"]
+    assert payload["series"]["baseline"]["return"][-1] == 0.1
+
+
 def test_build_pnl_curve_rejects_duplicate_strategy_date(tmp_path: Path) -> None:
     duplicate = [("2026-01-02", 100.0), ("2026-01-02", 101.0)]
     baseline = _write_report(tmp_path / "baseline.json", duplicate)
