@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from fintech_quant.backtesting.costs import AShareCostModel
+from fintech_quant.data.historical_universe import active_symbols, load_membership_intervals
 from fintech_quant.data.manifest_chain import load_verified_manifest
 from fintech_quant.execution.paper_evidence import (
     approved_paper_policy,
@@ -28,6 +29,19 @@ _REQUIRED_INPUTS = (
     "data_health",
 )
 _REQUIRED_ARTIFACTS = ("targets", "paper_report", "dashboard")
+_REQUIRED_DECISION_INPUTS = (
+    "factor_manifest",
+    "signal_price_manifest",
+    "execution_price_manifest",
+    "corporate_action_manifest",
+    "features",
+    "execution_prices",
+    "fundamentals",
+    "capital_flow",
+    "corporate_actions",
+    "benchmark",
+    "membership",
+)
 _ALLOWED_BLOCK_REASONS = {"suspended", "limit_up", "limit_down", "t_plus_one"}
 
 
@@ -303,21 +317,32 @@ def _audit_cycle(
     if decision.get("as_of") != cycle_date.isoformat():
         failures.append(f"{cycle_date}: decision report date mismatch")
         reproducible = False
-    decision_inputs = decision.get("inputs")
-    if not isinstance(decision_inputs, Mapping) or not decision_inputs:
-        failures.append(f"{cycle_date}: decision input evidence is missing")
-        reproducible = False
-    else:
-        for reference in decision_inputs.values():
-            if not isinstance(reference, Mapping):
-                raise ValueError("decision input reference must be an object")
-            verify_file_reference(reference)
-        for name, reference in decision_inputs.items():
-            if str(name).endswith("_manifest"):
-                load_verified_manifest(
-                    verify_file_reference(_mapping(reference, "decision manifest reference")),
-                    expected_layer="processed",
-                )
+    decision_inputs = _mapping(decision.get("inputs"), "decision inputs")
+    missing_decision_inputs = sorted(
+        set(_REQUIRED_DECISION_INPUTS) - set(decision_inputs)
+    )
+    if missing_decision_inputs:
+        raise ValueError(
+            f"decision inputs are missing required references: {missing_decision_inputs}"
+        )
+    decision_paths: dict[str, Path] = {}
+    for name, reference in decision_inputs.items():
+        decision_paths[str(name)] = verify_file_reference(
+            _mapping(reference, "decision input reference")
+        )
+    for name in (
+        "factor_manifest",
+        "signal_price_manifest",
+        "execution_price_manifest",
+        "corporate_action_manifest",
+    ):
+        load_verified_manifest(decision_paths[name], expected_layer="processed")
+    for name in ("execution_prices", "corporate_actions", "benchmark"):
+        if file_reference(decision_paths[name])["sha256"] != file_reference(inputs[name])[
+            "sha256"
+        ]:
+            failures.append(f"{cycle_date}: decision and cycle {name} inputs differ")
+            reproducible = False
 
     metrics = _mapping(health.get("metrics"), "data health metrics")
     health_passed = (
@@ -331,8 +356,15 @@ def _audit_cycle(
     if not health_passed:
         failures.append(f"{cycle_date}: data health or leakage checks failed")
 
-    if _universe_size(inputs["current_universe"]) != 300:
+    current_symbols = _universe_symbols(inputs["current_universe"])
+    if len(current_symbols) != 300:
         failures.append(f"{cycle_date}: current CSI 300 universe does not contain 300 symbols")
+        reproducible = False
+    membership_symbols = set(
+        active_symbols(load_membership_intervals(decision_paths["membership"]), cycle_date)
+    )
+    if current_symbols != membership_symbols:
+        failures.append(f"{cycle_date}: current universe differs from historical membership")
         reproducible = False
     benchmark_dates = _benchmark_dates(
         inputs["benchmark"], after=None, through=cycle_date
@@ -539,15 +571,13 @@ def _benchmark_values(path: Path) -> dict[date, float]:
     return result
 
 
-def _universe_size(path: Path) -> int:
+def _universe_symbols(path: Path) -> set[str]:
     with path.open(encoding="utf-8", newline="") as handle:
-        return len(
-            {
-                str(row.get("symbol", "")).strip()
-                for row in csv.DictReader(handle)
-                if str(row.get("symbol", "")).strip()
-            }
-        )
+        return {
+            str(row.get("symbol", "")).strip()
+            for row in csv.DictReader(handle)
+            if str(row.get("symbol", "")).strip()
+        }
 
 
 def _target_weights(path: Path) -> dict[str, float]:
