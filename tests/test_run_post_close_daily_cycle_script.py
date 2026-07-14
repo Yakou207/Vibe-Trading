@@ -59,6 +59,33 @@ class RunPostCloseDailyCycleScriptTest(unittest.TestCase):
             self.assertEqual(paths["account"].read_bytes(), account_before)
             self.assertFalse(paths["cycle_manifest"].exists())
 
+    def test_v2_cycle_requires_material_evidence_before_mutating_account(self) -> None:
+        for missing in ("corporate_actions", "data_health"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as tmp:
+                paths = _write_v2_inputs(Path(tmp))
+                account_before = paths["account"].read_bytes()
+
+                completed = _run_v2_cycle(paths, omitted_input=missing)
+
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(missing.replace("_", "-"), completed.stderr)
+                self.assertEqual(paths["account"].read_bytes(), account_before)
+                self.assertFalse(paths["cycle_manifest"].exists())
+
+    def test_v2_replay_rejects_missing_material_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _write_v2_inputs(Path(tmp))
+            first = _run_v2_cycle(paths)
+            self.assertEqual(first.returncode, 0, msg=first.stderr)
+            account_after = paths["account"].read_bytes()
+            paths["data_health"].unlink()
+
+            replay = _run_v2_cycle(paths)
+
+            self.assertNotEqual(replay.returncode, 0)
+            self.assertIn("artifact is missing", replay.stderr)
+            self.assertEqual(paths["account"].read_bytes(), account_after)
+
     def test_post_close_cycle_leaves_canonical_account_unchanged_when_dashboard_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -333,6 +360,7 @@ def _write_v2_inputs(root: Path) -> dict[str, Path]:
             "comparison": "comparison.json",
             "current_universe": "current_universe.csv",
             "benchmark": "benchmark.csv",
+            "corporate_actions": "corporate_actions.csv",
             "data_health": "data_health.json",
             "evidence_parent": "anchor_manifest.json",
             "account": "account.json",
@@ -376,6 +404,11 @@ def _write_v2_inputs(root: Path) -> dict[str, Path]:
     paths["benchmark"].write_text(
         "trade_date,close\n2026-01-02,4000\n", encoding="utf-8"
     )
+    paths["corporate_actions"].write_text(
+        "symbol,ex_date,action_type,cash_dividend_per_share,share_multiplier,source\n"
+        "000001.SZ,2026-01-01,distribution,0.1,1.0,fixture\n",
+        encoding="utf-8",
+    )
     paths["data_health"].write_text(
         json.dumps({"passed": True}), encoding="utf-8"
     )
@@ -402,7 +435,10 @@ def _write_v2_inputs(root: Path) -> dict[str, Path]:
 
 
 def _run_v2_cycle(
-    paths: dict[str, Path], *, dqn_report: Path | None = None
+    paths: dict[str, Path],
+    *,
+    dqn_report: Path | None = None,
+    omitted_input: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -419,8 +455,6 @@ def _run_v2_cycle(
         str(paths["current_universe"]),
         "--benchmark",
         str(paths["benchmark"]),
-        "--data-health",
-        str(paths["data_health"]),
         "--evidence-parent",
         str(paths["evidence_parent"]),
         "--account",
@@ -434,6 +468,10 @@ def _run_v2_cycle(
         "--cycle-manifest",
         str(paths["cycle_manifest"]),
     ]
+    if omitted_input != "corporate_actions":
+        command.extend(["--corporate-actions", str(paths["corporate_actions"])])
+    if omitted_input != "data_health":
+        command.extend(["--data-health", str(paths["data_health"])])
     if dqn_report is not None:
         command.extend(["--dqn-report", str(dqn_report)])
     return subprocess.run(

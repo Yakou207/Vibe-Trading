@@ -296,6 +296,8 @@ def _validate_completed_cycle(manifest: Path, *, as_of: str, account: Path) -> N
             "comparison",
             "current_universe",
             "benchmark",
+            "corporate_actions",
+            "data_health",
         ):
             reference = inputs.get(name)
             if not isinstance(reference, Mapping):
@@ -322,6 +324,15 @@ def _artifact(canonical: Path, staged: Path) -> dict[str, object]:
 
 
 def _validate_v2_policy(args: argparse.Namespace) -> None:
+    required_inputs = {
+        "corporate-actions": args.corporate_actions,
+        "data-health": args.data_health,
+    }
+    missing = [name for name, value in required_inputs.items() if not value]
+    if missing:
+        raise ValueError(
+            "V2 cycles require " + ", ".join(f"--{name}" for name in missing)
+        )
     if args.dqn_report:
         raise ValueError("V2 paper evidence forbids DQN exposure")
     if args.max_targets is not None:
