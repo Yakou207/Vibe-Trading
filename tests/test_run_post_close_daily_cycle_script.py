@@ -11,6 +11,61 @@ from pathlib import Path
 
 
 class RunPostCloseDailyCycleScriptTest(unittest.TestCase):
+    def test_v2_cycle_hash_binds_pnl_curve(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _write_v2_inputs(Path(tmp))
+            paths["pnl_curve"].write_text(
+                json.dumps(_pnl_curve_payload()),
+                encoding="utf-8",
+            )
+
+            completed = _run_v2_cycle(paths, pnl_curve=paths["pnl_curve"])
+
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            manifest = json.loads(paths["cycle_manifest"].read_text(encoding="utf-8"))
+            self.assertEqual(
+                manifest["inputs"]["pnl_curve"]["sha256"],
+                hashlib.sha256(paths["pnl_curve"].read_bytes()).hexdigest(),
+            )
+            self.assertIn(
+                'id="pnl-chart"',
+                paths["dashboard"].read_text(encoding="utf-8"),
+            )
+
+    def test_v2_replay_rejects_changed_pnl_curve(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _write_v2_inputs(Path(tmp))
+            paths["pnl_curve"].write_text(
+                json.dumps(_pnl_curve_payload()),
+                encoding="utf-8",
+            )
+            first = _run_v2_cycle(paths, pnl_curve=paths["pnl_curve"])
+            self.assertEqual(first.returncode, 0, msg=first.stderr)
+            account_after = paths["account"].read_bytes()
+            paths["pnl_curve"].write_text("{}\n", encoding="utf-8")
+
+            replay = _run_v2_cycle(paths, pnl_curve=paths["pnl_curve"])
+
+            self.assertNotEqual(replay.returncode, 0)
+            self.assertIn("artifact", replay.stderr)
+            self.assertIn("mismatch", replay.stderr)
+            self.assertEqual(paths["account"].read_bytes(), account_after)
+
+    def test_v2_replay_requires_bound_pnl_curve_argument(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = _write_v2_inputs(Path(tmp))
+            paths["pnl_curve"].write_text(
+                json.dumps(_pnl_curve_payload()),
+                encoding="utf-8",
+            )
+            first = _run_v2_cycle(paths, pnl_curve=paths["pnl_curve"])
+            self.assertEqual(first.returncode, 0, msg=first.stderr)
+
+            replay = _run_v2_cycle(paths)
+
+            self.assertNotEqual(replay.returncode, 0)
+            self.assertIn("pnl_curve", replay.stderr)
+
     def test_v2_cycle_records_policy_inputs_parent_and_account_consistency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             paths = _write_v2_inputs(Path(tmp))
@@ -358,6 +413,7 @@ def _write_v2_inputs(root: Path) -> dict[str, Path]:
             "research_report": "run_report.json",
             "features": "features.csv",
             "comparison": "comparison.json",
+            "pnl_curve": "pnl_curve.json",
             "current_universe": "current_universe.csv",
             "benchmark": "benchmark.csv",
             "corporate_actions": "corporate_actions.csv",
@@ -439,6 +495,7 @@ def _run_v2_cycle(
     *,
     dqn_report: Path | None = None,
     omitted_input: str | None = None,
+    pnl_curve: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -474,6 +531,8 @@ def _run_v2_cycle(
         command.extend(["--data-health", str(paths["data_health"])])
     if dqn_report is not None:
         command.extend(["--dqn-report", str(dqn_report)])
+    if pnl_curve is not None:
+        command.extend(["--pnl-curve", str(pnl_curve)])
     return subprocess.run(
         command,
         cwd=Path(__file__).resolve().parents[1],
@@ -481,6 +540,38 @@ def _run_v2_cycle(
         text=True,
         check=False,
     )
+
+
+def _pnl_curve_payload() -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "initial_equity": 100000.0,
+        "dates": ["2026-01-01", "2026-01-02"],
+        "series": {
+            "risk_controlled": {
+                "label": "Risk-Controlled",
+                "equity": [100000.0, 101000.0],
+                "pnl": [0.0, 1000.0],
+                "return": [0.0, 0.01],
+            },
+            "baseline": {
+                "label": "Baseline",
+                "equity": [100000.0, 100500.0],
+                "pnl": [0.0, 500.0],
+                "return": [0.0, 0.005],
+            },
+            "csi300": {
+                "label": "CSI 300",
+                "equity": [100000.0, 99000.0],
+                "pnl": [0.0, -1000.0],
+                "return": [0.0, -0.01],
+            },
+        },
+        "inputs": {
+            name: {"path": f"/{name}", "bytes": 1, "sha256": "a" * 64}
+            for name in ("baseline_report", "risk_controlled_report", "benchmark")
+        },
+    }
 
 
 if __name__ == "__main__":

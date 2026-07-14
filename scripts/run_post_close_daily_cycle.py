@@ -36,6 +36,7 @@ def main() -> int:
     parser.add_argument("--research-report", required=True)
     parser.add_argument("--features", required=True)
     parser.add_argument("--comparison", required=True)
+    parser.add_argument("--pnl-curve", default=None)
     parser.add_argument("--current-universe", default=None)
     parser.add_argument("--benchmark", default=None)
     parser.add_argument("--evidence-parent", default=None)
@@ -95,6 +96,7 @@ def main() -> int:
                 cycle_manifest,
                 as_of=args.as_of,
                 account=account,
+                pnl_curve=Path(args.pnl_curve) if args.pnl_curve else None,
             )
             print("already_completed=true")
             print(f"cycle_manifest_path={cycle_manifest}")
@@ -181,6 +183,8 @@ def main() -> int:
             dashboard_command.extend(["--data-health", args.data_health])
         if args.information_health:
             dashboard_command.extend(["--information-health", args.information_health])
+        if args.pnl_curve:
+            dashboard_command.extend(["--pnl-curve", args.pnl_curve])
         _run(dashboard_command)
 
         _load_json(staged_account)
@@ -270,7 +274,13 @@ def _last_processed_date(account: Path) -> date | None:
     return date.fromisoformat(str(value)) if value else None
 
 
-def _validate_completed_cycle(manifest: Path, *, as_of: str, account: Path) -> None:
+def _validate_completed_cycle(
+    manifest: Path,
+    *,
+    as_of: str,
+    account: Path,
+    pnl_curve: Path | None,
+) -> None:
     if not manifest.exists():
         raise ValueError("processed paper date is missing its cycle manifest")
     payload = _load_json(manifest)
@@ -303,6 +313,18 @@ def _validate_completed_cycle(manifest: Path, *, as_of: str, account: Path) -> N
             if not isinstance(reference, Mapping):
                 raise ValueError(f"V2 cycle manifest missing {name} input")
             verify_file_reference(reference)
+        recorded_pnl_curve = inputs.get("pnl_curve")
+        if recorded_pnl_curve is None:
+            if pnl_curve is not None:
+                raise ValueError("V2 cycle manifest did not bind pnl_curve input")
+        else:
+            if not isinstance(recorded_pnl_curve, Mapping):
+                raise ValueError("V2 cycle manifest pnl_curve input is invalid")
+            verify_file_reference(recorded_pnl_curve)
+            if pnl_curve is None:
+                raise ValueError("V2 cycle replay requires the bound pnl_curve input")
+            if dict(recorded_pnl_curve) != file_reference(pnl_curve):
+                raise ValueError("V2 cycle manifest pnl_curve input mismatch")
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, dict):
         raise ValueError("cycle manifest artifacts must be an object")
@@ -386,6 +408,7 @@ def _manifest_payload(
         "research_report": args.research_report,
         "execution_prices": args.features,
         "comparison": args.comparison,
+        "pnl_curve": args.pnl_curve,
         "current_universe": args.current_universe,
         "benchmark": args.benchmark,
         "corporate_actions": args.corporate_actions,
