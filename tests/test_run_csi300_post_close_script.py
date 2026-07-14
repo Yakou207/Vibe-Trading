@@ -148,6 +148,54 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
                 str(prior_cycle.resolve()),
             )
 
+    def test_failed_raw_stage_retries_only_failed_scopes_from_immutable_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            state = _seed_state(config, date(2026, 1, 2))
+            failed = (
+                config.raw_price_root
+                / "csi300-signal-price-raw-20260105"
+                / "manifest.json"
+            )
+            _write_manifest(
+                failed,
+                layer="raw",
+                parent=state["manifests"]["signal_price"]["raw_manifest"],
+                scopes=[
+                    {
+                        "symbol": "000001.SZ",
+                        "status": "failed",
+                        "artifact": None,
+                        "error": "provider unavailable",
+                    }
+                ],
+                request={
+                    "start": "2026-01-03",
+                    "end": "2026-01-05",
+                    "adjust": "hfq",
+                },
+            )
+            runner = RecordingRunner(config)
+
+            run_pipeline(config, runner=runner)
+
+            signal_command = next(
+                command
+                for command, _ in runner.calls
+                if Path(command[0]).name == "collect_historical_prices.py"
+                and _argument(command, "--adjust") == "hfq"
+            )
+            self.assertEqual(
+                _argument(signal_command, "--run-id"),
+                "csi300-signal-price-raw-20260105-retry-1",
+            )
+            self.assertEqual(
+                _argument(signal_command, "--resume-from"),
+                str(failed.resolve()),
+            )
+            self.assertNotIn("--append-from", signal_command)
+
     def test_timeout_stops_before_paper_execution_and_preserves_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -234,7 +282,10 @@ class RecordingRunner:
             _write_manifest(
                 root / run_id / "manifest.json",
                 layer="raw",
-                parent=_optional_argument(command, "--append-from"),
+                parent=(
+                    _optional_argument(command, "--resume-from")
+                    or _optional_argument(command, "--append-from")
+                ),
             )
         elif script.startswith("build_") and script != "build_daily_decision_report.py":
             root = Path(_argument(command, "--processed-root"))
@@ -383,7 +434,14 @@ def _write_current_universe(path: Path) -> None:
             writer.writerow({"symbol": f"{value:06d}.SZ", "index_code": "000300"})
 
 
-def _write_manifest(path: Path, *, layer: str, parent: str | None = None) -> None:
+def _write_manifest(
+    path: Path,
+    *,
+    layer: str,
+    parent: str | None = None,
+    scopes: list[dict[str, object]] | None = None,
+    request: dict[str, object] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     artifact = path.parent / "artifact.txt"
     artifact.write_text("fixture\n", encoding="utf-8")
@@ -391,8 +449,8 @@ def _write_manifest(path: Path, *, layer: str, parent: str | None = None) -> Non
         "run_id": path.parent.name,
         "layer": layer,
         "parent_manifest": parent,
-        "request": {},
-        "scopes": [],
+        "request": request or {},
+        "scopes": scopes or [],
         "artifacts": [
             {
                 "path": artifact.name,

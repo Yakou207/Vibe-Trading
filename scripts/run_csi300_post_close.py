@@ -53,6 +53,22 @@ class PipelineConfig:
     paper_timeout: int = 600
 
 
+@dataclass(frozen=True)
+class RawStageAttempt:
+    run_id: str
+    manifest: Path
+    needs_run: bool
+    parent_argument: str | None = None
+    parent_manifest: Path | None = None
+
+
+@dataclass(frozen=True)
+class ProcessedStageAttempt:
+    run_id: str
+    manifest: Path
+    needs_run: bool
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run one deterministic, baseline-only CSI 300 post-close paper cycle."
@@ -334,47 +350,62 @@ def _price_stage(
     source: str,
     workers: int,
 ) -> tuple[Path, Path]:
-    raw_run_id = f"csi300-{label}-raw-{date_token}"
-    processed_run_id = f"csi300-{label}-{date_token}"
-    raw_manifest = config.raw_price_root / raw_run_id / "manifest.json"
-    processed_manifest = config.processed_price_root / processed_run_id / "manifest.json"
-    runner(
-        [
-            "scripts/collect_historical_prices.py",
-            "--source",
-            source,
-            "--membership",
-            str(config.membership),
-            "--start",
-            start.isoformat(),
-            "--end",
-            config.as_of.isoformat(),
-            "--run-id",
-            raw_run_id,
-            "--raw-root",
-            str(config.raw_price_root),
-            "--append-from",
-            str(parent),
-            "--adjust",
-            adjust,
-            "--workers",
-            str(workers),
-        ],
-        timeout=config.stage_timeout,
+    raw_attempt = _raw_stage_attempt(
+        config.raw_price_root,
+        base_run_id=f"csi300-{label}-raw-{date_token}",
+        append_parent=parent,
+        expected_request={
+            "start": start.isoformat(),
+            "end": config.as_of.isoformat(),
+            "adjust": adjust,
+        },
     )
+    if raw_attempt.needs_run:
+        runner(
+            [
+                "scripts/collect_historical_prices.py",
+                "--source",
+                source,
+                "--membership",
+                str(config.membership),
+                "--start",
+                start.isoformat(),
+                "--end",
+                config.as_of.isoformat(),
+                "--run-id",
+                raw_attempt.run_id,
+                "--raw-root",
+                str(config.raw_price_root),
+                str(raw_attempt.parent_argument),
+                str(raw_attempt.parent_manifest),
+                "--adjust",
+                adjust,
+                "--workers",
+                str(workers),
+            ],
+            timeout=config.stage_timeout,
+        )
+    raw_manifest = raw_attempt.manifest
     load_verified_manifest_chain(raw_manifest, expected_layer="raw")
-    runner(
-        [
-            "scripts/build_historical_price_features.py",
-            "--raw-manifest",
-            str(raw_manifest),
-            "--run-id",
-            processed_run_id,
-            "--processed-root",
-            str(config.processed_price_root),
-        ],
-        timeout=config.stage_timeout,
+    processed_attempt = _processed_stage_attempt(
+        config.processed_price_root,
+        base_run_id=f"csi300-{label}-{date_token}",
+        raw_manifest=raw_manifest,
     )
+    if processed_attempt.needs_run:
+        runner(
+            [
+                "scripts/build_historical_price_features.py",
+                "--raw-manifest",
+                str(raw_manifest),
+                "--run-id",
+                processed_attempt.run_id,
+                "--processed-root",
+                str(config.processed_price_root),
+            ],
+            timeout=config.stage_timeout,
+        )
+    processed_manifest = processed_attempt.manifest
     load_verified_manifest(processed_manifest, expected_layer="processed")
     return raw_manifest.resolve(), processed_manifest.resolve()
 
@@ -389,54 +420,65 @@ def _factor_stage(
     benchmark: Path,
     signal_features: Path,
 ) -> tuple[Path, Path]:
-    raw_run_id = f"csi300-factor-raw-{date_token}"
-    processed_run_id = f"csi300-factor-{date_token}"
-    raw_manifest = config.raw_factor_root / raw_run_id / "manifest.json"
-    processed_manifest = config.processed_factor_root / processed_run_id / "manifest.json"
-    runner(
-        [
-            "scripts/collect_point_in_time_factors.py",
-            "--source",
-            "akshare",
-            "--membership",
-            str(config.membership),
-            "--start",
-            start.isoformat(),
-            "--end",
-            config.as_of.isoformat(),
-            "--run-id",
-            raw_run_id,
-            "--raw-root",
-            str(config.raw_factor_root),
-            "--append-from",
-            str(parent),
-            "--groups",
-            "fundamentals",
-            "financial_statements",
-            "--workers",
-            "4",
-        ],
-        timeout=config.stage_timeout,
+    raw_attempt = _raw_stage_attempt(
+        config.raw_factor_root,
+        base_run_id=f"csi300-factor-raw-{date_token}",
+        append_parent=parent,
+        expected_request={"start": start.isoformat(), "end": config.as_of.isoformat()},
     )
+    if raw_attempt.needs_run:
+        runner(
+            [
+                "scripts/collect_point_in_time_factors.py",
+                "--source",
+                "akshare",
+                "--membership",
+                str(config.membership),
+                "--start",
+                start.isoformat(),
+                "--end",
+                config.as_of.isoformat(),
+                "--run-id",
+                raw_attempt.run_id,
+                "--raw-root",
+                str(config.raw_factor_root),
+                str(raw_attempt.parent_argument),
+                str(raw_attempt.parent_manifest),
+                "--groups",
+                "fundamentals",
+                "financial_statements",
+                "--workers",
+                "4",
+            ],
+            timeout=config.stage_timeout,
+        )
+    raw_manifest = raw_attempt.manifest
     load_verified_manifest_chain(raw_manifest, expected_layer="raw")
-    runner(
-        [
-            "scripts/build_point_in_time_factors.py",
-            "--raw-manifest",
-            str(raw_manifest),
-            "--trading-calendar",
-            str(benchmark),
-            "--run-id",
-            processed_run_id,
-            "--processed-root",
-            str(config.processed_factor_root),
-            "--capital-flow-mode",
-            "price-volume-proxy",
-            "--price-features",
-            str(signal_features),
-        ],
-        timeout=config.stage_timeout,
+    processed_attempt = _processed_stage_attempt(
+        config.processed_factor_root,
+        base_run_id=f"csi300-factor-{date_token}",
+        raw_manifest=raw_manifest,
     )
+    if processed_attempt.needs_run:
+        runner(
+            [
+                "scripts/build_point_in_time_factors.py",
+                "--raw-manifest",
+                str(raw_manifest),
+                "--trading-calendar",
+                str(benchmark),
+                "--run-id",
+                processed_attempt.run_id,
+                "--processed-root",
+                str(config.processed_factor_root),
+                "--capital-flow-mode",
+                "price-volume-proxy",
+                "--price-features",
+                str(signal_features),
+            ],
+            timeout=config.stage_timeout,
+        )
+    processed_manifest = processed_attempt.manifest
     load_verified_manifest(processed_manifest, expected_layer="processed")
     return raw_manifest.resolve(), processed_manifest.resolve()
 
@@ -449,47 +491,129 @@ def _action_stage(
     start: date,
     parent: Path,
 ) -> tuple[Path, Path]:
-    raw_run_id = f"csi300-action-raw-{date_token}"
-    processed_run_id = f"csi300-action-{date_token}"
-    raw_manifest = config.raw_action_root / raw_run_id / "manifest.json"
-    processed_manifest = config.processed_action_root / processed_run_id / "manifest.json"
-    runner(
-        [
-            "scripts/collect_corporate_actions.py",
-            "--source",
-            "akshare-sina",
-            "--membership",
-            str(config.membership),
-            "--start",
-            start.isoformat(),
-            "--end",
-            config.as_of.isoformat(),
-            "--run-id",
-            raw_run_id,
-            "--raw-root",
-            str(config.raw_action_root),
-            "--append-from",
-            str(parent),
-            "--workers",
-            "4",
-        ],
-        timeout=config.stage_timeout,
+    raw_attempt = _raw_stage_attempt(
+        config.raw_action_root,
+        base_run_id=f"csi300-action-raw-{date_token}",
+        append_parent=parent,
+        expected_request={"start": start.isoformat(), "end": config.as_of.isoformat()},
     )
+    if raw_attempt.needs_run:
+        runner(
+            [
+                "scripts/collect_corporate_actions.py",
+                "--source",
+                "akshare-sina",
+                "--membership",
+                str(config.membership),
+                "--start",
+                start.isoformat(),
+                "--end",
+                config.as_of.isoformat(),
+                "--run-id",
+                raw_attempt.run_id,
+                "--raw-root",
+                str(config.raw_action_root),
+                str(raw_attempt.parent_argument),
+                str(raw_attempt.parent_manifest),
+                "--workers",
+                "4",
+            ],
+            timeout=config.stage_timeout,
+        )
+    raw_manifest = raw_attempt.manifest
     load_verified_manifest_chain(raw_manifest, expected_layer="raw")
-    runner(
-        [
-            "scripts/build_corporate_actions.py",
-            "--raw-manifest",
-            str(raw_manifest),
-            "--run-id",
-            processed_run_id,
-            "--processed-root",
-            str(config.processed_action_root),
-        ],
-        timeout=config.stage_timeout,
+    processed_attempt = _processed_stage_attempt(
+        config.processed_action_root,
+        base_run_id=f"csi300-action-{date_token}",
+        raw_manifest=raw_manifest,
     )
+    if processed_attempt.needs_run:
+        runner(
+            [
+                "scripts/build_corporate_actions.py",
+                "--raw-manifest",
+                str(raw_manifest),
+                "--run-id",
+                processed_attempt.run_id,
+                "--processed-root",
+                str(config.processed_action_root),
+            ],
+            timeout=config.stage_timeout,
+        )
+    processed_manifest = processed_attempt.manifest
     load_verified_manifest(processed_manifest, expected_layer="processed")
     return raw_manifest.resolve(), processed_manifest.resolve()
+
+
+def _raw_stage_attempt(
+    root: Path,
+    *,
+    base_run_id: str,
+    append_parent: Path,
+    expected_request: Mapping[str, object],
+) -> RawStageAttempt:
+    latest_manifest: Path | None = None
+    attempt = 0
+    while True:
+        run_id = base_run_id if attempt == 0 else f"{base_run_id}-retry-{attempt}"
+        run_dir = root / run_id
+        manifest = run_dir / "manifest.json"
+        if not run_dir.exists():
+            parent_argument = "--resume-from" if latest_manifest else "--append-from"
+            return RawStageAttempt(
+                run_id=run_id,
+                manifest=manifest,
+                needs_run=True,
+                parent_argument=parent_argument,
+                parent_manifest=latest_manifest or append_parent,
+            )
+        if manifest.is_file():
+            verified = load_verified_manifest_chain(manifest, expected_layer="raw")[-1]
+            request = verified.payload.get("request")
+            if not isinstance(request, Mapping) or any(
+                request.get(name) != value for name, value in expected_request.items()
+            ):
+                raise ValueError(f"existing raw retry request mismatch: {manifest}")
+            latest_manifest = manifest.resolve()
+            scopes = verified.payload.get("scopes")
+            if isinstance(scopes, list) and scopes and all(
+                isinstance(scope, Mapping)
+                and scope.get("status") in {"success", "empty", "reused"}
+                for scope in scopes
+            ):
+                return RawStageAttempt(
+                    run_id=run_id,
+                    manifest=latest_manifest,
+                    needs_run=False,
+                )
+        attempt += 1
+
+
+def _processed_stage_attempt(
+    root: Path,
+    *,
+    base_run_id: str,
+    raw_manifest: Path,
+) -> ProcessedStageAttempt:
+    attempt = 0
+    raw_sha256 = sha256_file(raw_manifest)
+    while True:
+        run_id = base_run_id if attempt == 0 else f"{base_run_id}-retry-{attempt}"
+        run_dir = root / run_id
+        manifest = run_dir / "manifest.json"
+        if not run_dir.exists():
+            return ProcessedStageAttempt(run_id, manifest, True)
+        if manifest.is_file():
+            verified = load_verified_manifest(manifest, expected_layer="processed")
+            request = verified.payload.get("request")
+            parent = Path(str(verified.payload.get("parent_manifest", ""))).resolve()
+            if (
+                isinstance(request, Mapping)
+                and request.get("parent_manifest_sha256") == raw_sha256
+                and parent == raw_manifest.resolve()
+            ):
+                return ProcessedStageAttempt(run_id, manifest.resolve(), False)
+        attempt += 1
 
 
 def _verified_state_manifests(state: Mapping[str, object]) -> dict[str, dict[str, Path]]:
