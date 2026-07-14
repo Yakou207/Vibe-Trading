@@ -64,10 +64,71 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
                 )
             )
             self.assertTrue(all(timeout > 0 for _, timeout in runner.calls))
+            paper_command = next(
+                command
+                for command, _ in runner.calls
+                if Path(command[0]).name == "run_post_close_daily_cycle.py"
+            )
+            self.assertEqual(
+                _argument(paper_command, "--evidence-parent"),
+                state["validation_anchor"]["path"],
+            )
+            self.assertEqual(_argument(paper_command, "--slippage-rate"), "0.0005")
+            self.assertEqual(
+                _argument(paper_command, "--current-universe"),
+                str(config.cycle_root / "2026-01-05" / "current_universe.csv"),
+            )
             state_after = json.loads(config.state.read_text(encoding="utf-8"))
             self.assertEqual(state_after["last_successful_as_of"], "2026-01-05")
+            self.assertEqual(state_after["validation_anchor"], state["validation_anchor"])
             self.assertEqual(result["status"], "completed")
             self.assertNotEqual(state_after, state)
+
+    def test_pipeline_rejects_missing_validation_anchor_before_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            _seed_state(config, date(2026, 1, 2), with_validation_anchor=False)
+            runner = RecordingRunner(config)
+
+            with self.assertRaisesRegex(ValueError, "validation anchor"):
+                run_pipeline(config, runner=runner)
+
+            self.assertEqual(runner.calls, [])
+
+    def test_later_v2_cycle_chains_to_prior_cycle_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            state = _seed_state(config, date(2026, 1, 2))
+            prior_cycle = root / "cycles" / "2026-01-02" / "cycle_manifest.json"
+            _write_json(
+                prior_cycle,
+                {
+                    "schema_version": 2,
+                    "kind": "paper_trading_cycle",
+                    "as_of": "2026-01-02",
+                },
+            )
+            state["cycle_manifest"] = {
+                "path": str(prior_cycle.resolve()),
+                "bytes": prior_cycle.stat().st_size,
+                "sha256": hashlib.sha256(prior_cycle.read_bytes()).hexdigest(),
+            }
+            _write_json(config.state, state)
+            runner = RecordingRunner(config)
+
+            run_pipeline(config, runner=runner)
+
+            paper_command = next(
+                command
+                for command, _ in runner.calls
+                if Path(command[0]).name == "run_post_close_daily_cycle.py"
+            )
+            self.assertEqual(
+                _argument(paper_command, "--evidence-parent"),
+                str(prior_cycle.resolve()),
+            )
 
     def test_timeout_stops_before_paper_execution_and_preserves_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -162,7 +223,9 @@ def _config(root: Path) -> PipelineConfig:
     )
 
 
-def _seed_state(config: PipelineConfig, as_of: date) -> dict[str, object]:
+def _seed_state(
+    config: PipelineConfig, as_of: date, *, with_validation_anchor: bool = True
+) -> dict[str, object]:
     manifests: dict[str, dict[str, str]] = {}
     for name in ("signal_price", "execution_price", "factor", "corporate_action"):
         raw = config.state.parent / "seed" / name / "raw" / "manifest.json"
@@ -180,6 +243,21 @@ def _seed_state(config: PipelineConfig, as_of: date) -> dict[str, object]:
         "last_successful_as_of": as_of.isoformat(),
         "manifests": manifests,
     }
+    if with_validation_anchor:
+        anchor = config.state.parent / "validation" / "anchor_manifest.json"
+        _write_json(
+            anchor,
+            {
+                "schema_version": 1,
+                "kind": "paper_validation_anchor",
+                "as_of": as_of.isoformat(),
+            },
+        )
+        payload["validation_anchor"] = {
+            "path": str(anchor.resolve()),
+            "bytes": anchor.stat().st_size,
+            "sha256": hashlib.sha256(anchor.read_bytes()).hexdigest(),
+        }
     _write_json(config.state, payload)
     return payload
 

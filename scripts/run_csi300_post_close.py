@@ -113,6 +113,7 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
     active_runner = runner or _run
     _require_positive_timeouts(config)
     state = _load_state(config.state)
+    validation_anchor = _verified_reference(state, "validation_anchor")
     previous_as_of = date.fromisoformat(str(state["last_successful_as_of"]))
     if config.as_of < previous_as_of:
         raise ValueError("as_of must not precede pipeline state")
@@ -121,6 +122,11 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         return {"status": "already_completed", "as_of": config.as_of.isoformat()}
 
     parent_manifests = _verified_state_manifests(state)
+    evidence_parent = (
+        _verified_reference(state, "cycle_manifest")
+        if isinstance(state.get("cycle_manifest"), Mapping)
+        else validation_anchor
+    )
     start = previous_as_of + timedelta(days=1)
     date_token = config.as_of.strftime("%Y%m%d")
     cycle_dir = config.cycle_root / config.as_of.isoformat()
@@ -240,6 +246,12 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
             str(execution_processed.parent / "daily.csv"),
             "--comparison",
             str(config.comparison),
+            "--current-universe",
+            str(current_universe),
+            "--benchmark",
+            str(benchmark),
+            "--evidence-parent",
+            str(evidence_parent),
             "--corporate-actions",
             str(action_processed.parent / "corporate_actions.csv"),
             "--data-health",
@@ -254,6 +266,8 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
             str(dashboard),
             "--cycle-manifest",
             str(cycle_manifest),
+            "--slippage-rate",
+            "0.0005",
         ],
         timeout=config.paper_timeout,
     )
@@ -265,6 +279,7 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         "schema_version": 1,
         "last_successful_as_of": config.as_of.isoformat(),
         "git_sha": _git_sha(),
+        "validation_anchor": dict(state["validation_anchor"]),
         "membership": _reference(config.membership),
         "comparison": _reference(config.comparison),
         "current_universe": _reference(current_universe),
@@ -478,6 +493,22 @@ def _verified_state_manifests(state: Mapping[str, object]) -> dict[str, dict[str
         load_verified_manifest(processed, expected_layer="processed")
         result[name] = {"raw_manifest": raw, "processed_manifest": processed}
     return result
+
+
+def _verified_reference(state: Mapping[str, object], key: str) -> Path:
+    value = state.get(key)
+    label = key.replace("_", " ")
+    if not isinstance(value, Mapping):
+        raise ValueError(f"pipeline state is missing {label}")
+    raw_path = value.get("path")
+    if not isinstance(raw_path, str) or not raw_path:
+        raise ValueError(f"pipeline state {label} path is missing")
+    path = Path(raw_path).resolve()
+    if not path.is_file() or value.get("sha256") != sha256_file(path):
+        raise ValueError(f"pipeline state {label} hash mismatch")
+    if value.get("bytes") != path.stat().st_size:
+        raise ValueError(f"pipeline state {label} byte count mismatch")
+    return path
 
 
 def _validate_current_constituents(current: Path, membership: Path, as_of: date) -> None:
