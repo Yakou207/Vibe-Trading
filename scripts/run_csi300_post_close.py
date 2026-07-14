@@ -359,6 +359,7 @@ def _price_stage(
             "end": config.as_of.isoformat(),
             "adjust": adjust,
         },
+        require_rows=True,
     )
     if raw_attempt.needs_run:
         runner(
@@ -386,7 +387,9 @@ def _price_stage(
             timeout=config.stage_timeout,
         )
     raw_manifest = raw_attempt.manifest
-    load_verified_manifest_chain(raw_manifest, expected_layer="raw")
+    raw_payload = load_verified_manifest_chain(raw_manifest, expected_layer="raw")[-1].payload
+    if not _manifest_has_rows(raw_payload):
+        raise ValueError(f"raw {label} manifest contains no price rows: {raw_manifest}")
     processed_attempt = _processed_stage_attempt(
         config.processed_price_root,
         base_run_id=f"csi300-{label}-{date_token}",
@@ -551,6 +554,7 @@ def _raw_stage_attempt(
     base_run_id: str,
     append_parent: Path,
     expected_request: Mapping[str, object],
+    require_rows: bool = False,
 ) -> RawStageAttempt:
     latest_manifest: Path | None = None
     attempt = 0
@@ -574,19 +578,31 @@ def _raw_stage_attempt(
                 request.get(name) != value for name, value in expected_request.items()
             ):
                 raise ValueError(f"existing raw retry request mismatch: {manifest}")
-            latest_manifest = manifest.resolve()
             scopes = verified.payload.get("scopes")
-            if isinstance(scopes, list) and scopes and all(
+            complete = isinstance(scopes, list) and bool(scopes) and all(
                 isinstance(scope, Mapping)
                 and scope.get("status") in {"success", "empty", "reused"}
                 for scope in scopes
-            ):
+            )
+            has_rows = _manifest_has_rows(verified.payload)
+            if complete and (not require_rows or has_rows):
                 return RawStageAttempt(
                     run_id=run_id,
-                    manifest=latest_manifest,
+                    manifest=manifest.resolve(),
                     needs_run=False,
                 )
+            latest_manifest = None if complete else manifest.resolve()
         attempt += 1
+
+
+def _manifest_has_rows(payload: Mapping[str, object]) -> bool:
+    artifacts = payload.get("artifacts")
+    return isinstance(artifacts, list) and any(
+        isinstance(artifact, Mapping)
+        and isinstance(artifact.get("bytes"), int)
+        and artifact["bytes"] > 0
+        for artifact in artifacts
+    )
 
 
 def _processed_stage_attempt(

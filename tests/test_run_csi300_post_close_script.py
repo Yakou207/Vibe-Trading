@@ -9,7 +9,11 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from scripts.run_csi300_post_close import PipelineConfig, run_pipeline
+from scripts.run_csi300_post_close import (
+    PipelineConfig,
+    _raw_stage_attempt,
+    run_pipeline,
+)
 
 
 class RunCsi300PostCloseScriptTest(unittest.TestCase):
@@ -195,6 +199,45 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
                 str(failed.resolve()),
             )
             self.assertNotIn("--append-from", signal_command)
+
+    def test_all_empty_price_stage_restarts_from_append_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            append_parent = root / "seed" / "manifest.json"
+            _write_manifest(append_parent, layer="raw")
+            empty = root / "raw" / "prices-20260105" / "manifest.json"
+            _write_manifest(
+                empty,
+                layer="raw",
+                parent=str(append_parent.resolve()),
+                scopes=[
+                    {
+                        "symbol": "000001.SZ",
+                        "status": "empty",
+                        "artifact": "artifact.txt",
+                        "error": None,
+                    }
+                ],
+                request={"start": "2026-01-03", "end": "2026-01-05", "adjust": "none"},
+                artifact_text="",
+            )
+
+            attempt = _raw_stage_attempt(
+                root / "raw",
+                base_run_id="prices-20260105",
+                append_parent=append_parent,
+                expected_request={
+                    "start": "2026-01-03",
+                    "end": "2026-01-05",
+                    "adjust": "none",
+                },
+                require_rows=True,
+            )
+
+            self.assertTrue(attempt.needs_run)
+            self.assertEqual(attempt.run_id, "prices-20260105-retry-1")
+            self.assertEqual(attempt.parent_argument, "--append-from")
+            self.assertEqual(attempt.parent_manifest, append_parent)
 
     def test_timeout_stops_before_paper_execution_and_preserves_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -441,10 +484,11 @@ def _write_manifest(
     parent: str | None = None,
     scopes: list[dict[str, object]] | None = None,
     request: dict[str, object] | None = None,
+    artifact_text: str = "fixture\n",
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     artifact = path.parent / "artifact.txt"
-    artifact.write_text("fixture\n", encoding="utf-8")
+    artifact.write_text(artifact_text, encoding="utf-8")
     payload = {
         "run_id": path.parent.name,
         "layer": layer,
