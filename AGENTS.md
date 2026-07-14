@@ -81,6 +81,13 @@ system for fintech graduate-school portfolio work.
   excess. Its strongest result is `ELIGIBLE_FOR_REVIEW`, never live-trading authorization.
 - The 2026-07-13 bootstrap and every V1 or rejected qfq record remain non-counted. The eight-week
   evidence clock is still zero until the first fresh post-anchor V2 cycle passes its audit.
+- Daily collectors now limit incremental requests to membership intervals that overlap the requested
+  dates, while five-year rebuilds still cover every historical member. Failed immutable stages resume
+  only missing scopes; a price batch with no rows is never accepted or reused as a completed day.
+- The pre-automation 2026-07-14 attempt completed the 300-member, factor, and corporate-action
+  scopes, but both price providers still ended at 2026-07-13. The price freshness gate rejected the
+  day before account or state mutation, so the account remains at 100,000 cash, the evidence count
+  remains zero, and the 17:30 paper automation must retry from the last successful price parents.
 
 ### 2026-07-13 stable signal-price correction
 
