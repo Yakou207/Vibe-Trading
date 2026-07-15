@@ -1,8 +1,9 @@
 # Vibe-Trading CSI 300 handoff
 
-Last reviewed: 2026-07-14 Asia/Shanghai
+Last reviewed: 2026-07-15 15:19 Asia/Shanghai
 Repository: `/Users/yakou/Desktop/Vibe-Trading`
 Remote: `https://github.com/Yakou207/Vibe-Trading.git`
+Reviewed commit: `5a6a9f2f5f6f940f42cdc27023f171a5f78b29e8` (`main == origin/main` before this documentation update)
 
 ## Resume here
 
@@ -25,13 +26,18 @@ deterministic readiness auditor.
 
 This is not deployable-profit proof. At the time of this handoff:
 
+- the formal universe is CSI 300, not the earlier 30-stock STAR Market fixture;
+- the point-in-time membership history has 300 active names on each checked date, 439 unique stocks,
+  and 461 membership intervals;
 - the canonical account is still dated `2026-07-13`;
 - cash is `100000.0`, positions are empty, and no fresh V2 session has been counted;
 - validation status is `NO_EVIDENCE` with `valid_sessions=0`;
 - `live_trading_authorized=false` and DQN paper exposure is disabled;
 - the weekday 17:30 Asia/Shanghai automation is active;
-- the next required milestone is the first fresh, fully audited V2 paper cycle, followed by at
-  least 40 valid trading sessions spanning at least 56 calendar days.
+- the 2026-07-14 automation fetched both price layers successfully, then failed closed because the
+  factor trading-calendar hash did not match the refreshed benchmark;
+- the immediate task is to diagnose that hash mismatch and complete the first fresh, fully audited
+  V2 paper cycle, then accumulate at least 40 valid sessions over at least 56 calendar days.
 
 ## Canonical state and hashes
 
@@ -43,6 +49,8 @@ These values were rechecked during this review:
 | `data/paper/csi300_baseline/pipeline_state.json` | `last_successful_as_of=2026-07-13` | `5d1ae61c0f2d68aa6ba3bed89270113b8aea5af7aa354ff97c138a5121e03f7a` |
 | `data/paper/csi300_baseline/validation/anchor-20260713/anchor_manifest.json` | non-counted anchor | `13c2ead2826740a7426e9ffb557b23219c8abfa3ab3de73d174be9ab9c0c3a2a` |
 | `outputs/paper_trading/csi300_baseline/validation_report.json` | `NO_EVIDENCE`, zero valid sessions | `23209bf404d408f076226050804dcc786d75f266f62f747d5cd0328f06ebccc2` |
+| `outputs/csi300_research/hfq-formal-20260713/pnl_curve.json` | 1,231 formal CSI 300 comparison points | `abb86cff7adc98fcfb09a0a21da4fe610a9b7a671f1a927e7bdf0290f7f64107` |
+| `outputs/paper_trading/csi300_baseline/hfq_formal_dashboard.html` | formal backtest dashboard with PnL curve | `147addb8a7fe9f225cce0ce642a9986c378ede58f4aeae2804b99534e81daecc` |
 
 The validation-report hash can change after an intentional audit rerun even if its semantic status
 does not. Account and pipeline-state hashes must not change on a pre-commit failure.
@@ -108,7 +116,10 @@ Independent audit command:
 
 ## 2026-07-14 operational evidence
 
-The pre-automation attempt was intentionally fail-closed:
+The early attempt and the 17:30 automation both failed closed without changing the formal account
+or pipeline state.
+
+Early attempt:
 
 - current universe matched exactly 300 active historical members;
 - daily collectors were corrected to request only membership intervals overlapping the requested
@@ -122,9 +133,24 @@ The pre-automation attempt was intentionally fail-closed:
 - `outputs/paper_trading/csi300_baseline/cycles/2026-07-14/` contains only
   `current_universe.csv` and `csi300_market_state.csv`; it does not contain a counted V2 manifest.
 
-All-empty price batches are now rejected before processed-feature rebuilding. On the next run they
-are not used as resume parents; the collector restarts from the last successful 2026-07-13 append
-parent and fetches the active 300 names again.
+The scheduled 17:30 retry made further progress:
+
+- signal price (`hfq`) and execution price (`none`) both completed 300/300 with no provider failures;
+- signal output reached 530,982 rows under
+  `csi300-signal-price-20260714-retry-1`;
+- execution output completed under `csi300-execution-price-20260714-retry-1`;
+- decision-report generation then raised
+  `ValueError: factor trading-calendar hash does not match benchmark`;
+- the preserved factor manifest points to the benchmark ending on 2026-07-13 with SHA-256
+  `56e4829e87a52ad2d3eb75b76c749bc79c634d1716bfbcdd7ac563ca6e25f6f4`;
+- no `cycle_manifest.json`, `data_health.json`, `paper_report.json`, `targets.csv`, or counted
+  dashboard was created, and no audit ran;
+- account SHA-256 remains
+  `08fe931be6f62e3ff36e8f2bcd1c7c57d84aa0fd0ed86c49aba3ca91d90cde31`.
+
+Do not bypass the calendar-hash gate or edit an immutable manifest. Determine whether the daily
+factor layer must be rebuilt against the refreshed benchmark artifact, add a failing regression
+test for the exact mismatch, then rerun only the fixed post-close entrypoint.
 
 ## Historical research result
 
@@ -139,6 +165,27 @@ The authoritative stable-HFQ formal comparison is
 The earlier QFQ result is rejected because future corporate actions rewrite the historical QFQ
 scale and break immutable incremental reproducibility. These HFQ values are still historical
 research, not a profit promise or live-trading approval.
+
+## PnL dashboard
+
+The local dashboard at
+`outputs/paper_trading/csi300_baseline/hfq_formal_dashboard.html` now includes an interactive PnL
+curve. It is the formal CSI 300 HFQ backtest, not the old STAR30 diagnostic and not accumulated
+paper-trading performance.
+
+The plotted interval is 2021-06-15 through 2026-07-13 with 1,231 daily points and CNY 100,000
+normalized starting equity:
+
+| Series | Ending equity | PnL | Total return |
+|---|---:|---:|---:|
+| Risk-controlled baseline | 218,295.88 | 118,295.88 | 118.30% |
+| Unrestricted baseline | 215,321.64 | 115,321.64 | 115.32% |
+| CSI 300 benchmark | 90,880.26 | -9,119.74 | -9.12% |
+
+`pnl_curve.json` records the hashes of the two source run reports and benchmark CSV. The chart data
+is embedded locally in the dashboard; Chart.js is pinned to version 4.5.1. When a daily V2 cycle
+uses this optional formal curve, its manifest hash-binds the artifact and same-date replay verifies
+it.
 
 ## Review completed for this handoff
 
@@ -168,6 +215,10 @@ Verification recorded before final merge:
 - four V2 CLI help smoke checks: passed;
 - whitespace/diff check: passed.
 
+The later PnL dashboard series was merged at `5a6a9f2`. Its final verification recorded 443 passed,
+2 skipped, and 31 unittest subtests passed, plus Ruff, Python compile, CLI, JavaScript syntax, and
+artifact-reconciliation checks.
+
 ## Known boundaries and next priorities
 
 These are not blockers for continuing paper evidence, but they block any live-readiness claim:
@@ -192,14 +243,17 @@ These are not blockers for continuing paper evidence, but they block any live-re
 
 Immediate work order:
 
-1. Let the 17:30 automation retry the fresh price scopes.
-2. If the first V2 cycle succeeds, verify `cycle_manifest.json`, `data_health.json`,
+1. Reproduce and diagnose the 2026-07-14 factor/benchmark trading-calendar hash mismatch without
+   changing the account, pipeline state, or immutable manifests.
+2. Add a regression test, make the minimum repair, and rerun the fixed post-close entrypoint for a
+   fresh eligible session. Do not reconstruct the daily stages manually.
+3. If the first V2 cycle succeeds, verify `cycle_manifest.json`, `data_health.json`,
    `paper_report.json`, targets, dashboard, account/state dates, parent hash, and audit status.
-3. Record the first counted date in `AGENTS.md` and this handoff only after independent audit passes.
-4. Continue every trading session without gaps until at least 40 sessions and 56 calendar days.
-5. Investigate provider failures and evidence anomalies immediately; do not tune the strategy while
+4. Record the first counted date in `AGENTS.md` and this handoff only after independent audit passes.
+5. Continue every trading session without gaps until at least 40 sessions and 56 calendar days.
+6. Investigate provider failures and evidence anomalies immediately; do not tune the strategy while
    input completeness or execution reconciliation is unresolved.
-6. After the complete paper window, evaluate net CSI 300 excess return, maximum drawdown, turnover,
+7. After the complete paper window, evaluate net CSI 300 excess return, maximum drawdown, turnover,
    costs, sector/regime stability and every failed gate. `ELIGIBLE_FOR_REVIEW` still requires human
    review and never authorizes live trading.
 
@@ -217,6 +271,10 @@ Immediate work order:
 - Audit CLI: `scripts/audit_csi300_paper_validation.py`
 - Evidence policy/anchor library: `src/fintech_quant/execution/paper_evidence.py`
 - Auditor implementation: `src/fintech_quant/reports/paper_validation.py`
+- PnL curve builder: `src/fintech_quant/reports/pnl_curve.py`
+- PnL curve CLI: `scripts/build_pnl_curve.py`
+- Formal PnL data: `outputs/csi300_research/hfq-formal-20260713/pnl_curve.json`
+- Formal dashboard: `outputs/paper_trading/csi300_baseline/hfq_formal_dashboard.html`
 - Canonical account/state: `data/paper/csi300_baseline/`
 - Counted/partial cycle outputs: `outputs/paper_trading/csi300_baseline/cycles/`
 - Automation definition: `/Users/yakou/.codex/automations/csi300/automation.toml`
@@ -226,6 +284,7 @@ Immediate work order:
 > Read `/Users/yakou/Desktop/Vibe-Trading/AGENTS.md` and
 > `/Users/yakou/Desktop/Vibe-Trading/handoff.md` completely. Verify clean `main` equals
 > `origin/main`, then inspect the canonical CSI 300 account, pipeline state, latest V2 cycle and
-> validation report. Continue the paper-only roadmap from the documented current state. Preserve
-> immutable manifests, use the fixed daily CSI 300 entrypoint, keep DQN/live trading disabled, use
-> TDD for fixes, run full verification, and commit/push through a `codex/` branch before merging.
+> validation report. First reproduce and repair the documented factor/benchmark trading-calendar
+> hash mismatch with a regression test. Preserve immutable manifests, use only the fixed daily CSI
+> 300 entrypoint for the operational rerun, keep DQN/live trading disabled, run full verification,
+> and commit/push through a `codex/` branch before merging.

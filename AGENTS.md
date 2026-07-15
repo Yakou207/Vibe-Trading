@@ -63,6 +63,30 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-07-15 CSI 300 PnL dashboard and active blocker
+
+- `main` and `origin/main` were aligned at `5a6a9f2` before this documentation update. The formal
+  dashboard now includes an interactive PnL curve backed by a hash-recording `pnl_curve.json`.
+  Its 1,231 daily points cover 2021-06-15 through 2026-07-13 and compare the risk-controlled
+  baseline, unrestricted baseline, and normalized CSI 300 benchmark on the same CNY 100,000 base.
+- This chart is the formal point-in-time CSI 300 HFQ backtest, not the old 30-stock STAR Market
+  diagnostic and not accumulated paper-account performance. The ending values are CNY 218,295.88
+  for the risk-controlled baseline, CNY 215,321.64 for the unrestricted baseline, and CNY 90,880.26
+  for CSI 300. Historical results do not prove future profit.
+- The PnL artifact records the source hashes of both formal run reports and the benchmark. Daily V2
+  cycle manifests hash-bind the optional curve, and same-date replay verifies it. The dashboard uses
+  pinned Chart.js 4.5.1 while keeping the curve data embedded locally.
+- The 2026-07-14 17:30 retry completed both signal-price and execution-price scopes for all 300
+  active members. Decision-report generation then failed closed because the factor manifest's
+  trading-calendar hash did not match the refreshed benchmark. No account/state mutation or audit
+  occurred; the formal account remains at 100,000 cash, dated 2026-07-13, with zero valid sessions.
+- The immediate task is to reproduce the calendar-hash mismatch, add a regression test, make the
+  minimum repair without altering immutable manifests, and rerun only the fixed CSI 300 post-close
+  entrypoint for a fresh eligible session. Do not tune strategy thresholds, restart the STAR30
+  diagnostic, enable DQN exposure, or connect a live broker while this evidence-chain blocker exists.
+- `handoff.md` is the operational source for exact commands, current hashes, artifacts, and the
+  new-conversation resume prompt.
+
 ### 2026-07-14 CSI 300 paper-evidence V2
 
 - A non-counted immutable validation anchor now snapshots and hashes the formal paper account,
@@ -86,8 +110,8 @@ system for fintech graduate-school portfolio work.
   only missing scopes; a price batch with no rows is never accepted or reused as a completed day.
 - The pre-automation 2026-07-14 attempt completed the 300-member, factor, and corporate-action
   scopes, but both price providers still ended at 2026-07-13. The price freshness gate rejected the
-  day before account or state mutation, so the account remains at 100,000 cash, the evidence count
-  remains zero, and the 17:30 paper automation must retry from the last successful price parents.
+  day before account or state mutation. The later 17:30 retry completed both 300-member price
+  scopes, then stopped on the factor/benchmark trading-calendar hash mismatch described above.
 
 ### 2026-07-13 stable signal-price correction
 
@@ -192,11 +216,10 @@ The system now has the engineering shape of a paper-trading research platform:
   available session rather than the signal close.
 - DQN rewards and strategy reports support benchmark-relative excess return,
   and resumable DQN checkpoints are available.
-- The completed platform branch was merged and pushed to `main` at `a6a63a9`.
-  The point-in-time CSI 300 repair is on
-  `codex/csi300-point-in-time-factors`, 23 commits ahead of `main` before the
-  current paper-bootstrap status update.
-- The repair branch now has official-anchor-plus-adjustment historical
+- The original platform branch was merged to `main` at `a6a63a9`. The subsequent point-in-time,
+  execution, V2 evidence, and PnL-dashboard work is also on `main`; use the current status section
+  above rather than the old feature-branch distance as the source of truth.
+- The point-in-time repair added official-anchor-plus-adjustment historical
   membership reconstruction, immutable raw/processed manifests with SHA-256,
   disclosure-date joins, common as-of factor lookup for scoring/risk/RL,
   fail-closed coverage/variation checks, and a formal CSI 300 orchestration
@@ -205,10 +228,15 @@ The system now has the engineering shape of a paper-trading research platform:
 
 Engineering completion must not be confused with deployable-profit proof. The
 latest historical CSI 300 baseline run beats its benchmark and stays inside the
-10% drawdown target after modeled costs, but it has not yet passed dividend-tax
-modeling or eight weeks of continuous paper validation.
+10% drawdown target after modeled costs, individual FIFO dividend tax, and the
+complete distribution/rights ledger. It has not passed eight weeks of continuous
+paper validation.
 
-## Current Real-Data Findings
+## Historical Diagnostic Findings
+
+The findings below are retained to explain why the STAR30 fixture was rejected as primary evidence.
+They describe the 2026-07-10 diagnostic and do not override the current CSI 300 status or roadmap
+above.
 
 ### 0. The repaired data path fails closed on the latest 30-stock diagnostic
 
@@ -231,10 +259,9 @@ modeling or eight weeks of continuous paper validation.
 - The formal orchestrator stopped before baseline, risk-controlled, RL, or
   benchmark-comparison artifacts were created. This is the intended behavior;
   the failed provider run and health report are evidence, not a strategy run.
-- Do not start the full CSI 300 provider fan-out until the failed factor scopes
-  can be resumed successfully or a separately validated point-in-time provider
-  is added. Current-constituent backfilling is not an acceptable substitute for
-  official historical membership.
+- At that time, the full CSI 300 provider fan-out was held until the point-in-time factor path and
+  official historical membership were available. Both were subsequently completed; the rule
+  against current-constituent historical backfilling still applies.
 
 ### 1. The scored baseline produces no trades
 
@@ -319,65 +346,48 @@ The next experiments must use point-in-time data and remain reproducible:
 
 ## Next Priority Roadmap
 
-The next phase is strategy repair and validation, not additional platform
-features. Work in this order:
+The historical membership reconstruction, CSI 300 formal backtest, drawdown-control loop, and V2
+paper-evidence platform are complete. The next phase is operational validation, not more platform
+features or a return to the STAR30 diagnostic. Work in this order:
 
-1. Restore the failed real factor scopes and rerun the 30-stock gate.
-   - Resume the immutable `star30-raw-20260710` run after the Eastmoney-backed
-     valuation and capital-flow endpoints recover, or add a separately
-     validated provider that supplies public availability dates and historical
-     rows under the same schema.
-   - Rebuild factors under a new processed run id. Require non-constant
-     fundamental/capital-flow scores, coverage above the configured thresholds,
-     and meaningful target positions before any threshold tuning.
+1. Repair the factor/benchmark trading-calendar hash mismatch.
+   - Reproduce the exact 2026-07-14 failure before changing code.
+   - Identify whether the refreshed benchmark must be the explicit parent of a rebuilt daily factor
+     layer. Never edit an existing immutable manifest or weaken the equality gate.
+   - Add a regression test and make the smallest change that preserves point-in-time semantics.
 
-2. Build the official historical CSI 300 membership artifact.
-   - Acquire a current official CSI anchor plus every official regular and
-     temporary adjustment since the research start date. Preserve source URLs
-     and fetch timestamps.
-   - Do not use the current 300 constituents for the full five-year history.
-     The existing current-universe CSV is suitable only as an anchor after its
-     source and as-of date are verified.
+2. Produce the first fresh counted V2 cycle.
+   - Use only `scripts/run_csi300_post_close.py` after the eligible A-share session closes.
+   - Verify the schema-version-2 manifest, parent and account hashes, data health, targets, paper
+     report, dashboard, account/state dates, and deterministic audit.
+   - Record a counted date only if the auditor accepts the complete cycle. Failed and partial dates
+     remain non-counted evidence.
 
-3. Rebuild and rerun the full CSI 300 path after steps 1-2 pass.
-   - Fetch approximately five years of daily price, fundamental, financial
-     statement, capital-flow, and required market-state data for all CSI 300
-     constituents.
-   - Rebuild features and the RL state dataset under the data-integrity rules
-     above, then run the daily research pipeline and DQN walk-forward process.
-   - Compare baseline, risk-controlled baseline, and DQN overlay against CSI
-     300 using out-of-sample excess return, tracking drawdown, turnover, costs,
-     coverage, and walk-forward stability.
+3. Accumulate the full paper-validation window without strategy drift.
+   - Run after every trading session and retain targets, fills, blocked orders, positions, actual and
+     shadow NAV, benchmark NAV, data health, model/configuration versions, and immutable parents.
+   - Require at least 40 valid trading sessions spanning at least 56 calendar days.
+   - Investigate missing data, unusual turnover, unexplained no-trade days, corporate actions, and
+     reconciliation failures immediately. Do not tune thresholds while collecting the window.
 
-4. Close the drawdown-control loop at a 10% portfolio target.
-   - Apply the same portfolio-level drawdown state and actions to baseline
-     backtests, both RL evaluation backends, target generation, and paper
-     trading.
-   - Start with explicit rules such as reducing exposure by half near 8%
-     drawdown and liquidating risk exposure near 10%, subject to A-share fill
-     constraints.
-   - Test state persistence, recovery or re-entry behavior, and blocked exits.
-     Re-run the return experiment to determine whether positive excess return
-     survives the risk controls.
+4. Review the completed evidence against the fixed gates.
+   - Require positive net CSI 300 excess return, maximum drawdown no worse than 10%, continuous
+     evidence, and stable behavior across the predeclared walk-forward segments.
+   - Review costs, turnover, sector/regime dependence, every failed gate, and every operational
+     anomaly. `ELIGIBLE_FOR_REVIEW` is not live authorization.
 
-5. Diagnose and select one trustworthy DQN backend.
-   - Compare reward magnitude, feature scaling, exploration schedule, action
-     frequencies, position transitions, transaction costs, seeds, and
-     train/evaluation mode between linear-Q and torch implementations.
-   - Add parity diagnostics on a small fixed dataset and explain the no-trade
-     behavior before selecting a backend.
-   - Do not allow RL to increase paper exposure until repeated walk-forward
-     runs show stable behavior and positive risk-controlled excess return.
+5. Strengthen independent replay before any brokerage work.
+   - Independently replay FIFO dividend-tax lots, corporate-action decisions, and account
+     transitions from immutable parents rather than trusting reported daily aggregates alone.
+   - Consider stronger crash recovery and external signed/WORM evidence retention only after the
+     daily V2 chain is operating reliably.
 
-6. Run paper trading continuously after the repaired strategy passes offline
-   checks.
-   - Schedule the post-close cycle every trading day and retain targets, fills,
-     blocked orders, positions, NAV, benchmark NAV, data-health results, and
-     model or configuration versions.
-   - Monitor the dashboard daily and investigate missing data, unusual
-     turnover, unexplained no-trade days, and execution anomalies immediately.
-   - Accumulate at least 4-8 weeks of paper evidence; use eight weeks as the
-     minimum gate for live brokerage consideration.
+6. Keep DQN and live trading outside the active path.
+   - Diagnose the linear/Torch behavior divergence only as a later research task.
+   - Do not let DQN increase paper exposure until a baseline-candidate overlay shows stable positive
+     risk-controlled excess return across windows and seeds.
+   - Do not integrate QMT, miniQMT, easytrader, or any live broker until every validation gate below
+     passes and a human explicitly authorizes a separate live-integration phase.
 
 ## Validation Gates
 
@@ -395,6 +405,6 @@ until all of the following hold:
 - Every daily decision can be reproduced from immutable input data, recorded
   configuration, and a known code commit.
 
-When resuming implementation, start from the failed 30-stock factor scopes and
-the preserved health report. Do not add new strategy features until the scored
-baseline can trade on complete, point-in-time inputs.
+When resuming implementation, start from the canonical CSI 300 account/state, the latest V2 audit,
+and the preserved 2026-07-14 calendar-hash failure described above. The 30-stock STAR Market set is
+only a diagnostic fixture and must not replace or block the CSI 300 paper-validation path.
