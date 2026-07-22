@@ -15,6 +15,15 @@ XTP 官方 Python 封装只提供 CentOS7 + Python 3.9 的 x86_64 预编译 `.so
 brew install colima docker && colima start --vm-type vz --vz-rosetta
 ```
 
+### 已知问题：容器内 DNS
+
+colima 默认把容器 DNS 指向 8.8.8.8，在内地网络下不可达，构建会报
+`Temporary failure resolving`。修复（本机 2026-07-22 已执行过；`colima delete` 后需重做）：
+
+```bash
+colima ssh -- sh -c 'sudo mkdir -p /etc/docker; printf "{\"dns\": [\"223.5.5.5\", \"114.114.114.114\"]}\n" | sudo tee /etc/docker/daemon.json; sudo systemctl restart docker'
+```
+
 ## 构建镜像
 
 ```bash
