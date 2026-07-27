@@ -89,8 +89,26 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             state_after = json.loads(config.state.read_text(encoding="utf-8"))
             self.assertEqual(state_after["last_successful_as_of"], "2026-01-05")
             self.assertEqual(state_after["validation_anchor"], state["validation_anchor"])
+            cycle_report = (
+                config.cycle_root
+                / config.as_of.isoformat()
+                / "validation_report.json"
+            )
+            root_report = config.cycle_root.parent / "validation_report.json"
+            self.assertEqual(root_report.read_bytes(), cycle_report.read_bytes())
+            self.assertEqual(
+                state_after["validation_report"],
+                {
+                    "path": str(cycle_report.resolve()),
+                    "bytes": cycle_report.stat().st_size,
+                    "sha256": hashlib.sha256(
+                        cycle_report.read_bytes()
+                    ).hexdigest(),
+                },
+            )
             self.assertEqual(result["status"], "completed")
             self.assertEqual(result["validation_status"], "COLLECTING")
+            self.assertEqual(result["validation_report"], str(cycle_report))
             self.assertNotEqual(state_after, state)
 
     def test_pipeline_passes_sibling_pnl_curve_to_paper_cycle(self) -> None:
@@ -393,15 +411,28 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             _seed_state(config, date(2026, 1, 2))
             run_pipeline(config, runner=RecordingRunner(config))
             account_before = config.account.read_bytes()
+            root_report = config.cycle_root.parent / "validation_report.json"
+            root_report.write_text('{"status": "NO_EVIDENCE"}\n', encoding="utf-8")
             replay_runner = RecordingRunner(config)
 
             result = run_pipeline(config, runner=replay_runner)
 
+            cycle_report = (
+                config.cycle_root
+                / config.as_of.isoformat()
+                / "validation_report.json"
+            )
             self.assertEqual(
                 [Path(command[0]).name for command, _ in replay_runner.calls],
                 ["audit_csi300_paper_validation.py"],
             )
             self.assertEqual(config.account.read_bytes(), account_before)
+            self.assertEqual(root_report.read_bytes(), cycle_report.read_bytes())
+            state_after = json.loads(config.state.read_text(encoding="utf-8"))
+            self.assertEqual(
+                state_after["validation_report"]["sha256"],
+                hashlib.sha256(cycle_report.read_bytes()).hexdigest(),
+            )
             self.assertEqual(result["status"], "already_completed")
             self.assertEqual(result["validation_status"], "COLLECTING")
 

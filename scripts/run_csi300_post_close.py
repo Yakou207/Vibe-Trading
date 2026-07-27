@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -145,6 +146,9 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
             anchor=validation_anchor,
             runner=active_runner,
         )
+        replay_state = dict(state)
+        replay_state["validation_report"] = _reference(validation_report)
+        _write_state_atomic(config.state, replay_state)
         return {
             "status": "already_completed",
             "as_of": config.as_of.isoformat(),
@@ -337,6 +341,8 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         anchor=validation_anchor,
         runner=active_runner,
     )
+    new_state["validation_report"] = _reference(validation_report)
+    _write_state_atomic(config.state, new_state)
     return {
         "status": "completed",
         "as_of": config.as_of.isoformat(),
@@ -815,6 +821,10 @@ def _run_validation_audit(
         raise ValueError("paper validation report status is invalid")
     if payload.get("live_trading_authorized") is not False:
         raise ValueError("paper validation report must not authorize live trading")
+    root_output = config.cycle_root.parent / "validation_report.json"
+    _copy_file_atomic(output, root_output)
+    if sha256_file(root_output) != sha256_file(output):
+        raise ValueError("root validation report differs from cycle-local report")
     return status, output
 
 
@@ -846,6 +856,18 @@ def _write_state_atomic(path: Path, payload: Mapping[str, object]) -> None:
         _fsync_file(staged)
         os.replace(staged, path)
         _fsync_directory(path.parent)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
+def _copy_file_atomic(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staged = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        shutil.copyfile(source, staged)
+        _fsync_file(staged)
+        os.replace(staged, target)
+        _fsync_directory(target.parent)
     finally:
         staged.unlink(missing_ok=True)
 
