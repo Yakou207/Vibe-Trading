@@ -12,6 +12,7 @@ from pathlib import Path
 
 from scripts.run_csi300_post_close import (
     PipelineConfig,
+    _processed_stage_attempt,
     _raw_stage_attempt,
     run_pipeline,
 )
@@ -271,6 +272,82 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             self.assertEqual(attempt.parent_argument, "--append-from")
             self.assertEqual(attempt.parent_manifest, append_parent)
 
+    def test_processed_factor_retry_rejects_stale_material_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "raw" / "manifest.json"
+            _write_manifest(raw, layer="raw")
+            completed = (
+                root
+                / "processed"
+                / "csi300-factor-20260714"
+                / "manifest.json"
+            )
+            raw_sha256 = hashlib.sha256(raw.read_bytes()).hexdigest()
+            _write_manifest(
+                completed,
+                layer="processed",
+                parent=str(raw.resolve()),
+                request={
+                    "parent_manifest_sha256": raw_sha256,
+                    "trading_calendar_sha256": "old-calendar",
+                    "price_features_sha256": "old-features",
+                },
+            )
+
+            attempt = _processed_stage_attempt(
+                root / "processed",
+                base_run_id="csi300-factor-20260714",
+                raw_manifest=raw,
+                material_sha256={
+                    "trading_calendar_sha256": "new-calendar",
+                    "price_features_sha256": "new-features",
+                },
+            )
+
+            self.assertTrue(attempt.needs_run)
+            self.assertEqual(
+                attempt.run_id,
+                "csi300-factor-20260714-retry-1",
+            )
+
+    def test_processed_factor_reuses_matching_material_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            raw = root / "raw" / "manifest.json"
+            _write_manifest(raw, layer="raw")
+            completed = (
+                root
+                / "processed"
+                / "csi300-factor-20260714"
+                / "manifest.json"
+            )
+            raw_sha256 = hashlib.sha256(raw.read_bytes()).hexdigest()
+            _write_manifest(
+                completed,
+                layer="processed",
+                parent=str(raw.resolve()),
+                request={
+                    "parent_manifest_sha256": raw_sha256,
+                    "trading_calendar_sha256": "calendar",
+                    "price_features_sha256": "features",
+                },
+            )
+
+            attempt = _processed_stage_attempt(
+                root / "processed",
+                base_run_id="csi300-factor-20260714",
+                raw_manifest=raw,
+                material_sha256={
+                    "trading_calendar_sha256": "calendar",
+                    "price_features_sha256": "features",
+                },
+            )
+
+            self.assertFalse(attempt.needs_run)
+            self.assertEqual(attempt.run_id, "csi300-factor-20260714")
+            self.assertEqual(attempt.manifest, completed.resolve())
+
     def test_timeout_stops_before_paper_execution_and_preserves_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -365,7 +442,50 @@ class RecordingRunner:
         elif script.startswith("build_") and script != "build_daily_decision_report.py":
             root = Path(_argument(command, "--processed-root"))
             run_id = _argument(command, "--run-id")
-            _write_manifest(root / run_id / "manifest.json", layer="processed")
+            raw_manifest = Path(_argument(command, "--raw-manifest"))
+            request = {
+                "parent_manifest_sha256": hashlib.sha256(
+                    raw_manifest.read_bytes()
+                ).hexdigest(),
+            }
+            if script == "build_historical_price_features.py":
+                run_dir = root / run_id
+                run_dir.mkdir(parents=True, exist_ok=True)
+                (run_dir / "features.csv").write_text(
+                    "trade_date,symbol,close\n2026-01-05,000001.SZ,10\n",
+                    encoding="utf-8",
+                )
+                (run_dir / "daily.csv").write_text(
+                    "trade_date,symbol,open,close\n"
+                    "2026-01-05,000001.SZ,10,10\n",
+                    encoding="utf-8",
+                )
+            elif script == "build_point_in_time_factors.py":
+                trading_calendar = Path(_argument(command, "--trading-calendar"))
+                price_features = Path(_argument(command, "--price-features"))
+                request.update(
+                    {
+                        "trading_calendar_sha256": hashlib.sha256(
+                            trading_calendar.read_bytes()
+                        ).hexdigest(),
+                        "price_features_sha256": hashlib.sha256(
+                            price_features.read_bytes()
+                        ).hexdigest(),
+                    }
+                )
+            elif script == "build_corporate_actions.py":
+                run_dir = root / run_id
+                run_dir.mkdir(parents=True, exist_ok=True)
+                (run_dir / "corporate_actions.csv").write_text(
+                    "symbol,ex_date,event_type\n",
+                    encoding="utf-8",
+                )
+            _write_manifest(
+                root / run_id / "manifest.json",
+                layer="processed",
+                parent=str(raw_manifest.resolve()),
+                request=request,
+            )
         elif script == "fetch_market_state.py":
             output = Path(_argument(command, "--output"))
             output.parent.mkdir(parents=True, exist_ok=True)

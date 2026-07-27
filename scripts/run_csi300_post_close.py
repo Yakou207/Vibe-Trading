@@ -474,6 +474,10 @@ def _factor_stage(
         config.processed_factor_root,
         base_run_id=f"csi300-factor-{date_token}",
         raw_manifest=raw_manifest,
+        material_sha256={
+            "trading_calendar_sha256": sha256_file(benchmark),
+            "price_features_sha256": sha256_file(signal_features),
+        },
     )
     if processed_attempt.needs_run:
         runner(
@@ -623,9 +627,11 @@ def _processed_stage_attempt(
     *,
     base_run_id: str,
     raw_manifest: Path,
+    material_sha256: Mapping[str, str] | None = None,
 ) -> ProcessedStageAttempt:
     attempt = 0
     raw_sha256 = sha256_file(raw_manifest)
+    required = dict(material_sha256 or {})
     while True:
         run_id = base_run_id if attempt == 0 else f"{base_run_id}-retry-{attempt}"
         run_dir = root / run_id
@@ -636,10 +642,14 @@ def _processed_stage_attempt(
             verified = load_verified_manifest(manifest, expected_layer="processed")
             request = verified.payload.get("request")
             parent = Path(str(verified.payload.get("parent_manifest", ""))).resolve()
+            material_matches = isinstance(request, Mapping) and all(
+                request.get(name) == value for name, value in required.items()
+            )
             if (
                 isinstance(request, Mapping)
                 and request.get("parent_manifest_sha256") == raw_sha256
                 and parent == raw_manifest.resolve()
+                and material_matches
             ):
                 return ProcessedStageAttempt(run_id, manifest.resolve(), False)
         attempt += 1
