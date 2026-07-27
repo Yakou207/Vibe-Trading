@@ -9,7 +9,12 @@ import unittest
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
+from fintech_quant.execution.paper_evidence import (
+    approved_paper_policy,
+    file_reference,
+)
 from scripts.run_csi300_post_close import (
     PipelineConfig,
     _processed_stage_attempt,
@@ -153,6 +158,32 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
 
             self.assertEqual(runner.calls, [])
 
+    def test_pipeline_rejects_non_evidence_active_parent_before_fetch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            state = _seed_state(config, date(2026, 1, 2))
+            invalid_parent = root / "validation_report.json"
+            _write_json(
+                invalid_parent,
+                {
+                    "schema_version": 1,
+                    "kind": "csi300_paper_validation_report",
+                    "as_of": "2026-01-02",
+                },
+            )
+            state["evidence_parent"] = file_reference(invalid_parent)
+            _write_json(config.state, state)
+            runner = RecordingRunner(config)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "active evidence parent",
+            ):
+                run_pipeline(config, runner=runner)
+
+            self.assertEqual(runner.calls, [])
+
     def test_pipeline_rejects_account_state_date_divergence_before_fetch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -181,6 +212,9 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
                     "schema_version": 2,
                     "kind": "paper_trading_cycle",
                     "as_of": "2026-01-02",
+                    "account_after_sha256": hashlib.sha256(
+                        config.account.read_bytes()
+                    ).hexdigest(),
                 },
             )
             state["cycle_manifest"] = {
@@ -481,6 +515,39 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
 
             self.assertEqual(result["status"], "completed")
 
+    def test_root_audit_mirror_failure_keeps_replayable_state_reference(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            _seed_state(config, date(2026, 1, 2))
+            with patch(
+                "scripts.run_csi300_post_close._copy_file_atomic",
+                side_effect=OSError("root mirror unavailable"),
+            ):
+                with self.assertRaisesRegex(OSError, "root mirror unavailable"):
+                    run_pipeline(config, runner=RecordingRunner(config))
+
+            cycle_report = (
+                config.cycle_root
+                / config.as_of.isoformat()
+                / "validation_report.json"
+            )
+            state = json.loads(config.state.read_text(encoding="utf-8"))
+            self.assertEqual(
+                state["validation_report"]["sha256"],
+                hashlib.sha256(cycle_report.read_bytes()).hexdigest(),
+            )
+            account_before = config.account.read_bytes()
+
+            result = run_pipeline(config, runner=RecordingRunner(config))
+
+            root_report = config.cycle_root.parent / "validation_report.json"
+            self.assertEqual(root_report.read_bytes(), cycle_report.read_bytes())
+            self.assertEqual(config.account.read_bytes(), account_before)
+            self.assertEqual(result["status"], "already_completed")
+
 
 class RecordingRunner:
     def __init__(
@@ -585,7 +652,14 @@ class RecordingRunner:
             )
             _write_json(
                 Path(_argument(command, "--cycle-manifest")),
-                {"as_of": self.config.as_of.isoformat()},
+                {
+                    "schema_version": 2,
+                    "kind": "paper_trading_cycle",
+                    "as_of": self.config.as_of.isoformat(),
+                    "account_after_sha256": hashlib.sha256(
+                        Path(_argument(command, "--account")).read_bytes()
+                    ).hexdigest(),
+                },
             )
         elif script == "audit_csi300_paper_validation.py":
             _write_json(
@@ -626,6 +700,15 @@ def _config(root: Path) -> PipelineConfig:
 def _seed_state(
     config: PipelineConfig, as_of: date, *, with_validation_anchor: bool = True
 ) -> dict[str, object]:
+    account_payload = {
+        "cash": 100000.0,
+        "positions": {},
+        "nav_history": [],
+        "pending_targets": {},
+        "pending_signal_date": None,
+        "last_processed_date": as_of.isoformat(),
+    }
+    _write_json(config.account, account_payload)
     manifests: dict[str, dict[str, str]] = {}
     for name in ("signal_price", "execution_price", "factor", "corporate_action"):
         raw = config.state.parent / "seed" / name / "raw" / "manifest.json"
@@ -644,13 +727,44 @@ def _seed_state(
         "manifests": manifests,
     }
     if with_validation_anchor:
-        anchor = config.state.parent / "validation" / "anchor_manifest.json"
+        anchor_dir = config.state.parent / "validation"
+        account_snapshot = anchor_dir / "account.json"
+        state_snapshot = anchor_dir / "pipeline_state.json"
+        formal_snapshot = anchor_dir / "formal_run_manifest.json"
+        comparison_snapshot = anchor_dir / "benchmark_comparison.json"
+        benchmark_snapshot = anchor_dir / "benchmark.csv"
+        _write_json(account_snapshot, account_payload)
+        _write_json(
+            state_snapshot,
+            {
+                "schema_version": 1,
+                "last_successful_as_of": as_of.isoformat(),
+            },
+        )
+        _write_json(formal_snapshot, {"data_health_passed": True})
+        _write_json(comparison_snapshot, {"walk_forward": []})
+        benchmark_snapshot.parent.mkdir(parents=True, exist_ok=True)
+        benchmark_snapshot.write_text(
+            "trade_date,index_close\n"
+            f"{as_of.isoformat()},4000\n",
+            encoding="utf-8",
+        )
+        anchor = anchor_dir / "anchor_manifest.json"
         _write_json(
             anchor,
             {
                 "schema_version": 1,
                 "kind": "paper_validation_anchor",
                 "as_of": as_of.isoformat(),
+                "counts_toward_evidence": False,
+                "policy": approved_paper_policy(),
+                "artifacts": {
+                    "account": file_reference(account_snapshot),
+                    "pipeline_state": file_reference(state_snapshot),
+                    "formal_run_manifest": file_reference(formal_snapshot),
+                    "comparison": file_reference(comparison_snapshot),
+                    "benchmark": file_reference(benchmark_snapshot),
+                },
             },
         )
         payload["validation_anchor"] = {
@@ -659,17 +773,6 @@ def _seed_state(
             "sha256": hashlib.sha256(anchor.read_bytes()).hexdigest(),
         }
     _write_json(config.state, payload)
-    _write_json(
-        config.account,
-        {
-            "cash": 100000.0,
-            "positions": {},
-            "nav_history": [],
-            "pending_targets": {},
-            "pending_signal_date": None,
-            "last_processed_date": as_of.isoformat(),
-        },
-    )
     return payload
 
 

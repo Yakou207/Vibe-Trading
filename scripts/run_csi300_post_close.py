@@ -29,6 +29,7 @@ from fintech_quant.data.manifest_chain import (  # noqa: E402
 )
 from fintech_quant.data.run_artifacts import sha256_file  # noqa: E402
 from fintech_quant.data.symbols import normalize_a_share_symbol  # noqa: E402
+from fintech_quant.execution.paper_evidence import load_verified_anchor  # noqa: E402
 
 
 Runner = Callable[..., None]
@@ -137,6 +138,12 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
     validation_anchor = _verified_reference(state, "validation_anchor")
     previous_as_of = date.fromisoformat(str(state["last_successful_as_of"]))
     _require_account_state_alignment(config.account, previous_as_of)
+    evidence_parent = _active_evidence_parent(
+        state,
+        validation_anchor=validation_anchor,
+        account=config.account,
+        state_date=previous_as_of,
+    )
     if config.as_of < previous_as_of:
         raise ValueError("as_of must not precede pipeline state")
     if config.as_of == previous_as_of:
@@ -149,6 +156,7 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         replay_state = dict(state)
         replay_state["validation_report"] = _reference(validation_report)
         _write_state_atomic(config.state, replay_state)
+        _publish_validation_report(config, validation_report)
         return {
             "status": "already_completed",
             "as_of": config.as_of.isoformat(),
@@ -157,13 +165,6 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         }
 
     parent_manifests = _verified_state_manifests(state)
-    evidence_parent = (
-        _verified_reference(state, "evidence_parent")
-        if isinstance(state.get("evidence_parent"), Mapping)
-        else _verified_reference(state, "cycle_manifest")
-        if isinstance(state.get("cycle_manifest"), Mapping)
-        else validation_anchor
-    )
     start = previous_as_of + timedelta(days=1)
     date_token = config.as_of.strftime("%Y%m%d")
     cycle_dir = config.cycle_root / config.as_of.isoformat()
@@ -343,6 +344,7 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
     )
     new_state["validation_report"] = _reference(validation_report)
     _write_state_atomic(config.state, new_state)
+    _publish_validation_report(config, validation_report)
     return {
         "status": "completed",
         "as_of": config.as_of.isoformat(),
@@ -703,6 +705,44 @@ def _verified_reference(state: Mapping[str, object], key: str) -> Path:
     return path
 
 
+def _active_evidence_parent(
+    state: Mapping[str, object],
+    *,
+    validation_anchor: Path,
+    account: Path,
+    state_date: date,
+) -> Path:
+    anchor_payload = load_verified_anchor(validation_anchor)
+    parent = (
+        _verified_reference(state, "evidence_parent")
+        if isinstance(state.get("evidence_parent"), Mapping)
+        else _verified_reference(state, "cycle_manifest")
+        if isinstance(state.get("cycle_manifest"), Mapping)
+        else validation_anchor
+    )
+    if parent == validation_anchor:
+        if anchor_payload.get("as_of") != state_date.isoformat():
+            raise ValueError("active evidence parent anchor date mismatch")
+        return parent
+
+    if not isinstance(state.get("cycle_manifest"), Mapping):
+        raise ValueError("active evidence parent is not the latest cycle manifest")
+    latest_cycle = _verified_reference(state, "cycle_manifest")
+    if parent != latest_cycle:
+        raise ValueError("active evidence parent is not the latest cycle manifest")
+    payload = _load_json(parent)
+    if (
+        payload.get("schema_version") != 2
+        or payload.get("kind") != "paper_trading_cycle"
+    ):
+        raise ValueError("active evidence parent cycle schema is invalid")
+    if payload.get("as_of") != state_date.isoformat():
+        raise ValueError("active evidence parent cycle date mismatch")
+    if payload.get("account_after_sha256") != sha256_file(account):
+        raise ValueError("active evidence parent account hash mismatch")
+    return parent
+
+
 def _validate_current_constituents(current: Path, membership: Path, as_of: date) -> None:
     with current.open(encoding="utf-8", newline="") as handle:
         symbols = tuple(
@@ -821,11 +861,17 @@ def _run_validation_audit(
         raise ValueError("paper validation report status is invalid")
     if payload.get("live_trading_authorized") is not False:
         raise ValueError("paper validation report must not authorize live trading")
-    root_output = config.cycle_root.parent / "validation_report.json"
-    _copy_file_atomic(output, root_output)
-    if sha256_file(root_output) != sha256_file(output):
-        raise ValueError("root validation report differs from cycle-local report")
     return status, output
+
+
+def _publish_validation_report(
+    config: PipelineConfig,
+    report: Path,
+) -> None:
+    root_output = config.cycle_root.parent / "validation_report.json"
+    _copy_file_atomic(report, root_output)
+    if sha256_file(root_output) != sha256_file(report):
+        raise ValueError("root validation report differs from cycle-local report")
 
 
 def _manifest_state(raw: Path, processed: Path) -> dict[str, str]:

@@ -5,6 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+import scripts.initialize_csi300_paper_validation as initializer
 from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file
 from fintech_quant.execution.paper_evidence import (
     file_reference,
@@ -62,6 +65,8 @@ def test_cli_supersedes_existing_epoch_without_mutating_old_evidence(
             "schema_version": 2,
             "kind": "paper_trading_cycle",
             "as_of": "2026-07-13",
+            "evidence_parent": file_reference(old_anchor),
+            "account_after_sha256": sha256_file(paths["account"]),
         },
     )
     _write_json(
@@ -70,6 +75,9 @@ def test_cli_supersedes_existing_epoch_without_mutating_old_evidence(
             "schema_version": 1,
             "kind": "csi300_paper_validation_report",
             "status": "FAILED",
+            "live_trading_authorized": False,
+            "anchor": file_reference(old_anchor),
+            "latest_cycle": file_reference(cycle),
         },
     )
     for name, adjust in (("signal_price", "hfq"), ("execution_price", "none")):
@@ -115,6 +123,99 @@ def test_cli_supersedes_existing_epoch_without_mutating_old_evidence(
     assert old_anchor.read_bytes() == old_anchor_before
     assert cycle.read_bytes() == cycle_before
     assert report.read_bytes() == report_before
+
+
+def test_cli_rejects_supersession_when_latest_report_targets_wrong_cycle(
+    tmp_path: Path,
+) -> None:
+    paths = _bootstrap_paths(tmp_path)
+    root = tmp_path / "validation"
+    first = _run(paths, root)
+    assert first.returncode == 0, first.stderr
+    state = _load_json(paths["state"])
+    old_anchor = Path(state["validation_anchor"]["path"])
+    cycle = tmp_path / "cycles" / "2026-07-13" / "cycle_manifest.json"
+    wrong_cycle = tmp_path / "cycles" / "2026-07-12" / "cycle_manifest.json"
+    report = tmp_path / "cycles" / "2026-07-13" / "validation_report.json"
+    for path, as_of in (
+        (cycle, "2026-07-13"),
+        (wrong_cycle, "2026-07-12"),
+    ):
+        _write_json(
+            path,
+            {
+                "schema_version": 2,
+                "kind": "paper_trading_cycle",
+                "as_of": as_of,
+                "evidence_parent": file_reference(old_anchor),
+                "account_after_sha256": sha256_file(paths["account"]),
+            },
+        )
+    _write_json(
+        report,
+        {
+            "schema_version": 1,
+            "kind": "csi300_paper_validation_report",
+            "status": "FAILED",
+            "live_trading_authorized": False,
+            "anchor": file_reference(old_anchor),
+            "latest_cycle": file_reference(wrong_cycle),
+        },
+    )
+    state["cycle_manifest"] = file_reference(cycle)
+    state["validation_report"] = file_reference(report)
+    _write_json(paths["state"], state)
+    state_before = paths["state"].read_bytes()
+
+    completed = _run(paths, root, supersede=True)
+
+    assert completed.returncode != 0
+    assert "latest cycle" in completed.stderr
+    assert paths["state"].read_bytes() == state_before
+
+
+def test_cli_preserves_published_anchor_when_state_fsync_reports_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _bootstrap_paths(tmp_path)
+    output_root = tmp_path / "validation"
+    real_write = initializer._write_json_atomic
+
+    def replace_then_fail(path: Path, payload: object) -> None:
+        real_write(path, payload)
+        raise OSError("directory fsync failed after replace")
+
+    monkeypatch.setattr(initializer, "_write_json_atomic", replace_then_fail)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "initialize_csi300_paper_validation.py",
+            "--account",
+            str(paths["account"]),
+            "--state",
+            str(paths["state"]),
+            "--formal-run-manifest",
+            str(paths["formal_manifest"]),
+            "--comparison",
+            str(paths["comparison"]),
+            "--benchmark",
+            str(paths["benchmark"]),
+            "--output-root",
+            str(output_root),
+            "--created-at",
+            "2026-07-14T05:00:00+00:00",
+        ],
+    )
+
+    with pytest.raises(OSError, match="directory fsync failed"):
+        initializer.main()
+
+    state = _load_json(paths["state"])
+    anchor = Path(state["validation_anchor"]["path"])
+    assert anchor.is_file()
+    assert state["validation_anchor"] == file_reference(anchor)
 
 
 def _run(
