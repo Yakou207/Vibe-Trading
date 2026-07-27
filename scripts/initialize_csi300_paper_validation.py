@@ -55,19 +55,35 @@ def main() -> int:
         supersedes = {
             "validation_anchor": anchor_reference,
         }
-        if isinstance(state.get("cycle_manifest"), Mapping):
+        active_parent = (
+            verify_file_reference(state["evidence_parent"])
+            if isinstance(state.get("evidence_parent"), Mapping)
+            else verify_file_reference(state["cycle_manifest"])
+            if isinstance(state.get("cycle_manifest"), Mapping)
+            else anchor_path
+        )
+        if active_parent != anchor_path:
+            if not isinstance(state.get("cycle_manifest"), Mapping):
+                raise ValueError(
+                    "active evidence parent is not the latest cycle manifest"
+                )
             cycle_reference = _verified_latest_cycle_reference(
                 state,
                 account=account,
                 validation_anchor=anchor_path,
             )
-            report_reference = _verified_latest_report_reference(
+            if verify_file_reference(cycle_reference) != active_parent:
+                raise ValueError(
+                    "active evidence parent is not the latest cycle manifest"
+                )
+            report_reference = _optional_verified_latest_report_reference(
                 state,
                 validation_anchor=anchor_path,
                 latest_cycle=verify_file_reference(cycle_reference),
             )
             supersedes["cycle_manifest"] = cycle_reference
-            supersedes["validation_report"] = report_reference
+            if report_reference is not None:
+                supersedes["validation_report"] = report_reference
     account_before = account.read_bytes()
     manifest: Path | None = None
     state_publish_started = False
@@ -163,18 +179,18 @@ def _verified_latest_cycle_reference(
     return reference
 
 
-def _verified_latest_report_reference(
+def _optional_verified_latest_report_reference(
     state: Mapping[str, object],
     *,
     validation_anchor: Path,
     latest_cycle: Path,
-) -> dict[str, object]:
+) -> dict[str, object] | None:
     if isinstance(state.get("validation_report"), Mapping):
         reference = _verified_state_reference(state, "validation_report")
     else:
         report = latest_cycle.with_name("validation_report.json")
         if not report.is_file():
-            raise ValueError("latest cycle validation report is missing")
+            return None
         reference = file_reference(report)
     payload = _load_json(verify_file_reference(reference))
     if (

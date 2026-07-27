@@ -94,6 +94,7 @@ def test_cli_supersedes_existing_epoch_without_mutating_old_evidence(
             current_processed
         )
     state["cycle_manifest"] = file_reference(cycle)
+    state["evidence_parent"] = file_reference(cycle)
     state["validation_report"] = file_reference(report)
     _write_json(paths["state"], state)
     old_anchor_before = old_anchor.read_bytes()
@@ -123,6 +124,49 @@ def test_cli_supersedes_existing_epoch_without_mutating_old_evidence(
     assert old_anchor.read_bytes() == old_anchor_before
     assert cycle.read_bytes() == cycle_before
     assert report.read_bytes() == report_before
+
+    repeated = _run(paths, root, supersede=True)
+
+    assert repeated.returncode == 0, repeated.stderr
+    repeated_state = _load_json(paths["state"])
+    repeated_anchor = Path(repeated_state["validation_anchor"]["path"])
+    assert repeated_anchor != new_anchor
+    assert repeated_state["evidence_parent"] == repeated_state["validation_anchor"]
+    repeated_payload = load_verified_anchor(repeated_anchor)
+    assert set(repeated_payload["supersedes"]) == {"validation_anchor"}
+
+
+def test_cli_supersedes_committed_cycle_without_audit_report(tmp_path: Path) -> None:
+    paths = _bootstrap_paths(tmp_path)
+    root = tmp_path / "validation"
+    first = _run(paths, root)
+    assert first.returncode == 0, first.stderr
+    state = _load_json(paths["state"])
+    old_anchor = Path(state["validation_anchor"]["path"])
+    cycle = tmp_path / "cycles" / "2026-07-13" / "cycle_manifest.json"
+    _write_json(
+        cycle,
+        {
+            "schema_version": 2,
+            "kind": "paper_trading_cycle",
+            "as_of": "2026-07-13",
+            "evidence_parent": file_reference(old_anchor),
+            "account_after_sha256": sha256_file(paths["account"]),
+        },
+    )
+    state["cycle_manifest"] = file_reference(cycle)
+    state["evidence_parent"] = file_reference(cycle)
+    _write_json(paths["state"], state)
+
+    completed = _run(paths, root, supersede=True)
+
+    assert completed.returncode == 0, completed.stderr
+    new_anchor = Path(_load_json(paths["state"])["validation_anchor"]["path"])
+    payload = load_verified_anchor(new_anchor)
+    assert set(payload["supersedes"]) == {
+        "validation_anchor",
+        "cycle_manifest",
+    }
 
 
 def test_cli_rejects_supersession_when_latest_report_targets_wrong_cycle(
@@ -163,6 +207,7 @@ def test_cli_rejects_supersession_when_latest_report_targets_wrong_cycle(
         },
     )
     state["cycle_manifest"] = file_reference(cycle)
+    state["evidence_parent"] = file_reference(cycle)
     state["validation_report"] = file_reference(report)
     _write_json(paths["state"], state)
     state_before = paths["state"].read_bytes()
