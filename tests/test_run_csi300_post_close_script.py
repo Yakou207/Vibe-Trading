@@ -405,6 +405,51 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             self.assertEqual(result["status"], "already_completed")
             self.assertEqual(result["validation_status"], "COLLECTING")
 
+    def test_pipeline_rejects_validation_session_gap_before_paper_commit(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = replace(_config(root), as_of=date(2026, 1, 6))
+            _seed_state(config, date(2026, 1, 2))
+            state_before = config.state.read_bytes()
+            account_before = config.account.read_bytes()
+            runner = RecordingRunner(
+                config,
+                benchmark_dates=(date(2026, 1, 5), date(2026, 1, 6)),
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "validation session continuity",
+            ):
+                run_pipeline(config, runner=runner)
+
+            self.assertFalse(
+                any(
+                    Path(command[0]).name == "run_post_close_daily_cycle.py"
+                    for command, _ in runner.calls
+                )
+            )
+            self.assertEqual(config.state.read_bytes(), state_before)
+            self.assertEqual(config.account.read_bytes(), account_before)
+
+    def test_pipeline_accepts_weekend_between_parent_and_next_session(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            _seed_state(config, date(2026, 1, 2))
+            runner = RecordingRunner(
+                config,
+                benchmark_dates=(date(2026, 1, 5),),
+            )
+
+            result = run_pipeline(config, runner=runner)
+
+            self.assertEqual(result["status"], "completed")
+
 
 class RecordingRunner:
     def __init__(
@@ -413,10 +458,12 @@ class RecordingRunner:
         *,
         timeout_on: str | None = None,
         fail_on: str | None = None,
+        benchmark_dates: tuple[date, ...] | None = None,
     ) -> None:
         self.config = config
         self.timeout_on = timeout_on
         self.fail_on = fail_on
+        self.benchmark_dates = benchmark_dates or (config.as_of,)
         self.calls: list[tuple[list[str], int]] = []
 
     def __call__(self, command: list[str], *, timeout: int) -> None:
@@ -489,11 +536,14 @@ class RecordingRunner:
         elif script == "fetch_market_state.py":
             output = Path(_argument(command, "--output"))
             output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(
-                "trade_date,index_symbol,index_close,index_ma250,index_below_annual_ma\n"
-                "2026-01-05,sh000300,4000,3900,false\n",
-                encoding="utf-8",
+            rows = [
+                "trade_date,index_symbol,index_close,index_ma250,index_below_annual_ma"
+            ]
+            rows.extend(
+                f"{trade_date.isoformat()},sh000300,4000,3900,false"
+                for trade_date in self.benchmark_dates
             )
+            output.write_text("\n".join(rows) + "\n", encoding="utf-8")
         elif script == "build_daily_decision_report.py":
             _write_json(Path(_argument(command, "--output")), {"scores": [], "risk_warnings": []})
             _write_json(Path(_argument(command, "--data-health-output")), {"passed": True})

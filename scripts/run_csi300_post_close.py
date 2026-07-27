@@ -154,7 +154,9 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
 
     parent_manifests = _verified_state_manifests(state)
     evidence_parent = (
-        _verified_reference(state, "cycle_manifest")
+        _verified_reference(state, "evidence_parent")
+        if isinstance(state.get("evidence_parent"), Mapping)
+        else _verified_reference(state, "cycle_manifest")
         if isinstance(state.get("cycle_manifest"), Mapping)
         else validation_anchor
     )
@@ -220,6 +222,7 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         timeout=config.stage_timeout,
     )
     _require_file(benchmark, "benchmark")
+    _require_next_validation_session(evidence_parent, benchmark, config.as_of)
 
     factor_raw, factor_processed = _factor_stage(
         config,
@@ -306,6 +309,7 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
     if _load_json(cycle_manifest).get("as_of") != config.as_of.isoformat():
         raise ValueError("paper cycle manifest as_of mismatch")
 
+    cycle_reference = _reference(cycle_manifest)
     new_state = {
         "schema_version": 1,
         "last_successful_as_of": config.as_of.isoformat(),
@@ -317,7 +321,8 @@ def run_pipeline(config: PipelineConfig, *, runner: Runner | None = None) -> dic
         "benchmark": _reference(benchmark),
         "decision_report": _reference(decision_report),
         "data_health": _reference(data_health),
-        "cycle_manifest": _reference(cycle_manifest),
+        "cycle_manifest": cycle_reference,
+        "evidence_parent": cycle_reference,
         "account": _reference(config.account),
         "manifests": {
             "signal_price": _manifest_state(signal_raw, signal_processed),
@@ -714,6 +719,32 @@ def _validate_current_constituents(current: Path, membership: Path, as_of: date)
         raise ValueError(
             "current constituents differ from historical membership: "
             f"missing={missing[:3]} extra={extra[:3]}"
+        )
+
+
+def _require_next_validation_session(
+    evidence_parent: Path,
+    benchmark: Path,
+    as_of: date,
+) -> None:
+    parent_payload = _load_json(evidence_parent)
+    parent_as_of = parent_payload.get("as_of")
+    if not isinstance(parent_as_of, str) or not parent_as_of:
+        raise ValueError("active evidence parent as_of is missing")
+    parent_date = date.fromisoformat(parent_as_of)
+    with benchmark.open(encoding="utf-8", newline="") as handle:
+        raw_dates = [
+            date.fromisoformat(str(row["trade_date"]))
+            for row in csv.DictReader(handle)
+        ]
+    if raw_dates != sorted(set(raw_dates)):
+        raise ValueError("benchmark trading sessions must be unique and increasing")
+    pending = [value for value in raw_dates if parent_date < value <= as_of]
+    if pending != [as_of]:
+        raise ValueError(
+            "validation session continuity failed before paper execution: "
+            f"parent={parent_date.isoformat()} as_of={as_of.isoformat()} "
+            f"sessions={[value.isoformat() for value in pending]}"
         )
 
 

@@ -134,6 +134,33 @@ def test_v1_cycles_never_count_as_validation_evidence(tmp_path: Path) -> None:
     assert report["metrics"]["valid_sessions"] == 0
 
 
+def test_new_epoch_ignores_preserved_cycle_on_anchor_date(tmp_path: Path) -> None:
+    _, cycles = _write_passing_series(tmp_path, sessions=2, span_days=2)
+    new_anchor = _write_anchor(
+        tmp_path / "epoch-2",
+        as_of=date(2026, 1, 2),
+        equity=105000.0,
+    )
+    active_cycle = _load_json(cycles[1])
+    active_cycle["evidence_parent"] = file_reference(new_anchor)
+    new_anchor_account = Path(
+        _load_json(new_anchor)["artifacts"]["account"]["path"]
+    )
+    active_cycle["account_before_sha256"] = file_reference(new_anchor_account)[
+        "sha256"
+    ]
+    new_comparison = Path(
+        _load_json(new_anchor)["artifacts"]["comparison"]["path"]
+    )
+    active_cycle["inputs"]["comparison"] = file_reference(new_comparison)
+    _write_json(cycles[1], active_cycle)
+
+    report = audit_paper_validation(new_anchor, cycles)
+
+    assert report["metrics"]["valid_sessions"] == 1
+    assert report["latest_cycle"]["path"] == str(cycles[1].resolve())
+
+
 def test_missing_expected_benchmark_session_fails(tmp_path: Path) -> None:
     anchor, cycles = _write_passing_series(tmp_path, sessions=2, span_days=3)
     latest = _load_json(cycles[-1])

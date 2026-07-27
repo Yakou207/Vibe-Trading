@@ -289,7 +289,7 @@ def _load_v2_cycles(
             raise ValueError(f"unsupported paper cycle manifest: {path}")
         cycle_date = date.fromisoformat(str(payload.get("as_of", "")))
         if cycle_date <= anchor_date:
-            raise ValueError("paper cycle date must be after validation anchor")
+            continue
         result.append((path, payload, cycle_date))
     result.sort(key=lambda item: item[2])
     dates = [item[2] for item in result]
