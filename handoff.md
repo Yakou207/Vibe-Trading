@@ -301,8 +301,8 @@ The 2026-07-16 read-only status review additionally verified:
 
 The 2026-07-27 V2 evidence repair verification recorded:
 
-- focused post-close, anchor, auditor, and decision-report suites: 52 passed;
-- full suite: 454 passed, 2 skipped, and 31 unittest subtests passed;
+- focused post-close, anchor, auditor, and decision-report suites: 53 passed;
+- full suite: 455 passed, 2 skipped, and 31 unittest subtests passed;
 - Python compile and four V2 CLI help checks: passed;
 - `git diff --check`: passed;
 - Ruff was not installed in the active virtual environment or `PATH`, so no new Ruff result is
