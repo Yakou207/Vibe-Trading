@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import shutil
@@ -92,17 +93,25 @@ def create_validation_anchor(
         raise ValueError("formal data health did not pass")
     if formal_payload.get("dqn_overlay_status") not in {None, "diagnostic_only"}:
         raise ValueError("formal DQN overlay must remain diagnostic only")
-    _verify_formal_inputs(
-        formal_payload,
-        signal_manifest=processed["signal_price"],
-        execution_manifest=processed["execution_price"],
-        benchmark=benchmark,
-    )
     superseded_references = {
         name: dict(reference) for name, reference in (supersedes or {}).items()
     }
     for reference in superseded_references.values():
         verify_file_reference(reference)
+    if superseded_references:
+        _verify_superseded_anchor_inputs(
+            superseded_references,
+            formal_run_manifest=formal_run_manifest,
+            comparison=comparison,
+        )
+        _require_benchmark_date(benchmark, account_date)
+    else:
+        _verify_formal_inputs(
+            formal_payload,
+            signal_manifest=processed["signal_price"],
+            execution_manifest=processed["execution_price"],
+            benchmark=benchmark,
+        )
 
     resolved_output_root = output_root.resolve()
     resolved_output_root.mkdir(parents=True, exist_ok=True)
@@ -179,6 +188,8 @@ def load_verified_anchor(path: Path) -> dict[str, object]:
     if schema_version == 2:
         if not isinstance(supersedes, Mapping) or not supersedes:
             raise ValueError("superseding paper validation anchor references are missing")
+        if not isinstance(supersedes.get("validation_anchor"), Mapping):
+            raise ValueError("superseding paper validation anchor parent is missing")
         for reference in supersedes.values():
             if not isinstance(reference, Mapping):
                 raise ValueError("superseded paper evidence reference is invalid")
@@ -252,6 +263,42 @@ def _verify_formal_inputs(
             raise ValueError(f"formal run manifest is missing {name}")
         if verify_file_reference(reference) != expected_path:
             raise ValueError(f"formal run manifest {name} path mismatch")
+
+
+def _verify_superseded_anchor_inputs(
+    supersedes: Mapping[str, Mapping[str, object]],
+    *,
+    formal_run_manifest: Path,
+    comparison: Path,
+) -> None:
+    previous_reference = supersedes.get("validation_anchor")
+    if not isinstance(previous_reference, Mapping):
+        raise ValueError("validation epoch supersession requires the previous anchor")
+    previous_anchor = load_verified_anchor(verify_file_reference(previous_reference))
+    artifacts = previous_anchor.get("artifacts")
+    if not isinstance(artifacts, Mapping):
+        raise ValueError("previous validation anchor artifacts must be an object")
+    for name, current_path in (
+        ("formal_run_manifest", formal_run_manifest),
+        ("comparison", comparison),
+    ):
+        reference = artifacts.get(name)
+        if not isinstance(reference, Mapping):
+            raise ValueError(f"previous validation anchor is missing {name}")
+        if reference.get("sha256") != sha256_file(current_path):
+            raise ValueError(
+                f"superseding validation anchor {name} differs from previous epoch"
+            )
+
+
+def _require_benchmark_date(benchmark: Path, account_date: str) -> None:
+    with benchmark.open(encoding="utf-8", newline="") as handle:
+        dates = {
+            str(row.get("trade_date", ""))
+            for row in csv.DictReader(handle)
+        }
+    if account_date not in dates:
+        raise ValueError("superseding validation benchmark is missing account date")
 
 
 def _anchor_equity(account: Mapping[str, object], as_of: str) -> float:

@@ -72,6 +72,19 @@ def test_cli_supersedes_existing_epoch_without_mutating_old_evidence(
             "status": "FAILED",
         },
     )
+    for name, adjust in (("signal_price", "hfq"), ("execution_price", "none")):
+        current_processed = _manifest(
+            tmp_path / "runs/current-processed",
+            f"{name}-current",
+            "processed",
+            {"adjust": adjust},
+        )
+        state["manifests"][name]["processed_manifest"] = str(
+            current_processed.resolve()
+        )
+        state["manifests"][name]["processed_manifest_sha256"] = sha256_file(
+            current_processed
+        )
     state["cycle_manifest"] = file_reference(cycle)
     state["validation_report"] = file_reference(report)
     _write_json(paths["state"], state)
