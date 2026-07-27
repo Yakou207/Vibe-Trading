@@ -1,15 +1,16 @@
 # Vibe-Trading CSI 300 handoff
 
-Last reviewed: 2026-07-16 16:43 Asia/Shanghai
+Last reviewed: 2026-07-27 Asia/Shanghai
 Repository: `/Users/yakou/Desktop/Vibe-Trading`
 Remote: `https://github.com/Yakou207/Vibe-Trading.git`
-Reviewed commit: `b4eabd16a6935149525d5f13d241db6c8efc4ebf` (`main == origin/main` before this documentation update)
+Implementation branch: `codex/v2-evidence-repair`
 
 ## Resume here
 
 1. Read `AGENTS.md` and this file completely.
 2. Run `git status --short`, `git branch --show-current`, `git rev-parse HEAD`, and
-   `git rev-parse origin/main`. Work only from a clean `main` that matches `origin/main`.
+   `git rev-parse origin/main`. Continue the clean `codex/v2-evidence-repair` branch until it is
+   reviewed and merged; after merge, resume only from a clean `main` that matches `origin/main`.
 3. Do not connect a broker, send an order, enable DQN exposure, tune thresholds, or claim that
    historical returns prove future profit.
 4. Inspect the canonical paper account, pipeline state, validation anchor, and validation report
@@ -29,43 +30,47 @@ This is not deployable-profit proof. At the time of this handoff:
 - the formal universe is CSI 300, not the earlier 30-stock STAR Market fixture;
 - the point-in-time membership history has 300 active names on each checked date, 439 unique stocks,
   and 461 membership intervals;
-- the canonical account and pipeline state are dated `2026-07-15`;
+- the canonical account and pipeline state are dated `2026-07-21`;
 - cash is `100000.0`, actual and shadow positions are empty, and the drawdown regime is `normal`;
-- one complete schema-version-2 cycle exists for `2026-07-15`, but its audit status is `FAILED`;
-- the audit loads `valid_sessions=1`, but the cycle does not count toward the continuous evidence
-  window because expected CSI 300 session `2026-07-14` is missing;
+- complete schema-version-2 cycles exist for `2026-07-15`, `2026-07-16`, and `2026-07-21`; all
+  remain preserved failed evidence under the original anchor;
+- the latest cycle-local audit loads `valid_sessions=3` but remains `FAILED` because the original
+  anchor-to-cycle chain has missing CSI 300 sessions;
 - operationally, the accepted continuous evidence count remains zero;
 - `live_trading_authorized=false` and DQN paper exposure is disabled;
 - the weekday 17:30 Asia/Shanghai automation is active;
 - the 2026-07-15 cycle passed data-health, approved-policy, execution-integrity, drawdown, DQN-off,
   and live-off gates, but failed the anchor-to-cycle trading-session continuity gate;
-- the 2026-07-14 factor/benchmark mismatch is now diagnosed as incomplete processed-stage reuse
-  validation, not as a provider-data or equality-gate defect;
-- the immediate task is to add the exact same-date retry regression, bind processed-factor reuse to
-  all material dependency hashes, and establish a new explicit validation epoch without editing or
-  deleting the preserved failed evidence.
+- the 2026-07-14 factor/benchmark mismatch was caused by incomplete processed-stage reuse
+  validation, not by provider data or the equality gate; the code repair now binds every material
+  factor dependency;
+- explicit schema-version-2 epoch supersession, pre-commit session continuity, and canonical latest
+  audit publication are implemented, but no provider-backed supersession or fresh counted cycle was
+  run during the repair.
 
 ## Canonical state and hashes
 
-These values were rechecked during this review:
+The latest mutable canonical values were rechecked read-only on 2026-07-27:
 
 | Artifact | State | SHA-256 |
 |---|---|---|
-| `data/paper/csi300_baseline/account.json` | `last_processed_date=2026-07-15`, cash 100000, no positions | `774c7548198eb5487b316bf9ac48279c1d5cac33b06fe14da203868a0ff8932c` |
-| `data/paper/csi300_baseline/pipeline_state.json` | `last_successful_as_of=2026-07-15` | `bf805ffa204f68ff159b9126adc5daa42855edc39f3728a17efbf039289f3006` |
+| `data/paper/csi300_baseline/account.json` | `last_processed_date=2026-07-21`, cash 100000, no positions | `6d2ddd37f7d1415cae49a7b728e05a5b8f5dfa028547f418f522845b10fe89b1` |
+| `data/paper/csi300_baseline/pipeline_state.json` | `last_successful_as_of=2026-07-21` | `263bffe8613bc21203750955053d28cb95fd7c73822d52377d2c8ff7b32fb845` |
 | `data/paper/csi300_baseline/validation/anchor-20260713/anchor_manifest.json` | non-counted anchor | `13c2ead2826740a7426e9ffb557b23219c8abfa3ab3de73d174be9ab9c0c3a2a` |
 | `outputs/paper_trading/csi300_baseline/cycles/2026-07-15/cycle_manifest.json` | complete V2 cycle chained to the original anchor | `66ec15a3d78c9181b88cb7be19e23f5e2c88c6ac91ee5d79c8899a84c88f1cbb` |
 | `outputs/paper_trading/csi300_baseline/cycles/2026-07-15/validation_report.json` | `FAILED`, one loaded session, missing `2026-07-14` | `1b2846aae18223ad8809ee80fc9d4d6ba8c359ffbbd55c07f2f75f41779fb01e` |
+| `outputs/paper_trading/csi300_baseline/cycles/2026-07-21/cycle_manifest.json` | latest complete preserved V2 cycle under the original anchor | `1c016de2599196e8034ec410b8c52717df88499d7aa15d6f790bd86dd5085cfc` |
+| `outputs/paper_trading/csi300_baseline/cycles/2026-07-21/validation_report.json` | `FAILED`, three loaded sessions with continuity gaps | `e73b81efda51f6e0b6323c1b4973e91789bdb0f681a360c2c65d9002d344ba66` |
 | `outputs/paper_trading/csi300_baseline/validation_report.json` | stale root summary: `NO_EVIDENCE`, zero sessions | `23209bf404d408f076226050804dcc786d75f266f62f747d5cd0328f06ebccc2` |
 | `outputs/paper_trading/csi300_baseline/cycles/2026-07-15/dashboard.html` | committed V2 cycle dashboard | `b2fd082dabce66c18af01eaa0148ccaf78be8e84f07e59a0737cbcd3edee4254` |
 | `outputs/csi300_research/hfq-formal-20260713/pnl_curve.json` | 1,231 formal CSI 300 comparison points | `abb86cff7adc98fcfb09a0a21da4fe610a9b7a671f1a927e7bdf0290f7f64107` |
 | `outputs/paper_trading/csi300_baseline/hfq_formal_dashboard.html` | formal backtest dashboard with PnL curve | `147addb8a7fe9f225cce0ce642a9986c378ede58f4aeae2804b99534e81daecc` |
 
-The cycle-local validation report is the latest authoritative audit. The root-level
-`validation_report.json` is stale and remains a separate operational-consistency defect until the
-pipeline records one canonical latest report reference. Validation-report hashes can change after
-an intentional audit rerun even if their semantic status does not. Account and pipeline-state
-hashes must not change on a pre-commit failure.
+The 2026-07-21 cycle-local validation report is the latest authoritative audit. The root-level
+artifact is still the preserved stale `NO_EVIDENCE` file because this code repair deliberately did
+not rerun operational evidence. The repaired entrypoint atomically mirrors the next successful
+audit and stores its cycle-local reference in pipeline state. Account and pipeline-state hashes
+must not change on a pre-commit failure.
 
 ## Approved paper policy
 
@@ -294,64 +299,56 @@ The 2026-07-16 read-only status review additionally verified:
   a fresh Ruff result; the previously recorded PnL-dashboard Ruff result remains historical
   verification only.
 
+The 2026-07-27 V2 evidence repair verification recorded:
+
+- focused post-close, anchor, auditor, and decision-report suites: 48 passed;
+- full suite: 450 passed, 2 skipped, and 31 unittest subtests passed;
+- Python compile and four V2 CLI help checks: passed;
+- `git diff --check`: passed;
+- Ruff was not installed in the active virtual environment or `PATH`, so no new Ruff result is
+  claimed; and
+- no provider-backed command ran, and no canonical account, state, anchor, cycle, dashboard, or
+  report was modified.
+
 ## Known boundaries and next priorities
 
-The first two items block the start of a new paper-evidence window. Every item blocks any
-live-readiness claim:
+The four reported V2 code defects are repaired. The accepted evidence count remains zero, and every
+item below still blocks any live-readiness claim:
 
-1. The same-date processed-factor reuse defect remains in code. The 2026-07-15 run used a new date
-   and therefore did not exercise or repair the failing same-date reuse path.
-2. The current anchor-to-cycle evidence epoch has a permanent `2026-07-14` session gap. Continuing
-   to append cycles under the same anchor will keep the strict continuity audit failed. Preserve the
-   old anchor and 2026-07-15 cycle, then establish an explicit superseding non-counted anchor or a
-   separately named canonical validation epoch from the committed 2026-07-15 account/state.
-3. The V2 design says continuity is required between the first and latest counted cycles, while the
-   implementation checks every benchmark session after the anchor. Do not silently relax the code.
-   The recommended policy is to retain the stricter anchor-to-latest rule and make epoch
-   supersession explicit, hash-linked, and auditable. If the policy owner chooses the design-text
-   interpretation instead, record it as a deliberate policy change with tests and documentation.
-4. The root-level `outputs/paper_trading/csi300_baseline/validation_report.json` is stale at
-   `NO_EVIDENCE`, while the cycle-local report is `FAILED`. Pipeline state, dashboards, automation,
-   and handoffs need one canonical latest-audit reference.
-5. AkShare upstream endpoints can return empty or non-JSON responses. Preserve immutable failures
+1. The old epoch has permanent gaps and must be superseded explicitly. Delayed catch-up cycles, if
+   needed to advance the canonical account, are operational repair evidence and must not be counted
+   as fresh continuous validation.
+2. AkShare upstream endpoints can return empty or non-JSON responses. Preserve immutable failures
    and retry; do not silently substitute current constituents or future data.
-6. The auditor verifies the account hash chain, reported costs, allowed corporate actions, and full
+3. The auditor verifies the account hash chain, reported costs, allowed corporate actions, and full
    NAV reconciliation, but it does not independently replay every FIFO dividend-tax lot and every
    unapplied corporate-action decision from the prior account. Add an independent replay audit
    before considering a live broker.
-7. The five staged outputs are committed with account replacement last. This protects canonical
+4. The five staged outputs are committed with account replacement last. This protects canonical
    account progression on ordinary pre-commit errors, but an OS crash during the sequence can leave
    partial non-account outputs. The next run must rely on account/state/hash checks and fail closed;
    a future journal or directory-swap design would strengthen crash recovery.
-8. Hash chaining is tamper-evident under preserved immutable artifacts; it is not a signed external
+5. Hash chaining is tamper-evident under preserved immutable artifacts; it is not a signed external
    timestamp. External/WORM retention or signed attestations would be required for stronger audit
    claims.
-9. DQN backends remain behaviorally divergent. Do not pass a DQN report into paper exposure until
+6. DQN backends remain behaviorally divergent. Do not pass a DQN report into paper exposure until
    the overlay is independently stable across walk-forward windows and seeds.
 
 Immediate work order:
 
-1. Add a regression test that reproduces the exact 2026-07-14 same-date retry: unchanged raw-factor
-   parent, refreshed benchmark at the cycle path, and a previously completed processed factor layer.
-2. Make the smallest processed-stage repair. Factor reuse must bind the raw-parent SHA, current
-   `trading_calendar_sha256`, and current `price_features_sha256`; a mismatch creates a new immutable
-   `-retry-N` processed run. Keep the equality gate unchanged.
-3. Add a controlled validation-epoch supersession path. It must preserve and hash-reference the old
-   anchor and failed 2026-07-15 cycle, snapshot the committed 2026-07-15 account/state into a new
-   non-counted anchor, and make the next fresh cycle chain to that anchor. Do not manually remove the
-   existing `validation_anchor` reference.
-4. Add a pre-commit session-continuity check and record the latest validation-report reference in
-   pipeline state. Make the root status, cycle status, dashboard, automation summary, and handoff
-   agree on the same audit.
-5. Run focused regression tests, the full suite, compile/CLI checks, and available linting. Then use
+1. Merge and deploy the repaired code without editing any existing anchor, cycle, or report.
+2. Establish a controlled non-counted epoch with `--supersede-current-epoch`. If the account must be
+   advanced across delayed dates, supersede again after that non-counted catch-up before starting
+   the fresh operational clock.
+3. Run focused regression tests, the full suite, compile/CLI checks, and available linting. Then use
    only `scripts/run_csi300_post_close.py` for the next eligible post-close session.
-6. Count the new date only if the cycle is schema version 2, the fresh epoch parent and account
+4. Count the new date only if the cycle is schema version 2, the fresh epoch parent and account
    hashes match, data health and execution reconcile, and the audit returns `COLLECTING` rather than
    `FAILED`. Record the first accepted date in `AGENTS.md` and this handoff.
-7. Continue every trading session without gaps until at least 40 sessions and 56 calendar days.
+5. Continue every trading session without gaps until at least 40 sessions and 56 calendar days.
    Investigate provider failures and evidence anomalies immediately; do not tune the strategy while
    collecting the fixed window.
-8. After the complete paper window, evaluate net CSI 300 excess return, maximum drawdown, turnover,
+6. After the complete paper window, evaluate net CSI 300 excess return, maximum drawdown, turnover,
    costs, sector/regime stability and every failed gate. `ELIGIBLE_FOR_REVIEW` still requires human
    review and never authorizes live trading.
 

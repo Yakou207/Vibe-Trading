@@ -63,6 +63,27 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-07-27 V2 evidence-chain repair
+
+- The same-date processed-factor reuse bug is repaired. Reuse now requires the raw-parent,
+  trading-calendar, and signal-price-feature SHA-256 values to match; otherwise the pipeline creates
+  a new immutable `-retry-N` processed run. The decision-report equality gate is unchanged.
+- Validation epochs can now be superseded explicitly. A schema-version-2 non-counted anchor
+  snapshots the current account/state, hash-references the old anchor, latest cycle, and latest
+  validation report, and sets an explicit active `evidence_parent` without modifying old evidence.
+- The daily entrypoint now rejects a missing, duplicate, out-of-order, or non-session CSI 300 date
+  before paper execution. A successful audit atomically mirrors the cycle-local report to the root
+  status and records the immutable cycle-local reference in pipeline state; same-date replay
+  refreshes only this audit reference.
+- Supersession preserves the original formal run/comparison evidence even after incremental
+  manifests advance. Its current benchmark must contain the canonical account date.
+- No provider-backed cycle or evidence mutation was performed as part of this code repair.
+  Read-only inspection on 2026-07-27 found the canonical account/state dated 2026-07-21, three
+  preserved failed cycles (2026-07-15, 2026-07-16, and 2026-07-21), and zero accepted continuous
+  sessions. Historical or delayed catch-up work must not be counted as fresh operational evidence.
+- DQN exposure and live trading remain disabled. The next accepted evidence date requires an
+  explicit fresh epoch and a cycle for exactly the next CSI 300 session after its active parent.
+
 ### 2026-07-15 CSI 300 PnL dashboard and active blocker
 
 - `main` and `origin/main` were aligned at `5a6a9f2` before this documentation update. The formal
@@ -350,14 +371,16 @@ The historical membership reconstruction, CSI 300 formal backtest, drawdown-cont
 paper-evidence platform are complete. The next phase is operational validation, not more platform
 features or a return to the STAR30 diagnostic. Work in this order:
 
-1. Repair the factor/benchmark trading-calendar hash mismatch.
-   - Reproduce the exact 2026-07-14 failure before changing code.
-   - Identify whether the refreshed benchmark must be the explicit parent of a rebuilt daily factor
-     layer. Never edit an existing immutable manifest or weaken the equality gate.
-   - Add a regression test and make the smallest change that preserves point-in-time semantics.
+1. Establish an explicit fresh validation epoch using the repaired code.
+   - Preserve every existing anchor, failed cycle, and report.
+   - Use `--supersede-current-epoch` with the fixed formal run/comparison and a benchmark containing
+     the canonical account date.
+   - If delayed sessions must be processed to advance the account, keep them in a non-accepted
+     epoch and supersede again at the latest committed state before starting the fresh clock.
 
 2. Produce the first fresh counted V2 cycle.
    - Use only `scripts/run_csi300_post_close.py` after the eligible A-share session closes.
+   - Require the date to be exactly the next CSI 300 session after the active evidence parent.
    - Verify the schema-version-2 manifest, parent and account hashes, data health, targets, paper
      report, dashboard, account/state dates, and deterministic audit.
    - Record a counted date only if the auditor accepts the complete cycle. Failed and partial dates

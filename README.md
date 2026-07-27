@@ -107,6 +107,24 @@ python scripts/initialize_csi300_paper_validation.py \
   --output-root data/paper/csi300_baseline/validation
 ```
 
+如果现有 epoch 已因缺失交易日永久失败，只能通过显式 supersession 建立新的非计数锚点。
+命令会校验并哈希引用旧锚点、最新周期和最新审计，保留全部旧证据，然后把
+`pipeline_state.json` 的 active `evidence_parent` 原子切换到新锚点：
+
+```bash
+python scripts/initialize_csi300_paper_validation.py \
+  --account data/paper/csi300_baseline/account.json \
+  --state data/paper/csi300_baseline/pipeline_state.json \
+  --formal-run-manifest outputs/csi300_research/hfq-formal-20260713/manifest.json \
+  --comparison outputs/csi300_research/hfq-formal-20260713/benchmark_comparison.json \
+  --benchmark outputs/paper_trading/csi300_baseline/cycles/2026-07-21/csi300_market_state.csv \
+  --output-root data/paper/csi300_baseline/validation \
+  --supersede-current-epoch
+```
+
+Supersession 继承旧锚点的 formal run 和 comparison 哈希，但使用包含当前账户日期的基准
+快照。它本身不计数，也不会把历史补跑日期变成连续运营证据。
+
 锚点成功附加到状态文件后，每个交易日只运行一条命令：
 
 ```bash
@@ -124,6 +142,9 @@ python scripts/run_csi300_post_close.py \
 分日期卖出印花税、个人股息税、0.05% 滑点和 `do_not_subscribe` 配股策略。失败时查看该日期目录
 以及对应 immutable raw run 的 `manifest.json`/scope error；正式 paper 账户和 pipeline state
 不会因为失败的数据或报告向前推进。重复提交已完成日期只做证据一致性检查，不会重复成交。
+因子 processed run 只有在 raw parent、交易日历和价格特征三个 SHA-256 均一致时才会复用；
+任一变化都会创建新的 immutable `-retry-N` run。paper 执行前还会要求本次日期正好是 active
+evidence parent 之后的下一个 CSI 300 交易日，存在缺口时账户和 pipeline state 不会变化。
 
 可随时独立重跑审计：
 
@@ -138,6 +159,8 @@ python scripts/audit_csi300_paper_validation.py \
 未满 40 个交易日/56 个自然日或绩效门槛尚未满足；`FAILED` 表示证据、执行、数据、风险
 或完整窗口绩效门槛失败；`ELIGIBLE_FOR_REVIEW` 仅表示可以人工复核，绝不等于实盘授权。
 审计在模拟成交提交后运行，因此审计故障会显式报错，但不会擦除已经提交的账户和交易记录。
+每次成功审计的周期内报告是不可变权威记录；根级 `validation_report.json` 是其
+byte-identical 原子镜像，pipeline state 的 `validation_report` 引用指向周期内报告。
 
 这个入口只更新本地模拟账户，从不连接券商或发送真实订单。连续八周证据、扣费后相对
 CSI 300 正超额收益和不高于 10% 的回撤门禁全部通过前，禁止接入实盘。即使状态达到
