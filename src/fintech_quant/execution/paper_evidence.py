@@ -75,6 +75,7 @@ def create_validation_anchor(
     output_root: Path,
     created_at: str,
     git_sha: str,
+    supersedes: Mapping[str, Mapping[str, object]] | None = None,
 ) -> Path:
     account_payload = _load_json(account)
     state_payload = _load_json(pipeline_state)
@@ -97,9 +98,19 @@ def create_validation_anchor(
         execution_manifest=processed["execution_price"],
         benchmark=benchmark,
     )
+    superseded_references = {
+        name: dict(reference) for name, reference in (supersedes or {}).items()
+    }
+    for reference in superseded_references.values():
+        verify_file_reference(reference)
 
-    run_dir = output_root.resolve() / f"anchor-{account_date.replace('-', '')}"
-    output_root.resolve().mkdir(parents=True, exist_ok=True)
+    resolved_output_root = output_root.resolve()
+    resolved_output_root.mkdir(parents=True, exist_ok=True)
+    run_dir = _anchor_run_dir(
+        resolved_output_root,
+        account_date=account_date,
+        superseding=bool(superseded_references),
+    )
     run_dir.mkdir(exist_ok=False)
     try:
         snapshots = {
@@ -112,24 +123,24 @@ def create_validation_anchor(
             "benchmark": _copy(benchmark, run_dir / "benchmark.csv"),
         }
         manifest = run_dir / "anchor_manifest.json"
-        _write_json(
-            manifest,
-            {
-                "schema_version": 1,
-                "kind": "paper_validation_anchor",
-                "as_of": account_date,
-                "created_at": created_at,
-                "git_sha": git_sha,
-                "counts_toward_evidence": False,
-                "anchor_equity": _anchor_equity(account_payload, account_date),
-                "drawdown_regime": _drawdown_regime(account_payload),
-                "policy": approved_paper_policy(),
-                "artifacts": {
-                    name: file_reference(path) for name, path in snapshots.items()
-                },
-                "data_manifests": state_payload.get("manifests"),
+        payload: dict[str, object] = {
+            "schema_version": 2 if superseded_references else 1,
+            "kind": "paper_validation_anchor",
+            "as_of": account_date,
+            "created_at": created_at,
+            "git_sha": git_sha,
+            "counts_toward_evidence": False,
+            "anchor_equity": _anchor_equity(account_payload, account_date),
+            "drawdown_regime": _drawdown_regime(account_payload),
+            "policy": approved_paper_policy(),
+            "artifacts": {
+                name: file_reference(path) for name, path in snapshots.items()
             },
-        )
+            "data_manifests": state_payload.get("manifests"),
+        }
+        if superseded_references:
+            payload["supersedes"] = dict(sorted(superseded_references.items()))
+        _write_json(manifest, payload)
         load_verified_anchor(manifest)
         return manifest
     except BaseException:
@@ -139,7 +150,8 @@ def create_validation_anchor(
 
 def load_verified_anchor(path: Path) -> dict[str, object]:
     payload = _load_json(path)
-    if payload.get("schema_version") != 1:
+    schema_version = payload.get("schema_version")
+    if schema_version not in {1, 2}:
         raise ValueError("unsupported paper validation anchor schema")
     if payload.get("kind") != "paper_validation_anchor":
         raise ValueError("paper validation anchor kind is invalid")
@@ -161,7 +173,34 @@ def load_verified_anchor(path: Path) -> dict[str, object]:
         if not isinstance(reference, Mapping):
             raise ValueError(f"paper validation anchor is missing {name}")
         verify_file_reference(reference)
+    supersedes = payload.get("supersedes")
+    if schema_version == 1 and supersedes is not None:
+        raise ValueError("schema-1 paper validation anchor cannot supersede evidence")
+    if schema_version == 2:
+        if not isinstance(supersedes, Mapping) or not supersedes:
+            raise ValueError("superseding paper validation anchor references are missing")
+        for reference in supersedes.values():
+            if not isinstance(reference, Mapping):
+                raise ValueError("superseded paper evidence reference is invalid")
+            verify_file_reference(reference)
     return payload
+
+
+def _anchor_run_dir(
+    output_root: Path,
+    *,
+    account_date: str,
+    superseding: bool,
+) -> Path:
+    base_name = f"anchor-{account_date.replace('-', '')}"
+    if not superseding:
+        return output_root / base_name
+    epoch = 2
+    while True:
+        candidate = output_root / f"{base_name}-epoch-{epoch}"
+        if not candidate.exists():
+            return candidate
+        epoch += 1
 
 
 def _verify_state_manifests(state: Mapping[str, object]) -> dict[str, Path]:

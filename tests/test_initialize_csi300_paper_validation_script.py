@@ -6,7 +6,11 @@ import sys
 from pathlib import Path
 
 from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file
-from fintech_quant.execution.paper_evidence import file_reference
+from fintech_quant.execution.paper_evidence import (
+    file_reference,
+    load_verified_anchor,
+    verify_file_reference,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,26 +45,93 @@ def test_cli_refuses_to_replace_existing_anchor_or_state_reference(tmp_path: Pat
     assert paths["state"].read_bytes() == state_before
 
 
-def _run(paths: dict[str, Path], output_root: Path) -> subprocess.CompletedProcess[str]:
+def test_cli_supersedes_existing_epoch_without_mutating_old_evidence(
+    tmp_path: Path,
+) -> None:
+    paths = _bootstrap_paths(tmp_path)
+    root = tmp_path / "validation"
+    first = _run(paths, root)
+    assert first.returncode == 0, first.stderr
+    state = _load_json(paths["state"])
+    old_anchor = Path(state["validation_anchor"]["path"])
+    cycle = tmp_path / "cycles" / "2026-07-13" / "cycle_manifest.json"
+    report = tmp_path / "cycles" / "2026-07-13" / "validation_report.json"
+    _write_json(
+        cycle,
+        {
+            "schema_version": 2,
+            "kind": "paper_trading_cycle",
+            "as_of": "2026-07-13",
+        },
+    )
+    _write_json(
+        report,
+        {
+            "schema_version": 1,
+            "kind": "csi300_paper_validation_report",
+            "status": "FAILED",
+        },
+    )
+    state["cycle_manifest"] = file_reference(cycle)
+    state["validation_report"] = file_reference(report)
+    _write_json(paths["state"], state)
+    old_anchor_before = old_anchor.read_bytes()
+    cycle_before = cycle.read_bytes()
+    report_before = report.read_bytes()
+
+    completed = _run(paths, root, supersede=True)
+
+    assert completed.returncode == 0, completed.stderr
+    state_after = _load_json(paths["state"])
+    new_anchor = Path(state_after["validation_anchor"]["path"])
+    assert new_anchor != old_anchor
+    assert state_after["evidence_parent"] == state_after["validation_anchor"]
+    payload = load_verified_anchor(new_anchor)
+    assert (
+        verify_file_reference(payload["supersedes"]["validation_anchor"])
+        == old_anchor.resolve()
+    )
+    assert (
+        verify_file_reference(payload["supersedes"]["cycle_manifest"])
+        == cycle.resolve()
+    )
+    assert (
+        verify_file_reference(payload["supersedes"]["validation_report"])
+        == report.resolve()
+    )
+    assert old_anchor.read_bytes() == old_anchor_before
+    assert cycle.read_bytes() == cycle_before
+    assert report.read_bytes() == report_before
+
+
+def _run(
+    paths: dict[str, Path],
+    output_root: Path,
+    *,
+    supersede: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        "scripts/initialize_csi300_paper_validation.py",
+        "--account",
+        str(paths["account"]),
+        "--state",
+        str(paths["state"]),
+        "--formal-run-manifest",
+        str(paths["formal_manifest"]),
+        "--comparison",
+        str(paths["comparison"]),
+        "--benchmark",
+        str(paths["benchmark"]),
+        "--output-root",
+        str(output_root),
+        "--created-at",
+        "2026-07-14T05:00:00+00:00",
+    ]
+    if supersede:
+        command.append("--supersede-current-epoch")
     return subprocess.run(
-        [
-            sys.executable,
-            "scripts/initialize_csi300_paper_validation.py",
-            "--account",
-            str(paths["account"]),
-            "--state",
-            str(paths["state"]),
-            "--formal-run-manifest",
-            str(paths["formal_manifest"]),
-            "--comparison",
-            str(paths["comparison"]),
-            "--benchmark",
-            str(paths["benchmark"]),
-            "--output-root",
-            str(output_root),
-            "--created-at",
-            "2026-07-14T05:00:00+00:00",
-        ],
+        command,
         cwd=ROOT,
         capture_output=True,
         text=True,

@@ -21,6 +21,7 @@ from fintech_quant.execution.paper_evidence import (  # noqa: E402
     create_validation_anchor,
     file_reference,
     load_verified_anchor,
+    verify_file_reference,
 )
 
 
@@ -35,12 +36,27 @@ def main() -> int:
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--output-root", required=True)
     parser.add_argument("--created-at", default=None)
+    parser.add_argument("--supersede-current-epoch", action="store_true")
     args = parser.parse_args()
 
     state_path = Path(args.state).resolve()
     state = _load_json(state_path)
-    if state.get("validation_anchor") is not None:
+    existing_anchor = state.get("validation_anchor")
+    if existing_anchor is not None and not args.supersede_current_epoch:
         raise ValueError("pipeline state already contains a validation anchor")
+    if existing_anchor is None and args.supersede_current_epoch:
+        raise ValueError("validation epoch supersession requires an existing anchor")
+    supersedes: dict[str, Mapping[str, object]] | None = None
+    if args.supersede_current_epoch:
+        supersedes = {
+            "validation_anchor": _verified_state_reference(
+                state,
+                "validation_anchor",
+            )
+        }
+        for name in ("cycle_manifest", "validation_report"):
+            if isinstance(state.get(name), Mapping):
+                supersedes[name] = _verified_state_reference(state, name)
     account = Path(args.account).resolve()
     account_before = account.read_bytes()
     manifest: Path | None = None
@@ -54,11 +70,17 @@ def main() -> int:
             output_root=Path(args.output_root).resolve(),
             created_at=args.created_at or datetime.now(timezone.utc).isoformat(),
             git_sha=_git_sha(),
+            supersedes=supersedes,
         )
         load_verified_anchor(manifest)
+        anchor_reference = file_reference(manifest)
         _write_json_atomic(
             state_path,
-            {**state, "validation_anchor": file_reference(manifest)},
+            {
+                **state,
+                "validation_anchor": anchor_reference,
+                "evidence_parent": anchor_reference,
+            },
         )
         if account.read_bytes() != account_before:
             raise ValueError("validation anchor initialization mutated the paper account")
@@ -72,6 +94,17 @@ def main() -> int:
     print("counts_toward_evidence=false")
     print("live_trading_enabled=false")
     return 0
+
+
+def _verified_state_reference(
+    state: Mapping[str, object],
+    name: str,
+) -> dict[str, object]:
+    reference = state.get(name)
+    if not isinstance(reference, Mapping):
+        raise ValueError(f"pipeline state is missing {name.replace('_', ' ')}")
+    verify_file_reference(reference)
+    return dict(reference)
 
 
 def _load_json(path: Path) -> dict[str, object]:

@@ -138,6 +138,54 @@ def test_create_anchor_refuses_to_overwrite_existing_anchor(tmp_path: Path) -> N
         _create_anchor(paths, root)
 
 
+def test_create_superseding_anchor_preserves_and_references_old_evidence(
+    tmp_path: Path,
+) -> None:
+    paths = _write_valid_bootstrap_fixture(tmp_path)
+    root = tmp_path / "validation"
+    first = _create_anchor(paths, root)
+    cycle = tmp_path / "cycles" / "2026-07-13" / "cycle_manifest.json"
+    _write_json(
+        cycle,
+        {
+            "schema_version": 2,
+            "kind": "paper_trading_cycle",
+            "as_of": "2026-07-13",
+        },
+    )
+    first_before = first.read_bytes()
+    cycle_before = cycle.read_bytes()
+
+    superseding = create_validation_anchor(
+        account=paths.account,
+        pipeline_state=paths.state,
+        formal_run_manifest=paths.formal_manifest,
+        comparison=paths.comparison,
+        benchmark=paths.benchmark,
+        output_root=root,
+        created_at="2026-07-16T09:00:00+00:00",
+        git_sha="def456",
+        supersedes={
+            "validation_anchor": file_reference(first),
+            "cycle_manifest": file_reference(cycle),
+        },
+    )
+
+    payload = load_verified_anchor(superseding)
+    assert payload["schema_version"] == 2
+    assert superseding.parent.name == "anchor-20260713-epoch-2"
+    assert (
+        verify_file_reference(payload["supersedes"]["validation_anchor"])
+        == first.resolve()
+    )
+    assert (
+        verify_file_reference(payload["supersedes"]["cycle_manifest"])
+        == cycle.resolve()
+    )
+    assert first.read_bytes() == first_before
+    assert cycle.read_bytes() == cycle_before
+
+
 def _create_anchor(paths: BootstrapPaths, output_root: Path) -> Path:
     return create_validation_anchor(
         account=paths.account,
