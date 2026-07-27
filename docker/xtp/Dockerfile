@@ -8,14 +8,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git libstdc++6 g++ make wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# The bindings were built against boost_python 1.80.0 + Python 3.9 (repo README);
-# boost ships no matching binary for Debian, so build just boost_python from source.
-RUN wget -q https://archives.boost.io/release/1.80.0/source/boost_1_80_0.tar.gz \
-    && tar -xzf boost_1_80_0.tar.gz \
+# The bindings were built against boost_python 1.80.0 + Python 3.9 on CentOS 7
+# (repo README), i.e. the pre-C++11 libstdc++ ABI — hence _GLIBCXX_USE_CXX11_ABI=0.
+# Download boost_1_80_0.tar.gz into this directory before building (see README.md);
+# in-build downloads are unusably slow on mainland networks.
+COPY boost_1_80_0.tar.gz /boost_1_80_0.tar.gz
+RUN tar -xzf boost_1_80_0.tar.gz \
     && cd boost_1_80_0 \
     && ./bootstrap.sh --with-python=python3.9 \
         --with-libraries=python,thread,chrono,system,atomic,date_time \
-    && ./b2 -j"$(nproc)" variant=release link=shared install \
+    && ./b2 -j"$(nproc)" variant=release link=shared \
+        define=_GLIBCXX_USE_CXX11_ABI=0 install \
     && ldconfig \
     && cd / && rm -rf boost_1_80_0 boost_1_80_0.tar.gz
 

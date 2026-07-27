@@ -67,11 +67,15 @@ def main() -> int:
     api.queryAsset(session_id, 1)
     api.queryPosition("", session_id, 2)
     sleep(3)
-
-    api.logout(session_id)
-    print("logout ok")
+    # Do NOT call api.logout(): its disconnect callback deadlocks the interpreter
+    # (GIL) under this wrapper. Process exit closes the TCP session server-side.
+    print("smoke ok")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # The XTP api spawns non-daemon threads; a plain sys.exit would hang forever.
+    code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
