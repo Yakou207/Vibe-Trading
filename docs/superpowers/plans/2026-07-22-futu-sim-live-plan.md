@@ -91,13 +91,43 @@ Windows 桥的位置，reconcile CLI 无需改动。
 | 1.2 | `scripts/xtp_bridge.py`：读 order_instructions（校验 kind/schema/mode/日期，同 QMT 桥）→ 仿真服务器下限价单（insertOrder，price_type=限价）→ 回调收集成交 → 导出 broker_state.json；服务器地址硬校验为仿真环境配置 | mock XTP api 的单测全绿 |
 | 1.3 | 仿真盘真实往返一笔：买入 100 股 → broker_state → reconcile | `status=OK` 的对账报告存档 |
 
+## Phase 1 实测结论（2026-07-28 盘中真实往返确认）
+
+1.3 往返记录：13:06 盘中提交 `买入 600000.SH 100 股 @ 限价 9.07`（参考价 9.05，约 907 元），
+`order_xtp_id=38489508404003817`。全链路打通：登录 → `insertOrder` → `onOrderEvent`/
+`onTradeEvent` 回调 → `queryAsset`/`queryPosition` → 写出 `broker_state.json` → 对账。
+
+关键发现：
+
+- **部分成交是常态**：100 股只成交 50 股，剩余 50 股仍在挂单。订单状态停在 `2`
+  （`PARTTRADEDQUEUEING`，部分成交仍排队），不属于终态集合，桥接因此正确打印
+  `WARNING: 0/1 orders reached a final status`。任何"下单即全成"的假设都是错的。
+- **`buying_power` 会扣除挂单冻结资金**：本次账户现金 100000 → 99086.96，降幅约等于
+  *整笔 100 股* 的金额加费用，而非已成交的 50 股。这意味着**订单未全部终结前做现金对账没有
+  意义**——本次现金"恰好"落在容差内纯属巧合。收盘后对账（Phase 2.3）必须等所有订单进入终态，
+  否则冻结资金会伪装成一致。
+- **`avg_price` 含费用**：持仓 `avg_price=9.19` 高于成交价 9.07，约等于 (成交金额+佣金)/股数，
+  属于含费成本价，与 paper 的 `cost_basis` 语义接近，对账不使用该字段。
+- **对账在部分成交时正确 fail closed**：`status=FAILED`，差异为
+  `position 600000.SH paper=100 broker=50`，退出码 1。
+- 容器 teardown 挂起再次复现（文件已写出但进程不退），`--name` + `docker rm -f` 兜底有效。
+
+必须在 Phase 2 处理的遗留项：
+
+1. **收盘前撤销未成交挂单**。本次结束后仍有 50 股挂单留在市场，可能在桥接退出后意外成交。
+   日频策略必须在执行窗口结束时撤掉剩余挂单（`cancelOrder`），否则账户会漂移出预期状态。
+2. **对账时机**：必须在所有订单终结之后（或收盘后）执行，见上文冻结资金问题。
+3. 本次测试后账户已不再是干净基线（持有 600000.SH 且现金减少）。Phase 2 正式开跑前需重新提交
+   一次 `清空持仓=是` + `资金蓝补=100000`（当日 22:00 前提交，次日生效）。
+
 ## Phase 2 — 模拟盘每日实战循环
 
 | # | 任务 | 验收标准 |
 |---|---|---|
 | 2.1 | 模拟盘账本：独立于 V2 canonical account 的 live-sim 账户日志（NAV、成交、对账结果逐日追加，含哈希链） | 单测 + 首日记录 |
 | 2.2 | T+1 早盘自动化：09:20 拉实时报价 → `build_live_orders.py` → `xtp_bridge.py` 提交（launchd/cron，交易日判断复用现有日历） | 一次全自动早盘执行 |
-| 2.3 | T+1 收盘后自动化：15:10 导出 broker_state → reconcile → 追加账本；失败告警并停下一日提交 | 一次全自动收盘对账 |
+| 2.3 | T+1 收盘后自动化：15:10 导出 broker_state → reconcile → 追加账本；失败告警并停下一日提交。对账前必须确认所有订单已终结（见 Phase 1 冻结资金问题） | 一次全自动收盘对账 |
+| 2.5 | 执行窗口结束时撤销剩余未成交挂单（`cancelOrder`），避免桥接退出后意外成交 | 单测 + 一次实盘演练 |
 | 2.4 | 稳定性验收窗口 | 连续 10 个交易日无人工干预、对账全 OK |
 
 产出：`scripts/run_sim_morning.py`、`scripts/run_sim_postclose.py`、launchd plist。

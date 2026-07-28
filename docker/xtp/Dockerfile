@@ -33,5 +33,9 @@ ENV XTP_BIN=/opt/xtp_api_python/bin/Linux/centos7+python3.9
 ENV PYTHONPATH=$XTP_BIN
 ENV LD_LIBRARY_PATH=$XTP_BIN
 
+# The bridge compares the instruction date against today; that must be the
+# A-share calendar date, not UTC.
+ENV TZ=Asia/Shanghai
+
 WORKDIR /workspace
 CMD ["python", "-c", "import vnxtptrader, vnxtpquote; print('xtp bindings ok')"]
