@@ -93,8 +93,31 @@ z 均为负，说明这不是参数问题，是信号假设问题。按事先约
 40 日窗口本身也远不足以支撑正式结论（约定为初步）。V3 的价值目前在于：引擎（T+1 合法、
 无未来数据、真实成本）与验证协议已就绪且经过单测，换信号重跑的边际成本约为零。
 
+## RL 轨道：linear-Q 策略头（2026-07-29 冒烟结果）
+
+用户方向：用强化学习（DQN 系）完成交易决策。架构：RL 不直接下单，而是作为策略头接在回转
+引擎上（动作 {持有/开高抛腿/开低吸腿/平腿}），非法动作被掩码而非惩罚——策略结构上不可能
+产生 T+1 违规或未平衡日。奖励 = 增强头寸的逐 bar 盯市变动 − 执行成本，与验收门同一口径。
+骨干按仓库教训先用 linear-Q（日频 torch DQN 曾种子发散+几乎不交易）；多种子训练为默认。
+
+冒烟运行（10 只权重股，训练 25 日/评估 ~14 日，30 episodes，种子 0/1/2，
+`outputs/intraday_v3/linear_q_smoke.json`；按约定 40 天数据不作任何盈利结论）：
+
+- ✅ 训练可跑、数值有限、episode PnL 随训练改善（约 -3700 → -1800）；
+- ✅ 合法性干净：三个种子全部 0 未平衡日；
+- ✅ 策略会交易（"几乎不交易"未复现）；
+- ❌ **种子间行为发散严重**：评估期交易数 4 / 118 / 6——同数据同配置行为完全不同，
+  正是日频 DQN 被禁用的同一失败模式在小样本上的复现。
+
+结论：RL 基建（策略头、动作掩码、多种子协议、冒烟 CLI）就绪且经单测验证；**行为稳定性门
+在当前数据量下不通过**。正式验收等 Tushare ≥250 日分钟数据：先过多种子稳定性门，再看盈利
+门。在此之前 RL 策略与 XTP 保持断开。
+
+## 文件
+
 - 分钟数据层：`src/fintech_quant/intraday/minute_data.py`、`scripts/fetch_intraday_bars.py`
 - 回转引擎与信号：`src/fintech_quant/intraday/rotation.py`
 - 回测 CLI：`scripts/run_intraday_backtest.py`
-- 测试：`tests/test_intraday_rotation.py`
+- RL 策略头：`src/fintech_quant/intraday/rl_policy.py`、冒烟 CLI `scripts/run_intraday_dqn_smoke.py`
+- 测试：`tests/test_intraday_rotation.py`、`tests/test_intraday_rl_policy.py`
 - 后续（通过验收后）：XTP 盘中执行桥（复用 `xtp_bridge.py` 基座）+ 影子对账
