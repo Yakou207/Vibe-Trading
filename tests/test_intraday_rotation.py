@@ -137,3 +137,14 @@ def test_corporate_action_day_dropped_by_gap_filter() -> None:
     kept = drop_corporate_action_days(grouped)
 
     assert list(kept) == ["2026-07-20", "2026-07-22"]
+
+
+def test_momentum_direction_buys_the_spike_and_closes_when_z_fades() -> None:
+    params = RotationParams(
+        z_enter=1.5, z_exit=0.5, z_window=6, z_min_window=3, direction="momentum"
+    )
+    result = run_rotation_day(_spike_day(1), base_shares=500, params=params)
+
+    assert [t["action"] for t in result.trades] == ["buy", "sell"]  # follow, then fade out
+    assert result.end_shares_match_base
+    assert result.rounds == 1

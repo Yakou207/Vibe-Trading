@@ -24,6 +24,9 @@ from datetime import date
 class RotationParams:
     z_enter: float = 2.0
     z_exit: float = 0.5
+    # "reversion": fade the VWAP deviation. "momentum": follow it (buy the
+    # breakout / sell the breakdown), closing when the z-score fades.
+    direction: str = "reversion"
     # Economic significance floor: |close/VWAP - 1| must exceed this to open a
     # leg, so statistically-extreme-but-tiny noise (z blows up when the trailing
     # std is near zero) can never trigger a trade below the ~0.275% cost wall.
@@ -110,16 +113,20 @@ def run_rotation_day(
             if sellable_budget < base_shares:
                 continue
             if z >= params.z_enter and dev >= params.min_abs_dev:
-                open_leg = _execute(next_bar, "sell", base_shares, costs, params, when, result)
-                open_leg["side"] = "sold"
+                action = "sell" if params.direction == "reversion" else "buy"
+                open_leg = _execute(next_bar, action, base_shares, costs, params, when, result)
+                open_leg["side"] = "sold" if action == "sell" else "bought"
+                open_leg["signal"] = "high"
                 sellable_budget -= base_shares
             elif z <= -params.z_enter and dev <= -params.min_abs_dev:
-                open_leg = _execute(next_bar, "buy", base_shares, costs, params, when, result)
-                open_leg["side"] = "bought"
+                action = "buy" if params.direction == "reversion" else "sell"
+                open_leg = _execute(next_bar, action, base_shares, costs, params, when, result)
+                open_leg["side"] = "bought" if action == "buy" else "sold"
+                open_leg["signal"] = "low"
                 sellable_budget -= base_shares
             continue
         close_now = forcing or z is None or (
-            z <= params.z_exit if open_leg["side"] == "sold" else z >= -params.z_exit
+            z <= params.z_exit if open_leg["signal"] == "high" else z >= -params.z_exit
         )
         if close_now:
             reverse = "buy" if open_leg["side"] == "sold" else "sell"

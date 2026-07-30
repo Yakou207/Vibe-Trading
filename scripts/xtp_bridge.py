@@ -124,6 +124,19 @@ def main() -> int:
         timeout_seconds=args.timeout_seconds,
     )
 
+    # Phase-1 lesson: an order left queueing keeps trading after the bridge
+    # exits and drifts the account. Cancel whatever has not reached a final
+    # status before exporting state.
+    cancelled = 0
+    for row in submitted:
+        order_id = row["order_xtp_id"]
+        if row["submitted"] and order_id not in collector.final_orders:
+            api.cancelOrder(order_id, session_id)
+            cancelled += 1
+    if cancelled:
+        print(f"cancelled {cancelled} unfinished orders")
+        sleep(3)
+
     api.queryAsset(session_id, 1)
     api.queryPosition("", session_id, 2)
     sleep(5)
