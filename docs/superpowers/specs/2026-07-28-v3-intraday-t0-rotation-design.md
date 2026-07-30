@@ -134,3 +134,13 @@ z 均为负，说明这不是参数问题，是信号假设问题。按事先约
 - RL 策略头：`src/fintech_quant/intraday/rl_policy.py`、冒烟 CLI `scripts/run_intraday_dqn_smoke.py`
 - 测试：`tests/test_intraday_rotation.py`、`tests/test_intraday_rl_policy.py`
 - 后续（通过验收后）：XTP 盘中执行桥（复用 `xtp_bridge.py` 基座）+ 影子对账
+
+## 2026-07-30 补充：动量假设已被证伪（用户建议的扩样本检验）
+
+用户指出可用现有数据证伪+横向扩样本。拉取全部 300 只成分股 5 分钟线后，冻结参数
+（momentum, z_enter=2.0）单配置评估（outputs/intraday_v3/momentum_frozen_eval.json）：
+原 10 只（证伪组）net -4332 / gross -190；新 290 只（准样本外）net -137617 / **gross -7883**、
+成本 129734 元、正收益日 9/41。两个方向（回归与动量）毛收益均为负——**5 分钟 VWAP z 分数
+这一信号族在该数据上整体死亡**，预注册的动量前瞻验证就此撤销。归档器继续运行（数据对任何
+后续信号都有价值）。下一步信号研究需要换特征族（如隔夜跳空、开盘区间突破、量价分离度），
+且在 300 只 × 40 日的横截面上先过 gross>0 再谈成本。
