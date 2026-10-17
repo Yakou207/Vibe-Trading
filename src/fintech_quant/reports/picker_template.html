@@ -84,6 +84,35 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
 .note { font-size: 11.5px; color: var(--text-muted); margin-top: 8px; }
 .empty { padding: 24px; text-align: center; color: var(--text-muted); }
 .up { color: var(--up); } .down { color: var(--down); }
+.pass { color: var(--good); } .fail { color: var(--critical); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip { font: 11px var(--mono); border: 1px solid var(--border); border-radius: 4px; padding: 3px 7px; color: var(--text-secondary); }
+.chip.ok::before { content: "● "; color: var(--good); }
+.chip.empty::before { content: "○ "; color: var(--text-muted); }
+.chip.failed::before, .chip.timeout::before { content: "✕ "; color: var(--critical); }
+.chip.pos::before { content: "▲ "; color: var(--up); }
+.chip.neg::before { content: "▼ "; color: var(--down); }
+.hero-row { display: flex; gap: 22px; align-items: baseline; flex-wrap: wrap; margin-bottom: 10px; }
+.hero-row .big { font: 800 24px var(--mono); }
+.items { max-height: 320px; overflow: auto; }
+.item { padding: 6px 0; border-bottom: 1px dashed var(--grid); font-size: 12px; }
+.item .meta { font: 10.5px var(--mono); color: var(--text-muted); }
+.item a { color: var(--text-primary); text-decoration: none; }
+.item a:hover { text-decoration: underline; }
+.item .pol-pos { color: var(--up); } .item .pol-neg { color: var(--down); }
+.flags { margin: 8px 0 0; padding-left: 0; list-style: none; font-size: 12px; }
+.flags li::before { margin-right: 6px; }
+.flags li.p1::before { content: "▲"; color: var(--up); }
+.flags li.n1::before { content: "▼"; color: var(--down); }
+.flags li.z0::before { content: "●"; color: var(--text-muted); }
+.jev-btn { font: 600 13px var(--mono); padding: 8px 14px; border-radius: 6px; border: 1px solid var(--accent); background: transparent; color: var(--text-primary); cursor: pointer; }
+.jev-btn[disabled] { opacity: .5; cursor: not-allowed; }
+.judgment { font: 700 15px var(--mono); margin: 8px 0; }
+.judgment.support::before { content: "● "; color: var(--good); }
+.judgment.neutral::before { content: "◐ "; color: var(--warning); }
+.judgment.veto::before { content: "✕ "; color: var(--critical); }
+.sub-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 1000px) { .sub-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1000px) { .grid { grid-template-columns: minmax(0, 1fr); } .meta { margin-left: 0; text-align: left; } }
 @media (max-width: 520px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } #chart { height: 280px; } .bar-row { grid-template-columns: 70px 1fr 50px; } }
 </style>
@@ -106,6 +135,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
   <div class="grid">
     <main>
       <section class="panel section" id="stock"><div class="empty">搜索一只股票，或点击右侧候选。</div></section>
+      <section class="panel section" id="research" hidden></section>
     </main>
     <aside>
       <section class="panel section">
@@ -215,12 +245,91 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     chart.timeScale().fitContent();
   }
 
+  const JEV_LABELS = { negative_event_risk: "负面事件风险", earnings_support: "财报支撑", catalyst_quality: "催化剂质量", crowding: "拥挤度", setup_consistency: "形态与基本面一致" };
+  const KIND = { news: "新闻", notice: "公告", research: "研报", qa: "互动易" };
+
+  async function loadResearch(symbol) {
+    const el = $("research");
+    el.hidden = false;
+    el.innerHTML = '<div class="empty">正在汇总新闻、公告、研报、互动问答和财报…</div>';
+    try { renderResearch(await getJSON(`/api/research?q=${encodeURIComponent(symbol)}`)); }
+    catch (e) { el.innerHTML = `<div class="empty">信息汇总失败：${esc(e.message)}</div>`; }
+  }
+
+  function renderResearch(r) {
+    const el = $("research");
+    if (r.error) { el.innerHTML = `<div class="empty">${esc(r.error)}</div>`; return; }
+    const chips = Object.values(r.sources).map((s) => `<span class="chip ${esc(s.status)}" title="${esc(s.error || "")}">${esc(s.label)} ${s.count}</span>`).join("");
+    const events = Object.entries(r.nlp.event_counts).map(([t, n]) => `<span class="chip">${esc(t)} ×${n}</span>`).join("") || '<span class="muted">未识别到事件</span>';
+    const items = r.items.map((i) => {
+      const pol = i.polarity > 0 ? '<span class="pol-pos">▲</span> ' : i.polarity < 0 ? '<span class="pol-neg">▼</span> ' : "";
+      const title = i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>` : esc(i.title);
+      return `<div class="item">${pol}${title}<div class="meta">${esc(String(i.published_at).slice(0, 10))} · ${esc(KIND[i.kind] || i.kind)} · ${esc(i.source)}${i.tags && i.tags.length ? " · " + esc(i.tags.join("、")) : ""}${i.rating ? " · 评级 " + esc(i.rating) : ""}</div></div>`;
+    }).join("");
+    const fin = r.financials.map((f) => `<tr><td>${esc(f.period)}</td><td class="num">${pct(f.revenue_yoy)}</td><td class="num">${pct(f.net_profit_yoy)}</td><td class="num">${pct(f.deducted_profit_yoy)}</td><td class="num">${pct(f.roe)}</td><td class="num">${pct(f.net_margin)}</td></tr>`).join("");
+    const flags = r.financial_trend.flags.map((f) => `<li class="${f.polarity > 0 ? "p1" : f.polarity < 0 ? "n1" : "z0"}">${esc(f.text)}</li>`).join("");
+    const c = r.consensus;
+    const ratings = Object.entries(c.ratings).map(([k, n]) => `${esc(k)} ${n}`).join(" · ") || "无";
+    const eps = Object.entries(c.eps_forecast_median).map(([y, v]) => `${y}: ${num(v, 2)}`).join(" · ") || "无";
+    el.innerHTML = `
+      <div class="section-head"><h2>全平台信息 · NLP</h2><span class="right">抓取于 ${esc(String(r.fetched_at).slice(0, 16).replace("T", " "))} UTC · 按日缓存</span></div>
+      <div class="chips">${chips}</div>
+      <div class="hero-row"><div><div class="muted" style="font-size:11px">事件情绪（−1 ~ +1，14 天半衰期）</div><div class="big">${r.nlp.sentiment >= 0 ? "+" : ""}${num(r.nlp.sentiment, 2)} <span style="font-size:14px">${esc(r.nlp.label)}</span></div></div>
+        <div class="muted mono" style="font-size:11px">识别到事件的条目 ${r.nlp.tagged_items}/${r.nlp.total_items}</div></div>
+      <div class="chips">${events}</div>
+      <div class="items">${items || '<div class="empty">没有信息条目</div>'}</div>
+      <div class="sub-grid" style="margin-top:14px">
+        <div><div class="section-head"><h2>财报趋势</h2><span class="right">${esc(r.financial_trend.latest_period || "")}</span></div>
+          <table><thead><tr><th>报告期</th><th class="num">营收同比</th><th class="num">净利同比</th><th class="num">扣非同比</th><th class="num">ROE</th><th class="num">净利率</th></tr></thead><tbody>${fin}</tbody></table>
+          <ul class="flags">${flags}</ul></div>
+        <div><div class="section-head"><h2>研报共识</h2><span class="right">近 ${c.window_days} 天</span></div>
+          <div class="mono" style="font-size:12px;line-height:1.8">研报 ${c.reports} 篇 · 机构 ${c.institutions} 家<br>评级：${ratings}<br>看多占比：${pct(c.bullish_share, 0)}<br>EPS 预测中位数：${eps}</div></div>
+      </div>
+      <div class="section-head" style="margin-top:16px"><h2>Jev 判断</h2><span class="right">固定问题 → JSON 作答 → SOFT 阈值</span></div>
+      <div id="jev"></div>`;
+    renderJev(r.jev_record, r);
+  }
+
+  function renderJev(record, r) {
+    const el = $("jev");
+    if (!record) {
+      const ok = r.jev && r.jev.configured;
+      el.innerHTML = `<button class="jev-btn" id="jev-run" ${ok ? "" : "disabled"}>请 Jev 判断</button>
+        <div class="note">${ok ? `${esc(r.jev.provider)} · ${esc(r.jev.model)} · 同一资料包只调用一次，结果存档` : `Jev 未配置：${esc(r.jev ? r.jev.reason : "")}。设置 ANTHROPIC_API_KEY（或 OPENAI_API_KEY + JEV_MODEL）后重启看板。`}</div>`;
+      const btn = $("jev-run");
+      if (btn && ok) btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "Jev 思考中…";
+        try {
+          const res = await fetch(`/api/jev?q=${encodeURIComponent(r.symbol)}`, { method: "POST" });
+          const data = await res.json();
+          if (data.error) { el.innerHTML = `<div class="empty">${esc(data.error)}</div>`; return; }
+          renderJev(data, r);
+        } catch (e) { el.innerHTML = `<div class="empty">Jev 调用失败：${esc(e.message)}</div>`; }
+      });
+      return;
+    }
+    const rows = record.threshold_checks.map((c) => {
+      const a = record.answers[c.id];
+      return `<tr><td>${esc(JEV_LABELS[c.id] || c.id)}</td><td class="num">${num(c.score, 2)}</td><td>${esc(c.rule)}</td><td class="${c.passed ? "pass" : "fail"}">${c.passed ? "✓" : "✕"}</td><td>${esc(a.reason)}</td></tr>`;
+    }).join("");
+    el.innerHTML = `<div class="judgment ${esc(record.judgment)}">${esc({ support: "Jev 支持", neutral: "Jev 中性", veto: "Jev 否决" }[record.judgment])} · ${esc(record.combined)}</div>
+      <div style="font-size:12.5px;margin-bottom:8px">${esc(record.summary)}</div>
+      <table><thead><tr><th>问题</th><th class="num">分数</th><th>阈值</th><th></th><th>理由</th></tr></thead><tbody>${rows}</tbody></table>
+      ${record.key_risks.length ? `<ul class="flags">${record.key_risks.map((k) => `<li class="n1">${esc(k)}</li>`).join("")}</ul>` : ""}
+      <div class="note">${esc(record.provider)} · ${esc(record.model)} · 资料包 ${esc(record.packet_sha256.slice(0, 12))} · ${record.cached ? "存档结果" : "新调用"} · 仅供研究参考，不改变任何交易或证据</div>`;
+  }
+
   async function load(query) {
     if (!query) return;
     $("query").value = query;
     history.replaceState(null, "", `#${encodeURIComponent(query)}`);
     $("stock").innerHTML = '<div class="empty">分析中…</div>';
-    try { renderStock(await getJSON(`/api/stock?q=${encodeURIComponent(query)}`)); }
+    $("research").hidden = true;
+    try {
+      const stock = await getJSON(`/api/stock?q=${encodeURIComponent(query)}`);
+      renderStock(stock);
+      if (!stock.error) loadResearch(stock.symbol);
+    }
     catch (e) { $("stock").innerHTML = `<div class="empty">请求失败：${esc(e.message)}</div>`; }
   }
 

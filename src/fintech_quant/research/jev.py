@@ -1,0 +1,290 @@
+"""Jev: an LLM analyst that answers a fixed question set about one stock.
+
+Same division of labour as the "JEV PICKS" desk: cheap deterministic filters run first (Luk
+checks, multi-factor score, event NLP, financial trend), then Jev answers fixed questions as JSON,
+and deterministic SOFT thresholds turn those answers into support / neutral / veto.
+
+Guardrails:
+- Jev sees only the facts packet built here and is told not to use outside or remembered events.
+- temperature 0; provider, model, prompt hash, packet hash and the raw reply are recorded.
+- The same packet is answered once and then served from the record (no repeat cost).
+- Jev is advisory. It never changes the counted strategy, the shadow pool or any evidence, and it
+  cannot upgrade a technical "avoid" into an entry. LLM judgments cannot be backtested honestly
+  (look-ahead), so they are only ever evaluated forward.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable, Mapping
+
+
+QUESTIONS: tuple[dict[str, object], ...] = (
+    {
+        "id": "negative_event_risk",
+        "question": "已披露信息中，是否存在可能在未来一个月显著压制股价的负面事件（减持、问询、处罚、业绩下修、稀释等）？0=没有，1=非常严重",
+        "max": 0.55,
+    },
+    {
+        "id": "earnings_support",
+        "question": "最近几期财报趋势是否支撑当前股价与技术形态？0=完全不支撑，1=强支撑",
+        "min": 0.45,
+    },
+    {
+        "id": "catalyst_quality",
+        "question": "近期正面催化剂是否真实、可验证、可持续，而不是传闻或一次性事件？0=没有或不可信，1=强",
+    },
+    {
+        "id": "crowding",
+        "question": "关注度与情绪是否过热拥挤（研报一致看多、散户追问、传闻驱动）？0=冷清，1=极度拥挤",
+        "max": 0.75,
+    },
+    {
+        "id": "setup_consistency",
+        "question": "技术形态（Luk 四步）与基本面、消息面是否相互印证？0=明显矛盾，1=高度一致",
+        "min": 0.40,
+    },
+)
+SYSTEM_PROMPT = (
+    "你是 Jev，一名 A 股研究助理。只能依据用户提供的资料包作答，不得使用资料包以外的信息，"
+    "也不得使用你记忆中资料包日期之后的事件。资料不足时给 0.5 并在理由中说明。"
+    "严格只输出 JSON，不要输出其他文字，格式："
+    '{"answers": {"<问题id>": {"score": 0到1的小数, "reason": "不超过60字"}}, '
+    '"stance": "support|neutral|avoid", "summary": "不超过120字", "key_risks": ["最多3条"]}。'
+    "你的结论仅供研究参考，不构成投资建议。"
+)
+DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
+
+
+class JevNotConfigured(RuntimeError):
+    pass
+
+
+Transport = Callable[[str, Mapping[str, str], bytes, float], bytes]
+
+
+def _urllib_transport(url: str, headers: Mapping[str, str], body: bytes, timeout: float) -> bytes:
+    request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
+    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed https endpoints
+        return response.read()
+
+
+class LlmClient:
+    def __init__(
+        self,
+        *,
+        provider: str,
+        api_key: str,
+        model: str,
+        base_url: str | None = None,
+        transport: Transport = _urllib_transport,
+        timeout: float = 60.0,
+    ) -> None:
+        if provider not in {"anthropic", "openai"}:
+            raise ValueError("JEV_PROVIDER must be anthropic or openai")
+        self.provider = provider
+        self.api_key = api_key
+        self.model = model
+        self.base_url = (
+            base_url
+            or (
+                "https://api.anthropic.com"
+                if provider == "anthropic"
+                else "https://api.openai.com/v1"
+            )
+        ).rstrip("/")
+        self.transport = transport
+        self.timeout = timeout
+
+    def complete(self, system: str, user: str) -> str:
+        if self.provider == "anthropic":
+            body = {
+                "model": self.model,
+                "max_tokens": 1500,
+                "temperature": 0,
+                "system": system,
+                "messages": [{"role": "user", "content": user}],
+            }
+            raw = self.transport(
+                f"{self.base_url}/v1/messages",
+                {
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json.dumps(body).encode("utf-8"),
+                self.timeout,
+            )
+            payload = json.loads(raw)
+            return "".join(
+                part.get("text", "")
+                for part in payload.get("content", [])
+                if part.get("type") == "text"
+            )
+        body = {
+            "model": self.model,
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        }
+        raw = self.transport(
+            f"{self.base_url}/chat/completions",
+            {"authorization": f"Bearer {self.api_key}", "content-type": "application/json"},
+            json.dumps(body).encode("utf-8"),
+            self.timeout,
+        )
+        return str(json.loads(raw)["choices"][0]["message"]["content"])
+
+
+def client_from_env(env: Mapping[str, str] | None = None) -> LlmClient | None:
+    """Anthropic when ANTHROPIC_API_KEY/JEV_API_KEY is set, else any OpenAI-compatible endpoint."""
+    values = os.environ if env is None else env
+    provider = values.get("JEV_PROVIDER") or (
+        "anthropic" if values.get("ANTHROPIC_API_KEY") else "openai"
+    )
+    key = values.get("JEV_API_KEY") or values.get(
+        "ANTHROPIC_API_KEY" if provider == "anthropic" else "OPENAI_API_KEY"
+    )
+    if not key:
+        return None
+    model = values.get("JEV_MODEL") or (DEFAULT_ANTHROPIC_MODEL if provider == "anthropic" else "")
+    if not model:
+        raise JevNotConfigured("set JEV_MODEL for the OpenAI-compatible provider")
+    return LlmClient(
+        provider=provider, api_key=key, model=model, base_url=values.get("JEV_BASE_URL")
+    )
+
+
+def config_status(env: Mapping[str, str] | None = None) -> dict[str, object]:
+    try:
+        client = client_from_env(env)
+    except JevNotConfigured as exc:
+        return {"configured": False, "reason": str(exc)}
+    if client is None:
+        return {
+            "configured": False,
+            "reason": "未设置 ANTHROPIC_API_KEY / OPENAI_API_KEY / JEV_API_KEY",
+        }
+    return {"configured": True, "provider": client.provider, "model": client.model}
+
+
+def build_prompt(packet: Mapping[str, object]) -> str:
+    questions = "\n".join(f"- {q['id']}: {q['question']}" for q in QUESTIONS)
+    return f"请逐题回答（问题 id 必须原样使用）：\n{questions}\n\n资料包（JSON）：\n{_canonical(packet)}"
+
+
+def ask_jev(
+    packet: Mapping[str, object],
+    *,
+    client: LlmClient,
+    record_dir: Path | None = None,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    packet_sha = hashlib.sha256(_canonical(packet).encode("utf-8")).hexdigest()
+    prompt_sha = hashlib.sha256((SYSTEM_PROMPT + build_prompt({})).encode("utf-8")).hexdigest()
+    record_path = None
+    if record_dir is not None:
+        record_path = (
+            record_dir
+            / str(packet.get("as_of", "undated"))
+            / f"{packet.get('symbol', 'unknown')}-{packet_sha[:12]}.json"
+        )
+        if record_path.exists():
+            return {**json.loads(record_path.read_text(encoding="utf-8")), "cached": True}
+    reply = client.complete(SYSTEM_PROMPT, build_prompt(packet))
+    parsed = parse_reply(reply)
+    record = {
+        "schema_version": 1,
+        "kind": "jev_judgment",
+        "advisory_only": True,
+        "symbol": packet.get("symbol"),
+        "as_of": packet.get("as_of"),
+        "created_at": (now or datetime.now(timezone.utc)).isoformat(),
+        "provider": client.provider,
+        "model": client.model,
+        "prompt_sha256": prompt_sha,
+        "packet_sha256": packet_sha,
+        "packet": dict(packet),
+        "raw_reply": reply,
+        **apply_thresholds(parsed, technical_level=str(packet.get("technical_level", ""))),
+    }
+    if record_path is not None:
+        record_path.parent.mkdir(parents=True, exist_ok=True)
+        record_path.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
+    return {**record, "cached": False}
+
+
+def parse_reply(reply: str) -> dict[str, object]:
+    match = re.search(r"\{.*\}", reply, flags=re.S)
+    if not match:
+        raise ValueError("Jev reply contained no JSON object")
+    payload = json.loads(match.group(0))
+    answers = payload.get("answers")
+    if not isinstance(answers, dict):
+        raise ValueError("Jev reply is missing answers")
+    clean = {}
+    for question in QUESTIONS:
+        answer = answers.get(question["id"])
+        if not isinstance(answer, dict) or not isinstance(answer.get("score"), (int, float)):
+            raise ValueError(f"Jev reply is missing a numeric score for {question['id']}")
+        clean[str(question["id"])] = {
+            "score": max(0.0, min(1.0, float(answer["score"]))),
+            "reason": str(answer.get("reason", ""))[:120],
+        }
+    stance = payload.get("stance")
+    return {
+        "answers": clean,
+        "stance": stance if stance in {"support", "neutral", "avoid"} else "neutral",
+        "summary": str(payload.get("summary", ""))[:240],
+        "key_risks": [str(r)[:80] for r in payload.get("key_risks", [])][:3],
+    }
+
+
+def apply_thresholds(parsed: Mapping[str, object], *, technical_level: str) -> dict[str, object]:
+    answers = dict(parsed["answers"])  # type: ignore[arg-type]
+    checks = []
+    for question in QUESTIONS:
+        score = float(answers[str(question["id"])]["score"])
+        if "max" in question:
+            checks.append(
+                {
+                    "id": question["id"],
+                    "rule": f"max {question['max']}",
+                    "score": score,
+                    "passed": score <= float(question["max"]),
+                }
+            )  # type: ignore[arg-type]
+        elif "min" in question:
+            checks.append(
+                {
+                    "id": question["id"],
+                    "rule": f"min {question['min']}",
+                    "score": score,
+                    "passed": score >= float(question["min"]),
+                }
+            )  # type: ignore[arg-type]
+        else:
+            checks.append({"id": question["id"], "rule": "仅参考", "score": score, "passed": True})
+    vetoed = not all(c["passed"] for c in checks) or parsed["stance"] == "avoid"
+    judgment = "veto" if vetoed else ("support" if parsed["stance"] == "support" else "neutral")
+    if technical_level == "entry":
+        combined = {
+            "veto": "技术触发，但 Jev 否决：暂不入场",
+            "support": "技术触发 + Jev 支持",
+            "neutral": "技术触发，Jev 中性",
+        }[judgment]
+    elif technical_level == "watch":
+        combined = "技术面仍在观察，Jev 结论仅作背景"
+    else:
+        combined = "技术面不支持入场，Jev 不能推翻"
+    return {**parsed, "threshold_checks": checks, "judgment": judgment, "combined": combined}
+
+
+def _canonical(payload: Mapping[str, object]) -> str:
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

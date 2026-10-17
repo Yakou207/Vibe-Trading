@@ -9,6 +9,7 @@ price scale (hfq level x latest unadjusted/hfq close ratio), like a forward-adju
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from collections import defaultdict
 from dataclasses import dataclass
@@ -19,6 +20,9 @@ from typing import Mapping
 from fintech_quant.data.historical_universe import active_symbols, load_membership_intervals
 from fintech_quant.data.manifest_chain import load_verified_manifest
 from fintech_quant.execution.paper_evidence import approved_paper_policy, verify_file_reference
+from fintech_quant.information.event_nlp import analyze_items, financial_trend, research_consensus
+from fintech_quant.information.stock_intel import collect_stock_intel
+from fintech_quant.research.jev import LlmClient, ask_jev, client_from_env, config_status
 from fintech_quant.research.momentum_pool import pool_metrics
 from fintech_quant.research.momentum_setup import (
     Bar,
@@ -336,3 +340,131 @@ def _price_ratio(series: Mapping[str, SymbolSeries], daily: Path, as_of: str) ->
 def _names(path: Path) -> dict[str, str]:
     with path.open(encoding="utf-8", newline="") as handle:
         return {row["symbol"]: row.get("name", "") for row in csv.DictReader(handle)}
+
+
+def research_payload(
+    data: PickerData,
+    query: str,
+    *,
+    cache_dir: Path | None,
+    jev_record_dir: Path | None,
+    today: date | None = None,
+    fetchers: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Multi-source information, event NLP, research consensus and financial trend for one stock."""
+    symbol = resolve_symbol(data, query)
+    if symbol is None:
+        return {"error": f"未在当前 CSI 300 成分中找到：{query}"}
+    day = today or date.today()
+    intel = collect_stock_intel(symbol, today=day, cache_dir=cache_dir, fetchers=fetchers)  # type: ignore[arg-type]
+    nlp = analyze_items(intel["items"], today=day)  # type: ignore[arg-type]
+    research = {
+        "symbol": symbol,
+        "name": data.names.get(symbol, ""),
+        "fetched_at": intel["fetched_at"],
+        "sources": intel["sources"],
+        "nlp": {key: value for key, value in nlp.items() if key != "items"},
+        "items": nlp["items"][:60],
+        "consensus": research_consensus(intel["items"], today=day),  # type: ignore[arg-type]
+        "financials": intel["financials"],
+        "financial_trend": financial_trend(intel["financials"]),  # type: ignore[arg-type]
+        "comment_scores": intel["comment_scores"],
+        "jev": config_status(),
+    }
+    packet = jev_packet(stock_payload(data, symbol), research)
+    research["jev_packet_sha256"] = hashlib.sha256(
+        json.dumps(packet, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+    ).hexdigest()
+    if jev_record_dir is not None:
+        record = jev_record_dir / data.as_of / f"{symbol}-{research['jev_packet_sha256'][:12]}.json"
+        if record.exists():
+            research["jev_record"] = json.loads(record.read_text(encoding="utf-8"))
+    return research
+
+
+def jev_payload(
+    data: PickerData,
+    query: str,
+    *,
+    cache_dir: Path | None,
+    jev_record_dir: Path | None,
+    client: LlmClient | None = None,
+    fetchers: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    research = research_payload(
+        data, query, cache_dir=cache_dir, jev_record_dir=jev_record_dir, fetchers=fetchers
+    )
+    if "error" in research:
+        return research
+    if "jev_record" in research:
+        return {**research["jev_record"], "cached": True}  # type: ignore[dict-item]
+    active = client or client_from_env()
+    if active is None:
+        return {
+            "error": "Jev 未配置：设置 ANTHROPIC_API_KEY（或 OPENAI_API_KEY + JEV_MODEL）后重启看板"
+        }
+    packet = jev_packet(stock_payload(data, str(research["symbol"])), research)
+    return ask_jev(packet, client=active, record_dir=jev_record_dir)
+
+
+def jev_packet(stock: Mapping[str, object], research: Mapping[str, object]) -> dict[str, object]:
+    """The only facts Jev sees: compact, dated, and identical for identical inputs."""
+    analysis = stock.get("analysis") or {}
+    baseline = stock.get("baseline") or {}
+    items = [i for i in research.get("items", []) if i.get("kind") != "research"]  # type: ignore[union-attr]
+    newest = sorted(items, key=lambda i: str(i.get("published_at")), reverse=True)
+    focus = sorted(newest, key=lambda i: not i.get("tags"))[:15]  # tagged first, newest first
+    return {
+        "symbol": stock.get("symbol"),
+        "name": stock.get("name"),
+        "as_of": stock.get("as_of"),
+        "information_date": str(research.get("fetched_at", ""))[:10],
+        "technical_level": (stock.get("verdict") or {}).get("level"),  # type: ignore[union-attr]
+        "technical": {
+            "state": analysis.get("state"),  # type: ignore[union-attr]
+            "checks": [
+                {"label": c["label"], "passed": c["passed"], "detail": c["detail"]}
+                for c in analysis.get("checks", [])  # type: ignore[union-attr]
+            ],
+        },
+        "baseline": {
+            "total": baseline.get("total"),  # type: ignore[union-attr]
+            "confidence": baseline.get("confidence"),  # type: ignore[union-attr]
+            "components": {
+                k: v.get("score")
+                for k, v in dict(baseline.get("components") or {}).items()  # type: ignore[union-attr]
+            },
+        },
+        "market_warnings": stock.get("market_warnings"),
+        "nlp": {k: research["nlp"][k] for k in ("sentiment", "label", "event_counts")},  # type: ignore[index]
+        "recent_items": [
+            {
+                "date": str(i.get("published_at", ""))[:10],
+                "kind": i.get("kind"),
+                "source": i.get("source"),
+                "title": str(i.get("title", ""))[:90],
+                "tags": i.get("tags"),
+            }
+            for i in focus
+        ],
+        "research_consensus": research.get("consensus"),
+        "financials": [
+            {
+                k: p.get(k)
+                for k in (
+                    "period",
+                    "revenue_yoy",
+                    "net_profit_yoy",
+                    "deducted_profit_yoy",
+                    "roe",
+                    "net_margin",
+                )
+            }
+            for p in research.get("financials", [])[:6]  # type: ignore[union-attr]
+        ],
+        "financial_flags": [
+            f["text"] for f in research.get("financial_trend", {}).get("flags", [])
+        ],  # type: ignore[union-attr]
+    }

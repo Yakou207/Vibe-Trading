@@ -25,8 +25,10 @@ from fintech_quant.reports.desk import (  # noqa: E402
 )
 from fintech_quant.reports.picker import (  # noqa: E402
     PickerData,
+    jev_payload,
     load_picker_data,
     picks_payload,
+    research_payload,
     stock_payload,
     universe_payload,
 )
@@ -148,10 +150,36 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
             elif path == "/api/picks":
                 self._json(picks_payload(state.picker(), state.pool_state()))
             elif path == "/api/stock":
-                query = parse_qs(urlsplit(self.path).query).get("q", [""])[0]
-                self._json(stock_payload(state.picker(), query))
+                self._json(stock_payload(state.picker(), self._query()))
+            elif path == "/api/research":
+                self._json(
+                    research_payload(
+                        state.picker(),
+                        self._query(),
+                        cache_dir=state.args.intel_cache,
+                        jev_record_dir=state.args.jev_records,
+                    )
+                )
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
+
+        def do_POST(self) -> None:  # noqa: N802
+            if self.path.split("?", 1)[0] != "/api/jev":
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            try:
+                payload = jev_payload(
+                    state.picker(),
+                    self._query(),
+                    cache_dir=state.args.intel_cache,
+                    jev_record_dir=state.args.jev_records,
+                )
+            except Exception as exc:  # LLM/network failures are reported, not fatal
+                payload = {"error": f"Jev 调用失败：{type(exc).__name__}: {str(exc)[:200]}"}
+            self._json(payload)
+
+        def _query(self) -> str:
+            return parse_qs(urlsplit(self.path).query).get("q", [""])[0]
 
         def _json(self, payload: object) -> None:
             self._send(
@@ -220,6 +248,8 @@ def main() -> int:
         "--state", type=Path, default=Path("data/paper/csi300_baseline/pipeline_state.json")
     )
     parser.add_argument("--pool-root", type=Path, default=Path("outputs/momentum_pool"))
+    parser.add_argument("--intel-cache", type=Path, default=Path("outputs/research_cache"))
+    parser.add_argument("--jev-records", type=Path, default=Path("outputs/jev"))
     parser.add_argument("--quotes", type=Path, default=None, help="Realtime quote CSV to watch.")
     parser.add_argument("--live-quotes", action="store_true", help="Poll AkShare spot quotes.")
     parser.add_argument("--quote-interval", type=float, default=30.0)
