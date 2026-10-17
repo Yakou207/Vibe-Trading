@@ -204,6 +204,26 @@ python scripts/serve_trading_desk.py --export outputs/trading_desk.html  # 静�
 
 逆向分析与路线图见 `docs/research/2026-10-17-ai-trading-desk-teardown.md`。
 
+### 选股页与 Top 5 影子交易池
+
+交易桌的“选股”页（`http://127.0.0.1:8765/picks`）可以按代码或名称搜索当前 CSI 300 成分股，
+对单只股票给出 Martin Luk 式四步检查（强势股 → 8 周整理平台 → 平台内强度 → 支撑共振急跌收复）、
+K 线与 9/21/50 EMA、锚定在半年高低点的 AVWAP、共振区和参考止损、多因子基线分项，以及
+“入场候选 / 观察 / 暂不入场 / 回避”的结论。数据只读取 pipeline state 已哈希绑定的价格快照和
+决策报告；图表价位按最新未复权/后复权比例换算到当前价格尺度。
+
+筛选排名前五进入影子交易池。池子每个交易日在收盘周期之后的固定时段（建议 18:30）刷新一次：
+上一日触发的成员按今日开盘买入（停牌、开盘涨停、开盘低于止损则跳过），止损为信号日低点，
+收盘跌破 9 EMA 离场，T+1 当日不卖。池子是独立的影子账户，按 hfq 价格计收益，**不计入 V2
+证据、不改变计数账户**，只写 `outputs/momentum_pool/`：
+
+```bash
+python scripts/refresh_momentum_pool.py                              # 每日固定时段刷新
+python scripts/refresh_momentum_pool.py --replay-start 2024-01-02    # 按时点成分历史回放
+```
+
+方法改写、回放结果和局限见 `docs/research/2026-10-17-martin-luk-momentum-setup.md`。
+
 ## 盘前选股简报与人工执行台账
 
 系统只做研究，真实下单由人完成。简报只读取最近一个完整的 V2 收盘周期

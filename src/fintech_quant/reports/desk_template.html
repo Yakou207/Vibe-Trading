@@ -53,6 +53,10 @@ h2 { font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: upperc
 .progress { display: flex; align-items: center; gap: 8px; font: 12px var(--mono); }
 .bar { width: 160px; height: 10px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
 .bar > i { display: block; height: 100%; background: repeating-linear-gradient(135deg, var(--accent) 0 4px, transparent 4px 6px), var(--accent); }
+.nav { display: flex; gap: 4px; }
+.nav[hidden] { display: none; }
+.nav a { font: 600 11px var(--mono); color: var(--text-secondary); text-decoration: none; border: 1px solid var(--border); border-radius: 4px; padding: 5px 9px; }
+.nav a[aria-current="page"] { color: var(--text-primary); border-color: var(--accent); }
 .pills { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
 .pill { font: 600 10px/1 var(--mono); padding: 5px 7px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
 .pill.ok::before { content: "● "; color: var(--good); }
@@ -163,6 +167,7 @@ footer { font: 10.5px var(--mono); color: var(--text-muted); margin-top: 8px; wo
       <div class="brand">VIBE<span>·</span>DESK</div>
       <div class="sub">CSI 300 · 多因子基线 · 纸面交易</div>
     </div>
+    <nav class="nav" id="nav" hidden><a href="/" aria-current="page">交易桌</a><a href="/picks">选股</a></nav>
     <div class="progress" title="有效交易日 / 要求的 40 个">
       <span class="muted">证据</span>
       <div class="bar"><i id="evidence-bar"></i></div>
@@ -592,6 +597,7 @@ footer { font: 10.5px var(--mono); color: var(--text-muted); margin-top: 8px; wo
   requestAnimationFrame(tick);
   window.addEventListener("resize", () => active && placeBubble(active, $("bubble").textContent.replace(/^\S+\s/, "")));
 
+  if (LIVE) $("nav").hidden = false;
   if (LIVE && "EventSource" in window) {
     const source = new EventSource("/api/stream");
     source.addEventListener("snapshot", (ev) => {

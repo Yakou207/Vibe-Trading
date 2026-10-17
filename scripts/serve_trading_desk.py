@@ -9,6 +9,7 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -22,6 +23,16 @@ from fintech_quant.reports.desk import (  # noqa: E402
     render_desk_html,
     watched_symbols,
 )
+from fintech_quant.reports.picker import (  # noqa: E402
+    PickerData,
+    load_picker_data,
+    picks_payload,
+    stock_payload,
+    universe_payload,
+)
+
+
+PICKER_TEMPLATE = SRC / "fintech_quant" / "reports" / "picker_template.html"
 
 
 HEARTBEAT_SECONDS = 15.0
@@ -39,6 +50,9 @@ class DeskState:
         self.quotes_fetched_at = 0.0
         self.fingerprint: tuple[object, ...] | None = None
         self.snapshot: dict[str, object] = {}
+        self.picker_lock = threading.Lock()
+        self.picker_data: PickerData | None = None
+        self.picker_mtime = 0
         self.refresh(force=True)
 
     def refresh(self, *, force: bool = False) -> bool:
@@ -83,6 +97,19 @@ class DeskState:
             self.quotes_status = f"quote fetch failed: {exc}"
         return True
 
+    def picker(self) -> PickerData:
+        """Stock-picker data, reloaded whenever the pipeline state file changes."""
+        mtime = self.args.state.stat().st_mtime_ns
+        with self.picker_lock:
+            if self.picker_data is None or mtime != self.picker_mtime:
+                self.picker_data = load_picker_data(self.args.state)
+                self.picker_mtime = mtime
+            return self.picker_data
+
+    def pool_state(self) -> dict[str, object] | None:
+        path = self.args.pool_root / "state.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
     def subscribe(self) -> queue.Queue[str]:
         subscriber: queue.Queue[str] = queue.Queue()
         with self.lock:
@@ -110,8 +137,27 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                 self._send(body, "application/json; charset=utf-8")
             elif path == "/api/stream":
                 self._stream()
+            elif path == "/picks":
+                as_of = state.picker().as_of
+                body = PICKER_TEMPLATE.read_text(encoding="utf-8").replace(
+                    "__PICKER_TITLE__", f"选股 · CSI 300 · {as_of}"
+                )
+                self._send(body.encode("utf-8"), "text/html; charset=utf-8")
+            elif path == "/api/universe":
+                self._json(universe_payload(state.picker()))
+            elif path == "/api/picks":
+                self._json(picks_payload(state.picker(), state.pool_state()))
+            elif path == "/api/stock":
+                query = parse_qs(urlsplit(self.path).query).get("q", [""])[0]
+                self._json(stock_payload(state.picker(), query))
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
+
+        def _json(self, payload: object) -> None:
+            self._send(
+                json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                "application/json; charset=utf-8",
+            )
 
         def _send(self, body: bytes, content_type: str) -> None:
             self.send_response(HTTPStatus.OK)
@@ -170,6 +216,10 @@ def main() -> int:
         type=Path,
         default=Path("outputs/csi300_research/hfq-formal-20260713/pnl_curve.json"),
     )
+    parser.add_argument(
+        "--state", type=Path, default=Path("data/paper/csi300_baseline/pipeline_state.json")
+    )
+    parser.add_argument("--pool-root", type=Path, default=Path("outputs/momentum_pool"))
     parser.add_argument("--quotes", type=Path, default=None, help="Realtime quote CSV to watch.")
     parser.add_argument("--live-quotes", action="store_true", help="Poll AkShare spot quotes.")
     parser.add_argument("--quote-interval", type=float, default=30.0)
