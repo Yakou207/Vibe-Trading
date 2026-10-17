@@ -143,6 +143,47 @@ python scripts/audit_csi300_paper_validation.py \
 CSI 300 正超额收益和不高于 10% 的回撤门禁全部通过前，禁止接入实盘。即使状态达到
 `ELIGIBLE_FOR_REVIEW`，系统仍保持 `live_trading_authorized=false`，DQN 也不得增加模拟仓位。
 
+### 定时自动运行（launchd）
+
+`scripts/run_scheduled_csi300_post_close.py` 是上面固定入口的调度包装，由
+`deploy/launchd/com.vibetrading.csi300-post-close.plist` 在工作日 17:30 和 21:30（本机为
+Asia/Shanghai）触发。包装器只调用 `run_csi300_post_close.py`（固定参数）和
+`audit_csi300_paper_validation.py`，不改阈值、不启用 DQN、不连接券商，也不直接写账户、
+state 或 manifest。每次运行：
+
+1. 要求主仓库在 `main` 分支且没有未提交的 tracked 改动，否则阻止运行并通知；
+2. 用 AkShare 新浪交易日历确定目标交易日：已过 17:30 的当日，或之前最近的交易日
+   （因此睡眠后补触发也安全）。state 已是该日期则静默退出；
+3. 若 state 不是目标日的前一交易日（证据缺口），阻止运行并通知，不会跨缺口自动推进；
+4. 运行固定入口；失败且账户/state 哈希未变时，每 30 分钟重试，最多 5 次；若失败时账户或
+   state 已变化，则不重试并通知；
+5. 成功后运行独立审计并写入根目录 `validation_report.json`；审计出错或状态为 `FAILED` 时通知。
+
+日志：`outputs/automation/csi300_post_close/<时间戳>.log`（含子进程输出）和
+`runs.jsonl`（每次运行一行摘要）；launchd 自身输出在同目录 `launchd.*.log`。失败通知使用
+macOS 本地通知（`osascript`）。
+
+安装（由用户手动执行；plist 中路径固定为 `/Users/yakou/Desktop/Vibe-Trading`）：
+
+```bash
+mkdir -p outputs/automation/csi300_post_close && cp deploy/launchd/com.vibetrading.csi300-post-close.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.vibetrading.csi300-post-close.plist
+```
+
+立即手动触发一次（检查日志与通知）：
+
+```bash
+launchctl kickstart gui/$(id -u)/com.vibetrading.csi300-post-close
+```
+
+卸载：
+
+```bash
+launchctl bootout gui/$(id -u)/com.vibetrading.csi300-post-close && rm ~/Library/LaunchAgents/com.vibetrading.csi300-post-close.plist
+```
+
+Mac 在 17:30 睡眠时，launchd 会在唤醒后补触发；关机则不会。启用前请暂停其他会运行同一入口的
+自动化（如 `/Users/yakou/.codex/automations/csi300/automation.toml`）。
+
 ## Phase 1 Research Loop
 
 The first working slice is a daily A-share research loop:

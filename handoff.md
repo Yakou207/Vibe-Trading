@@ -36,7 +36,8 @@ This is not deployable-profit proof. At the time of this handoff:
   window because expected CSI 300 session `2026-07-14` is missing;
 - operationally, the accepted continuous evidence count remains zero;
 - `live_trading_authorized=false` and DQN paper exposure is disabled;
-- the weekday 17:30 Asia/Shanghai automation is active;
+- the weekday 17:30 Asia/Shanghai automation is active (superseded: as of 2026-10-17 the Codex
+  automation is `PAUSED`; see "Scheduled automation (launchd)" below);
 - the 2026-07-15 cycle passed data-health, approved-policy, execution-integrity, drawdown, DQN-off,
   and live-off gates, but failed the anchor-to-cycle trading-session continuity gate;
 - the 2026-07-14 factor/benchmark mismatch is now diagnosed as incomplete processed-stage reuse
@@ -125,6 +126,38 @@ Independent audit command:
   --cycle-root outputs/paper_trading/csi300_baseline/cycles \
   --output outputs/paper_trading/csi300_baseline/validation_report.json
 ```
+
+## Scheduled automation (launchd)
+
+Added 2026-10-17. Missed post-close runs were the operational cause of the failed audit: as of
+2026-10-17 the canonical state is dated `2026-07-21`, and the 2026-07-21 cycle-local audit is
+`FAILED` with missing sessions `2026-07-14`, `2026-07-17` and `2026-07-20`. The Codex automation
+at `/Users/yakou/.codex/automations/csi300/automation.toml` is `PAUSED`.
+
+`scripts/run_scheduled_csi300_post_close.py` is a deterministic wrapper started by
+`deploy/launchd/com.vibetrading.csi300-post-close.plist` on weekdays at 17:30 and 21:30 local time
+(the Mac is set to Asia/Shanghai). It runs only the fixed daily command above and then the
+independent audit (writing the root `validation_report.json`). It:
+
+- fails closed unless the main checkout is on `main` with no tracked changes;
+- picks the target session from the AkShare Sina trading calendar: today once 17:30 Shanghai has
+  passed, otherwise the latest earlier session, so a late fire after sleep is safe;
+- exits quietly when the state already holds the target session;
+- refuses to run, and notifies, when the state date is not the session immediately before the
+  target. It never bridges an evidence gap automatically; the 2026-07-21 cycle shows that the
+  entrypoint itself will bridge one if invoked across missing sessions;
+- retries the entrypoint up to 5 attempts, 30 minutes apart, only while the account and state
+  hashes are unchanged; a failure after either changed stops immediately and notifies;
+- logs to `outputs/automation/csi300_post_close/` (`<timestamp>.log`, `runs.jsonl`,
+  `launchd.*.log`) and sends a macOS notification on every blocked, failed, or `FAILED`-audit run.
+
+Because the state is far behind, the installed job will report the evidence gap every weekday
+until the gap/epoch is resolved manually (handoff priorities 2-3). After that, the first
+bridging cycle must be run by hand with the fixed command; the job then continues daily.
+
+Install and uninstall commands are in `README.md` ("定时自动运行（launchd）"). The job is not
+installed by default. Pause the Codex automation before installing so only one scheduler runs the
+entrypoint.
 
 ## 2026-07-14 operational evidence
 
@@ -379,7 +412,9 @@ Immediate work order:
 - Latest authoritative audit: `outputs/paper_trading/csi300_baseline/cycles/2026-07-15/validation_report.json`
 - Preserved 2026-07-14 factor manifest:
   `data/diagnostics/processed-factor-runs/csi300-factor-20260714/manifest.json`
-- Automation definition: `/Users/yakou/.codex/automations/csi300/automation.toml`
+- Automation definition (Codex, paused): `/Users/yakou/.codex/automations/csi300/automation.toml`
+- Scheduled wrapper: `scripts/run_scheduled_csi300_post_close.py`
+- launchd job: `deploy/launchd/com.vibetrading.csi300-post-close.plist`
 
 ## Suggested prompt for a new conversation
 
