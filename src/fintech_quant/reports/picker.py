@@ -22,7 +22,14 @@ from fintech_quant.data.manifest_chain import load_verified_manifest
 from fintech_quant.execution.paper_evidence import approved_paper_policy, verify_file_reference
 from fintech_quant.information.event_nlp import analyze_items, financial_trend, research_consensus
 from fintech_quant.information.stock_intel import collect_stock_intel
-from fintech_quant.research.jev import LlmClient, ask_jev, client_from_env, config_status
+from fintech_quant.research.jev import (
+    JevDecisionClient,
+    LlmClient,
+    ask_jev,
+    client_from_env,
+    config_status,
+    record_name,
+)
 from fintech_quant.research.momentum_pool import pool_metrics
 from fintech_quant.research.momentum_setup import (
     Bar,
@@ -378,9 +385,23 @@ def research_payload(
         )
     ).hexdigest()
     if jev_record_dir is not None:
-        record = jev_record_dir / data.as_of / f"{symbol}-{research['jev_packet_sha256'][:12]}.json"
-        if record.exists():
-            research["jev_record"] = {**json.loads(record.read_text(encoding="utf-8")), "cached": True}
+        model = str(research["jev"].get("model", ""))  # type: ignore[union-attr]
+        packet_sha = str(research["jev_packet_sha256"])
+        exact = jev_record_dir / data.as_of / record_name(symbol, packet_sha, model)
+        saved = sorted(
+            (jev_record_dir / data.as_of).glob(f"{symbol}-{packet_sha[:12]}-*.json"),
+            key=lambda path: path.stat().st_mtime,
+        )
+        record = (
+            exact
+            if model and exact.exists()
+            else (None if model else (saved[-1] if saved else None))
+        )
+        if record is not None:
+            research["jev_record"] = {
+                **json.loads(record.read_text(encoding="utf-8")),
+                "cached": True,
+            }
     return research
 
 
@@ -390,7 +411,7 @@ def jev_payload(
     *,
     cache_dir: Path | None,
     jev_record_dir: Path | None,
-    client: LlmClient | None = None,
+    client: LlmClient | JevDecisionClient | None = None,
     today: date | None = None,
     fetchers: Mapping[str, object] | None = None,
 ) -> dict[str, object]:

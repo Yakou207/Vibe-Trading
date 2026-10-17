@@ -354,3 +354,117 @@ def test_research_and_jev_payload_end_to_end(tmp_path: Path) -> None:
     )
     assert again["jev_record"]["packet_sha256"] == judgment["packet_sha256"]
     assert again["jev_record"]["cached"] is True
+
+
+def _decision_response(levels: dict[str, list[float]], stance: str = "neutral") -> bytes:
+    answers = {
+        qid: {
+            "type": "score",
+            "score": sum(i * p for i, p in enumerate(probs)),
+            "probabilities": {str(i): p for i, p in enumerate(probs)},
+            "confidence": max(probs),
+        }
+        for qid, probs in levels.items()
+    }
+    answers["stance"] = {
+        "type": "choice",
+        "choice": stance,
+        "probabilities": {"support": 0.2, "neutral": 0.5, "avoid": 0.3},
+        "confidence": 0.3,
+    }
+    return json.dumps(
+        {
+            "model": "typesafe/jev-1.14-20261014",
+            "answers": answers,
+            "usage": {"input_tokens": 455, "output_tokens": 70, "cost": 1.9e-05},
+            "id": "gen-dec-1",
+            "provider": "TypeSafe",
+        }
+    ).encode()
+
+
+LEVELS = {
+    "negative_event_risk": [0.05, 0.15, 0.6, 0.2],
+    "earnings_support": [0.0, 0.1, 0.3, 0.5, 0.1],
+    "catalyst_quality": [0.2, 0.5, 0.2, 0.1],
+    "crowding": [0.3, 0.6, 0.1, 0.0],
+    "setup_consistency": [0.0, 0.2, 0.6, 0.2],
+}
+
+
+def test_jev_model_names_normalise_to_openrouter_ids() -> None:
+    from fintech_quant.research.jev import normalize_jev_model
+
+    assert normalize_jev_model("Jev 1.14") == "typesafe/jev-1.14"
+    assert normalize_jev_model("jev-1.13") == "typesafe/jev-1.13"
+    assert normalize_jev_model("latest") == "~typesafe/jev-latest"
+    assert normalize_jev_model("typesafe/jev-1.14") == "typesafe/jev-1.14"
+
+
+def test_jev_model_selects_typesafe_decision_client_and_needs_openrouter_key() -> None:
+    from fintech_quant.research.jev import JevDecisionClient, JevNotConfigured
+
+    client = client_from_env(
+        {"JEV_MODEL": "Jev 1.14", "OPENROUTER_API_KEY": "k", "DEEPSEEK_API_KEY": "d"}
+    )
+    assert isinstance(client, JevDecisionClient)
+    assert (client.provider, client.model) == ("typesafe", "typesafe/jev-1.14")
+    with pytest.raises(JevNotConfigured, match="OPENROUTER_API_KEY"):
+        client_from_env({"JEV_MODEL": "Jev 1.14", "DEEPSEEK_API_KEY": "d"})
+
+
+def test_decision_request_uses_typed_score_questions_and_stance_choice() -> None:
+    from fintech_quant.research.jev import JevDecisionClient
+
+    transport_calls: list = []
+
+    def capture(url, headers, body, timeout):
+        transport_calls.append((url, dict(headers), json.loads(body)))
+        return _decision_response(LEVELS)
+
+    client = JevDecisionClient(api_key="k", model="typesafe/jev-1.14", transport=capture)
+    parsed, raw, meta = client.decide({"symbol": "600001.SH"})
+
+    url, headers, body = transport_calls[0]
+    assert url == "https://openrouter.ai/api/alpha/decisions"
+    assert headers["authorization"] == "Bearer k"
+    assert body["state"] == {"symbol": "600001.SH"}
+    assert body["questions"]["negative_event_risk"]["type"] == "score"
+    assert body["questions"]["negative_event_risk"]["criteria"] == ["无", "轻微", "明显", "严重"]
+    assert body["questions"]["stance"]["type"] == "choice"
+    assert parsed["answers"]["negative_event_risk"]["score"] == pytest.approx(
+        (0.15 + 1.2 + 0.6) / 3, abs=1e-4
+    )
+    assert "明显" in parsed["answers"]["negative_event_risk"]["reason"]
+    assert parsed["stance"] == "neutral"
+    assert meta["served_model"] == "typesafe/jev-1.14-20261014"
+
+
+def test_decision_probabilities_feed_the_same_soft_thresholds(tmp_path: Path) -> None:
+    from fintech_quant.research.jev import JevDecisionClient
+
+    client = JevDecisionClient(
+        api_key="k", model="typesafe/jev-1.14", transport=lambda *a: _decision_response(LEVELS)
+    )
+    record = ask_jev(
+        {"symbol": "600001.SH", "as_of": "2026-10-16", "technical_level": "entry"},
+        client=client,
+        record_dir=tmp_path,
+    )
+
+    risk = next(c for c in record["threshold_checks"] if c["id"] == "negative_event_risk")
+    assert risk["score"] == pytest.approx(0.65, abs=1e-3) and risk["passed"] is False
+    assert record["judgment"] == "veto"
+    assert record["provider"] == "typesafe" and record["usage"]["cost"] == pytest.approx(1.9e-05)
+    assert record["key_risks"] == ["负面事件风险偏高（明显）"]
+    assert list((tmp_path / "2026-10-16").glob("600001.SH-*-typesafe_jev-1.14.json"))
+
+
+def test_decision_without_probabilities_fails_closed() -> None:
+    from fintech_quant.research.jev import JevDecisionClient
+
+    client = JevDecisionClient(
+        api_key="k", model="m", transport=lambda *a: json.dumps({"answers": {}}).encode()
+    )
+    with pytest.raises(ValueError, match="missing probabilities"):
+        client.decide({})

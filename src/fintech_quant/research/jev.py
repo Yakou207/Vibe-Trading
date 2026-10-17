@@ -29,25 +29,30 @@ from typing import Callable, Mapping
 QUESTIONS: tuple[dict[str, object], ...] = (
     {
         "id": "negative_event_risk",
+        "labels": ["无", "轻微", "明显", "严重"],
         "question": "已披露信息中，是否存在可能在未来一个月显著压制股价的负面事件（减持、问询、处罚、业绩下修、稀释等）？0=没有，1=非常严重",
         "max": 0.55,
     },
     {
         "id": "earnings_support",
+        "labels": ["完全不支撑", "较弱", "一般", "较强", "强支撑"],
         "question": "最近几期财报趋势是否支撑当前股价与技术形态？0=完全不支撑，1=强支撑",
         "min": 0.45,
     },
     {
         "id": "catalyst_quality",
+        "labels": ["没有或不可信", "较弱", "中等", "强"],
         "question": "近期正面催化剂是否真实、可验证、可持续，而不是传闻或一次性事件？0=没有或不可信，1=强",
     },
     {
         "id": "crowding",
+        "labels": ["冷清", "正常", "偏热", "极度拥挤"],
         "question": "关注度与情绪是否过热拥挤（研报一致看多、散户追问、传闻驱动）？0=冷清，1=极度拥挤",
         "max": 0.75,
     },
     {
         "id": "setup_consistency",
+        "labels": ["明显矛盾", "部分矛盾", "大体一致", "高度一致"],
         "question": "技术形态（Luk 四步）与基本面、消息面是否相互印证？0=明显矛盾，1=高度一致",
         "min": 0.40,
     },
@@ -167,13 +172,139 @@ class LlmClient:
         return str(json.loads(raw)["choices"][0]["message"]["content"])
 
 
-def client_from_env(env: Mapping[str, str] | None = None) -> LlmClient | None:
+TYPESAFE_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
+STANCE_QUESTION = {
+    "type": "choice",
+    "instructions": "综合资料包，这只股票当前的整体研究倾向是？",
+    "criteria": {
+        "support": "偏正面，支持关注入场",
+        "neutral": "中性，继续观察",
+        "avoid": "偏负面，回避",
+    },
+}
+
+
+def normalize_jev_model(value: str) -> str:
+    """'Jev 1.14' / 'jev-1.14' / 'latest' -> OpenRouter ids such as 'typesafe/jev-1.14'."""
+    text = value.strip()
+    if "/" in text:
+        return text
+    lowered = text.lower().replace(" ", "-")
+    if "latest" in lowered:
+        return "~typesafe/jev-latest"
+    version = re.search(r"(\d+\.\d+)", lowered)
+    return f"typesafe/jev-{version.group(1)}" if version else "~typesafe/jev-latest"
+
+
+class JevDecisionClient:
+    """TypeSafe Jev (System One) through OpenRouter: typed questions in, probabilities out."""
+
+    provider = "typesafe"
+
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        url: str = TYPESAFE_DECISIONS_URL,
+        transport: Transport = _urllib_transport,
+        timeout: float = 60.0,
+    ) -> None:
+        self.api_key, self.model, self.url, self.transport, self.timeout = (
+            api_key,
+            model,
+            url,
+            transport,
+            timeout,
+        )
+
+    def request_body(self, packet: Mapping[str, object]) -> dict[str, object]:
+        questions: dict[str, object] = {
+            str(q["id"]): {
+                "type": "score",
+                "instructions": q["question"].split("？")[0] + "？",
+                "criteria": q["labels"],
+            }
+            for q in QUESTIONS
+        }
+        questions["stance"] = STANCE_QUESTION
+        return {"model": self.model, "state": dict(packet), "questions": questions}
+
+    def decide(
+        self, packet: Mapping[str, object]
+    ) -> tuple[dict[str, object], str, dict[str, object]]:
+        raw = self.transport(
+            self.url,
+            {"authorization": f"Bearer {self.api_key}", "content-type": "application/json"},
+            json.dumps(self.request_body(packet), ensure_ascii=False).encode("utf-8"),
+            self.timeout,
+        )
+        payload = json.loads(raw)
+        answers = payload.get("answers") or {}
+        clean = {}
+        for question in QUESTIONS:
+            answer = answers.get(question["id"])
+            if not isinstance(answer, dict) or not isinstance(answer.get("probabilities"), dict):
+                raise ValueError(f"Jev decision is missing probabilities for {question['id']}")
+            probabilities = {int(k): float(v) for k, v in answer["probabilities"].items()}
+            levels = len(question["labels"])  # type: ignore[arg-type]
+            expected = sum(i * p for i, p in probabilities.items()) / max(
+                1, sum(probabilities.values())
+            )
+            top = max(probabilities, key=probabilities.get)
+            clean[str(question["id"])] = {
+                "score": round(expected / (levels - 1), 4),
+                "reason": f"最可能：{question['labels'][top]}（{probabilities[top]:.0%}），置信 {float(answer.get('confidence', 0)):.0%}",  # type: ignore[index]
+                "probabilities": {
+                    question["labels"][i]: p for i, p in sorted(probabilities.items())
+                },  # type: ignore[index]
+            }
+        stance = answers.get("stance") or {}
+        choice = (
+            stance.get("choice")
+            if stance.get("choice") in {"support", "neutral", "avoid"}
+            else "neutral"
+        )
+        stance_p = dict(stance.get("probabilities") or {})
+        parsed = {
+            "answers": clean,
+            "stance": choice,
+            "summary": "Jev 整体倾向："
+            + "、".join(
+                f"{k} {float(v):.0%}"
+                for k, v in sorted(stance_p.items(), key=lambda kv: -float(kv[1]))
+            ),
+            "key_risks": [
+                f"{name}偏高（{clean[qid]['reason'].split('（')[0].removeprefix('最可能：')}）"
+                for qid, name in (("negative_event_risk", "负面事件风险"), ("crowding", "拥挤度"))
+                if float(clean[qid]["score"]) >= 0.5
+            ],
+        }
+        meta = {
+            "served_model": payload.get("model"),
+            "usage": payload.get("usage"),
+            "id": payload.get("id"),
+        }
+        return parsed, raw.decode("utf-8") if isinstance(raw, bytes) else str(raw), meta
+
+
+def client_from_env(env: Mapping[str, str] | None = None) -> LlmClient | JevDecisionClient | None:
     """DeepSeek when DEEPSEEK_API_KEY is set; Anthropic for ANTHROPIC_API_KEY; else OpenAI-compatible."""
     values = os.environ if env is None else env
     if looks_like_secret(values.get("JEV_MODEL", "")):
         raise JevNotConfigured(
             "JEV_MODEL 的值看起来是 API 密钥而不是模型名：请清空或改为模型名（如 deepseek-flash），"
             "并作废这个密钥后放到正确的变量里"
+        )
+    if (
+        re.search(r"jev", values.get("JEV_MODEL", ""), flags=re.I)
+        or values.get("JEV_PROVIDER") == "typesafe"
+    ):
+        if not values.get("OPENROUTER_API_KEY"):
+            raise JevNotConfigured("TypeSafe Jev 需要 OPENROUTER_API_KEY")
+        return JevDecisionClient(
+            api_key=values["OPENROUTER_API_KEY"],
+            model=normalize_jev_model(values.get("JEV_MODEL") or "latest"),
         )
     if values.get("DEEPSEEK_API_KEY") and not values.get("JEV_PROVIDER"):
         return LlmClient(
@@ -206,7 +337,7 @@ def config_status(env: Mapping[str, str] | None = None) -> dict[str, object]:
     if client is None:
         return {
             "configured": False,
-            "reason": "未设置 ANTHROPIC_API_KEY / OPENAI_API_KEY / JEV_API_KEY",
+            "reason": "未设置 DEEPSEEK_API_KEY / OPENROUTER_API_KEY（Jev）/ ANTHROPIC_API_KEY",
         }
     return {"configured": True, "provider": client.provider, "model": client.model}
 
@@ -219,23 +350,31 @@ def build_prompt(packet: Mapping[str, object]) -> str:
 def ask_jev(
     packet: Mapping[str, object],
     *,
-    client: LlmClient,
+    client: LlmClient | JevDecisionClient,
     record_dir: Path | None = None,
     now: datetime | None = None,
 ) -> dict[str, object]:
     packet_sha = hashlib.sha256(_canonical(packet).encode("utf-8")).hexdigest()
-    prompt_sha = hashlib.sha256((SYSTEM_PROMPT + build_prompt({})).encode("utf-8")).hexdigest()
+    decision = isinstance(client, JevDecisionClient)
+    question_text = (
+        _canonical(client.request_body({})) if decision else SYSTEM_PROMPT + build_prompt({})
+    )  # type: ignore[union-attr]
+    prompt_sha = hashlib.sha256(question_text.encode("utf-8")).hexdigest()
     record_path = None
     if record_dir is not None:
         record_path = (
             record_dir
             / str(packet.get("as_of", "undated"))
-            / f"{packet.get('symbol', 'unknown')}-{packet_sha[:12]}.json"
+            / record_name(str(packet.get("symbol", "unknown")), packet_sha, client.model)
         )
         if record_path.exists():
             return {**json.loads(record_path.read_text(encoding="utf-8")), "cached": True}
-    reply = client.complete(SYSTEM_PROMPT, build_prompt(packet))
-    parsed = parse_reply(reply)
+    meta: dict[str, object] = {}
+    if decision:
+        parsed, reply, meta = client.decide(packet)  # type: ignore[union-attr]
+    else:
+        reply = client.complete(SYSTEM_PROMPT, build_prompt(packet))  # type: ignore[union-attr]
+        parsed = parse_reply(reply)
     record = {
         "schema_version": 1,
         "kind": "jev_judgment",
@@ -249,12 +388,18 @@ def ask_jev(
         "packet_sha256": packet_sha,
         "packet": dict(packet),
         "raw_reply": reply,
+        **meta,
         **apply_thresholds(parsed, technical_level=str(packet.get("technical_level", ""))),
     }
     if record_path is not None:
         record_path.parent.mkdir(parents=True, exist_ok=True)
         record_path.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
     return {**record, "cached": False}
+
+
+def record_name(symbol: str, packet_sha: str, model: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9.-]+", "_", model).strip("_")[:40]
+    return f"{symbol}-{packet_sha[:12]}-{slug}.json"
 
 
 def parse_reply(reply: str) -> dict[str, object]:
