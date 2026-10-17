@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import re
+import ssl
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -71,10 +72,32 @@ class JevNotConfigured(RuntimeError):
 Transport = Callable[[str, Mapping[str, str], bytes, float], bytes]
 
 
+def _ssl_context() -> ssl.SSLContext:
+    """Verify TLS against the OS trust store (python.org builds ignore the macOS keychain)."""
+    try:
+        import truststore
+
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except ImportError:
+        pass
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
 def _urllib_transport(url: str, headers: Mapping[str, str], body: bytes, timeout: float) -> bytes:
     request = urllib.request.Request(url, data=body, headers=dict(headers), method="POST")
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed https endpoints
+    with urllib.request.urlopen(request, timeout=timeout, context=_ssl_context()) as response:  # noqa: S310
         return response.read()
+
+
+def looks_like_secret(value: str) -> bool:
+    return value.startswith(("sk-", "sk_", "Bearer ")) or (
+        len(value) > 40 and " " not in value and "/" not in value
+    )
 
 
 class LlmClient:
@@ -147,6 +170,11 @@ class LlmClient:
 def client_from_env(env: Mapping[str, str] | None = None) -> LlmClient | None:
     """DeepSeek when DEEPSEEK_API_KEY is set; Anthropic for ANTHROPIC_API_KEY; else OpenAI-compatible."""
     values = os.environ if env is None else env
+    if looks_like_secret(values.get("JEV_MODEL", "")):
+        raise JevNotConfigured(
+            "JEV_MODEL 的值看起来是 API 密钥而不是模型名：请清空或改为模型名（如 deepseek-flash），"
+            "并作废这个密钥后放到正确的变量里"
+        )
     if values.get("DEEPSEEK_API_KEY") and not values.get("JEV_PROVIDER"):
         return LlmClient(
             provider="openai",

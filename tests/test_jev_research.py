@@ -210,6 +210,26 @@ def test_env_file_loader_keeps_existing_environment(tmp_path, monkeypatch) -> No
     assert os.environ["JEV_MODEL"] == "from-shell"
 
 
+def test_api_key_in_model_slot_is_rejected_and_never_echoed() -> None:
+    from fintech_quant.research.jev import config_status
+
+    leaked = "sk-or-v1-" + "0" * 64
+    status = config_status({"DEEPSEEK_API_KEY": "sk-real", "JEV_MODEL": leaked})
+
+    assert status["configured"] is False
+    assert leaked not in json.dumps(status, ensure_ascii=False)
+    assert "API 密钥" in str(status["reason"])
+
+
+def test_tls_context_verifies_certificates() -> None:
+    import ssl
+
+    from fintech_quant.research.jev import _ssl_context
+
+    context = _ssl_context()
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname is True
+
+
 def test_client_from_env_requires_key_and_explicit_openai_model() -> None:
     assert client_from_env({}) is None
     client = client_from_env({"ANTHROPIC_API_KEY": "k"})

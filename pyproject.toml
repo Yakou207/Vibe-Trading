@@ -23,6 +23,9 @@ rl = [
     "gymnasium",
     "torch",
 ]
+llm = [
+    "truststore>=0.10",
+]
 
 [tool.ruff]
 line-length = 100
