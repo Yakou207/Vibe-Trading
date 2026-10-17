@@ -111,6 +111,10 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
 .judgment.support::before { content: "● "; color: var(--good); }
 .judgment.neutral::before { content: "◐ "; color: var(--warning); }
 .judgment.veto::before { content: "✕ "; color: var(--critical); }
+.cost { margin-top: 10px; padding: 8px 10px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border);
+  font: 11.5px/1.7 var(--mono); color: var(--text-secondary); display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.cost b { color: var(--text-primary); font-weight: 700; }
+.cost .k { color: var(--text-muted); margin-right: 4px; }
 .sub-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
 @media (max-width: 1000px) { .sub-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 1000px) { .grid { grid-template-columns: minmax(0, 1fr); } .meta { margin-left: 0; text-align: left; } }
@@ -290,12 +294,32 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     renderJev(r.jev_record, r);
   }
 
+  const usd = (v) => (v == null ? "—" : v >= 0.01 ? `$${Number(v).toFixed(4)}` : `$${Number(v).toPrecision(3)}`);
+
+  function costBar(record, spend) {
+    const parts = [];
+    if (record) {
+      const u = record.usage || {};
+      const tokens = u.input_tokens != null ? ` · ${u.input_tokens} 入 / ${u.output_tokens ?? 0} 出 token` : "";
+      parts.push(`<span><span class="k">模型</span><b>${esc(record.served_model || record.model)}</b></span>`);
+      parts.push(record.cached
+        ? `<span><span class="k">本次</span>存档结果，未重复计费（原调用 ${usd(u.cost)}${tokens}）</span>`
+        : `<span><span class="k">本次</span><b>${usd(u.cost)}</b>${tokens}</span>`);
+      if (u.cost == null && !record.cached) parts.push('<span class="muted">该接口未返回费用，只显示 token</span>');
+    }
+    if (spend) {
+      parts.push(`<span><span class="k">今日</span>${spend.today_calls} 次 · <b>${usd(spend.today_cost)}</b></span>`);
+      parts.push(`<span><span class="k">累计</span>${spend.total_calls} 次 · <b>${usd(spend.total_cost)}</b>${spend.unpriced_calls ? `（另 ${spend.unpriced_calls} 次未计价）` : ""}</span>`);
+    }
+    return parts.length ? `<div class="cost">${parts.join("")}</div>` : "";
+  }
+
   function renderJev(record, r) {
     const el = $("jev");
     if (!record) {
       const ok = r.jev && r.jev.configured;
       el.innerHTML = `<button class="jev-btn" id="jev-run" ${ok ? "" : "disabled"}>请 Jev 判断</button>
-        <div class="note">${ok ? `${esc(r.jev.provider)} · ${esc(r.jev.model)} · 同一资料包只调用一次，结果存档` : `Jev 未配置：${esc(r.jev ? r.jev.reason : "")}。设置 ANTHROPIC_API_KEY（或 OPENAI_API_KEY + JEV_MODEL）后重启看板。`}</div>`;
+        <div class="note">${ok ? `${esc(r.jev.provider)} · ${esc(r.jev.model)} · 同一资料包只调用一次，结果存档` : `Jev 未配置：${esc(r.jev ? r.jev.reason : "")}。`}</div>${costBar(null, r.jev_spend)}`;
       const btn = $("jev-run");
       if (btn && ok) btn.addEventListener("click", async () => {
         btn.disabled = true; btn.textContent = "Jev 思考中…";
@@ -316,7 +340,8 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div style="font-size:12.5px;margin-bottom:8px">${esc(record.summary)}</div>
       <table><thead><tr><th>问题</th><th class="num">分数</th><th>阈值</th><th></th><th>理由</th></tr></thead><tbody>${rows}</tbody></table>
       ${record.key_risks.length ? `<ul class="flags">${record.key_risks.map((k) => `<li class="n1">${esc(k)}</li>`).join("")}</ul>` : ""}
-      <div class="note">${esc(record.provider)} · ${esc(record.model)} · 资料包 ${esc(record.packet_sha256.slice(0, 12))} · ${record.cached ? "存档结果" : "新调用"} · 仅供研究参考，不改变任何交易或证据</div>`;
+      <div class="note">${esc(record.provider)} · ${esc(record.model)} · 资料包 ${esc(record.packet_sha256.slice(0, 12))} · ${record.cached ? "存档结果" : "新调用"} · 仅供研究参考，不改变任何交易或证据</div>
+      ${costBar(record, record.jev_spend || r.jev_spend)}`;
   }
 
   async function load(query) {

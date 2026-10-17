@@ -405,6 +405,7 @@ def research_payload(
                 **json.loads(record.read_text(encoding="utf-8")),
                 "cached": True,
             }
+        research["jev_spend"] = jev_spend(jev_record_dir, today=day)
     return research
 
 
@@ -429,14 +430,43 @@ def jev_payload(
     if "error" in research:
         return research
     if "jev_record" in research:
-        return {**research["jev_record"], "cached": True}  # type: ignore[dict-item]
+        return {**research["jev_record"], "cached": True, "jev_spend": research.get("jev_spend")}  # type: ignore[dict-item]
     active = client or client_from_env()
     if active is None:
         return {
-            "error": "Jev 未配置：设置 ANTHROPIC_API_KEY（或 OPENAI_API_KEY + JEV_MODEL）后重启看板"
+            "error": "Jev 未配置：在 .env 设置 JEV_MODEL=Jev 1.14 + OPENROUTER_API_KEY（或 DEEPSEEK_API_KEY）后重启看板"
         }
     packet = jev_packet(stock_payload(data, str(research["symbol"])), research)
-    return ask_jev(packet, client=active, record_dir=jev_record_dir)
+    record = ask_jev(packet, client=active, record_dir=jev_record_dir)
+    if jev_record_dir is not None:
+        record["jev_spend"] = jev_spend(jev_record_dir, today=today or date.today())
+    return record
+
+
+def jev_spend(record_dir: Path, *, today: date) -> dict[str, object]:
+    """Sum recorded Jev call costs: today (by call time, UTC date) and all time."""
+    totals = {
+        "today_calls": 0,
+        "today_cost": 0.0,
+        "total_calls": 0,
+        "total_cost": 0.0,
+        "unpriced_calls": 0,
+    }
+    for path in record_dir.glob("*/*.json"):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        cost = (record.get("usage") or {}).get("cost")
+        is_today = str(record.get("created_at", ""))[:10] == today.isoformat()
+        totals["total_calls"] += 1
+        totals["today_calls"] += int(is_today)
+        if isinstance(cost, (int, float)):
+            totals["total_cost"] += float(cost)
+            totals["today_cost"] += float(cost) if is_today else 0.0
+        else:
+            totals["unpriced_calls"] += 1
+    return totals
 
 
 def jev_packet(stock: Mapping[str, object], research: Mapping[str, object]) -> dict[str, object]:

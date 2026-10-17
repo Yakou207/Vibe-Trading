@@ -131,6 +131,7 @@ class LlmClient:
         ).rstrip("/")
         self.transport = transport
         self.timeout = timeout
+        self.last_meta: dict[str, object] = {}
 
     def complete(self, system: str, user: str) -> str:
         if self.provider == "anthropic":
@@ -152,6 +153,7 @@ class LlmClient:
                 self.timeout,
             )
             payload = json.loads(raw)
+            self.last_meta = _chat_meta(payload, "input_tokens", "output_tokens")
             return "".join(
                 part.get("text", "")
                 for part in payload.get("content", [])
@@ -169,7 +171,9 @@ class LlmClient:
             json.dumps(body).encode("utf-8"),
             self.timeout,
         )
-        return str(json.loads(raw)["choices"][0]["message"]["content"])
+        payload = json.loads(raw)
+        self.last_meta = _chat_meta(payload, "prompt_tokens", "completion_tokens")
+        return str(payload["choices"][0]["message"]["content"])
 
 
 TYPESAFE_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
@@ -375,6 +379,7 @@ def ask_jev(
     else:
         reply = client.complete(SYSTEM_PROMPT, build_prompt(packet))  # type: ignore[union-attr]
         parsed = parse_reply(reply)
+        meta = dict(client.last_meta)  # type: ignore[union-attr]
     record = {
         "schema_version": 1,
         "kind": "jev_judgment",
@@ -403,6 +408,20 @@ def questions_sha() -> str:
         {"questions": list(QUESTIONS), "system": SYSTEM_PROMPT, "stance": STANCE_QUESTION}
     )
     return hashlib.sha256(definition.encode("utf-8")).hexdigest()
+
+
+def _chat_meta(payload: Mapping[str, object], input_key: str, output_key: str) -> dict[str, object]:
+    """Served model and token usage; cost only when the provider reports it (OpenRouter does)."""
+    usage = dict(payload.get("usage") or {})  # type: ignore[arg-type]
+    return {
+        "served_model": payload.get("model"),
+        "usage": {
+            "input_tokens": usage.get(input_key),
+            "output_tokens": usage.get(output_key),
+            "cost": usage.get("cost"),
+        },
+        "id": payload.get("id"),
+    }
 
 
 def record_name(symbol: str, packet_sha: str, model: str) -> str:

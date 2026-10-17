@@ -483,3 +483,48 @@ def test_decision_without_probabilities_fails_closed() -> None:
     )
     with pytest.raises(ValueError, match="missing probabilities"):
         client.decide({})
+
+
+def test_chat_calls_record_served_model_and_token_usage(tmp_path: Path) -> None:
+    def openai_style(url, headers, body, timeout):
+        return json.dumps(
+            {
+                "model": "deepseek-flash-1017",
+                "id": "c1",
+                "usage": {"prompt_tokens": 1200, "completion_tokens": 300},
+                "choices": [{"message": {"content": _reply({})}}],
+            }
+        ).encode()
+
+    client = LlmClient(
+        provider="openai", api_key="k", model="deepseek-flash", transport=openai_style
+    )
+    record = ask_jev(
+        {"symbol": "600001.SH", "as_of": "2026-10-16"}, client=client, record_dir=tmp_path
+    )
+
+    assert record["served_model"] == "deepseek-flash-1017"
+    assert record["usage"] == {"input_tokens": 1200, "output_tokens": 300, "cost": None}
+
+
+def test_spend_sums_today_and_all_time_and_counts_unpriced(tmp_path: Path) -> None:
+    from fintech_quant.reports.picker import jev_spend
+
+    day = tmp_path / "2026-10-16"
+    day.mkdir()
+    rows = [
+        ("a.json", "2026-10-18T01:00:00+00:00", 0.0002),
+        ("b.json", "2026-10-18T02:00:00+00:00", 0.0001),
+        ("c.json", "2026-10-17T02:00:00+00:00", 0.0005),
+        ("d.json", "2026-10-18T03:00:00+00:00", None),
+    ]
+    for name, created, cost in rows:
+        (day / name).write_text(
+            json.dumps({"created_at": created, "usage": {"cost": cost}}), encoding="utf-8"
+        )
+
+    spend = jev_spend(tmp_path, today=date(2026, 10, 18))
+
+    assert spend["today_calls"] == 3 and spend["today_cost"] == pytest.approx(0.0003)
+    assert spend["total_calls"] == 4 and spend["total_cost"] == pytest.approx(0.0008)
+    assert spend["unpriced_calls"] == 1
