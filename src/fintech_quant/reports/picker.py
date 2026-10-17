@@ -13,7 +13,7 @@ import hashlib
 import json
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Mapping
 
@@ -444,7 +444,7 @@ def jev_payload(
 
 
 def jev_spend(record_dir: Path, *, today: date) -> dict[str, object]:
-    """Sum recorded Jev call costs: today (by call time, UTC date) and all time."""
+    """Sum recorded Jev call costs: today (local calendar date of the call) and all time."""
     totals = {
         "today_calls": 0,
         "today_cost": 0.0,
@@ -458,7 +458,7 @@ def jev_spend(record_dir: Path, *, today: date) -> dict[str, object]:
         except (OSError, ValueError):
             continue
         cost = (record.get("usage") or {}).get("cost")
-        is_today = str(record.get("created_at", ""))[:10] == today.isoformat()
+        is_today = _local_date(str(record.get("created_at", ""))) == today
         totals["total_calls"] += 1
         totals["today_calls"] += int(is_today)
         if isinstance(cost, (int, float)):
@@ -530,3 +530,10 @@ def jev_packet(stock: Mapping[str, object], research: Mapping[str, object]) -> d
 def _signed_pct(value: object) -> str | None:
     """Readable percentages for model input: 0.42 -> '+42.0%' (raw ratios get misread as 0.42%)."""
     return None if not isinstance(value, (int, float)) else f"{float(value):+.1%}"
+
+
+def _local_date(timestamp: str) -> date | None:
+    try:
+        return datetime.fromisoformat(timestamp).astimezone().date()
+    except ValueError:
+        return None

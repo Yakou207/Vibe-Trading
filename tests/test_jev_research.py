@@ -507,7 +507,9 @@ def test_chat_calls_record_served_model_and_token_usage(tmp_path: Path) -> None:
     assert record["usage"] == {"input_tokens": 1200, "output_tokens": 300, "cost": None}
 
 
-def test_spend_sums_today_and_all_time_and_counts_unpriced(tmp_path: Path) -> None:
+def test_spend_sums_today_and_all_time_and_counts_unpriced(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
     from fintech_quant.reports.picker import jev_spend
 
     day = tmp_path / "2026-10-16"
@@ -528,3 +530,20 @@ def test_spend_sums_today_and_all_time_and_counts_unpriced(tmp_path: Path) -> No
     assert spend["today_calls"] == 3 and spend["today_cost"] == pytest.approx(0.0003)
     assert spend["total_calls"] == 4 and spend["total_cost"] == pytest.approx(0.0008)
     assert spend["unpriced_calls"] == 1
+
+
+def test_spend_today_uses_local_calendar_date(tmp_path: Path, monkeypatch) -> None:
+    from fintech_quant.reports.picker import jev_spend
+
+    monkeypatch.setenv("TZ", "Asia/Shanghai")
+    time.tzset()
+    day = tmp_path / "2026-10-16"
+    day.mkdir()
+    (day / "a.json").write_text(
+        json.dumps({"created_at": "2026-10-17T18:30:00+00:00", "usage": {"cost": 0.0002}}),
+        encoding="utf-8",
+    )
+
+    assert jev_spend(tmp_path, today=date(2026, 10, 18))["today_calls"] == 1
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
