@@ -17,3 +17,4 @@ outputs/
 .worktrees/
 *.sqlite
 *.db
+data/human_execution/

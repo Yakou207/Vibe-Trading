@@ -204,6 +204,68 @@ python scripts/serve_trading_desk.py --export outputs/trading_desk.html  # 静�
 
 逆向分析与路线图见 `docs/research/2026-10-17-ai-trading-desk-teardown.md`。
 
+## 盘前选股简报与人工执行台账
+
+系统只做研究，真实下单由人完成。简报只读取最近一个完整的 V2 收盘周期
+（`cycle_manifest.json`、`targets.csv`、`paper_report.json`、`decision_report.json`），
+先核对 manifest 哈希，不新增策略、不改任何阈值（买入阈值、置信度、8% 单票上限均取自
+manifest 的 `policy`）。简报、竞价检查和人工台账都不计入 V2 模拟证据，也不会写入
+`cycles/`、`data/paper/` 下的账户或 state 文件；输出路径落在这些目录内会直接报错。
+
+每个交易日的流程：
+
+**08:45 生成盘前简报。** 对每个目标股和 65–70 分的“差一点”名单列出分项得分与理由、
+风险标记、按给定资金计算的整手数量（含 5 元最低佣金；科创板不足 200 股记为 0）、
+以昨收计算的涨停/跌停价（主板 10%，创业板/科创板 20%，北交所 30%；主板 ST 自
+2025-07-07 起为 10%），以及待人工核对的隔夜公告占位。差一点名单只供观察，不是目标。
+
+```bash
+python scripts/build_premarket_brief.py --capital 100000
+```
+
+输出 `outputs/premarket/<信号日>/brief.json` 和 `brief.html`。文件只写一次；同内容重跑
+是空操作，内容不同则报错，不会覆盖。
+
+**09:25 集合竞价检查（可选）。** 用简报打印的 `quote_symbols=` 列表抓竞价价格，再对照简报：
+
+```bash
+python scripts/fetch_realtime_quotes.py --symbols 600415,601058 --output outputs/premarket/quotes_0925.csv
+```
+
+```bash
+python scripts/build_premarket_brief.py --auction --quotes outputs/premarket/quotes_0925.csv
+```
+
+生成 `auction.json` 和 `brief_auction.html`，标记 `at_limit_up_cannot_buy`（竞价已到涨停，
+基本无法买入）、`near_limit_up`（距涨停 1% 内）、`large_gap_up`/`large_gap_down`（相对昨收
+跳空 ≥5%）和 `no_auction_quote`，并按竞价价重算整手数量。
+
+**人工下单。** 是否下单、下多少由人决定；系统不连接任何券商。
+
+**15:30 登记人工执行台账。** 每笔成交或放弃各记一行，写入
+`data/human_execution/ledger.csv`（已加入 `.gitignore`，只追加不改写）：
+
+```bash
+python scripts/human_execution_ledger.py add --trade-date 2026-07-22 --signal-date 2026-07-21 --symbol 002142 --action buy --shares 200 --fill-price 31.52 --fees 5
+```
+
+```bash
+python scripts/human_execution_ledger.py add --trade-date 2026-07-22 --signal-date 2026-07-21 --symbol 600415 --action skip --skip-reason "竞价涨停"
+```
+
+校验规则：成交日必须晚于信号日；买入须为 100 股整数倍（科创板 ≥200 股）；成交价必须在
+简报的跌停/涨停区间内；`skip` 必须写原因且只能针对目标股或模拟账户的卖出名单。
+
+当日收盘周期跑完后生成对比报告：
+
+```bash
+python scripts/human_execution_ledger.py report --signal-date 2026-07-21
+```
+
+报告以昨收为决策价，计算人工与模拟账户的执行落差（implementation shortfall，元和 bp，
+含费用）、人工相对模拟成交价的 bp 差、放弃率、未登记率和简报外交易。模拟成交取自
+`executed_signal_date` 等于该信号日的周期 `paper_report.json`，读取前核对其 manifest 哈希。
+
 ## Phase 1 Research Loop
 
 The first working slice is a daily A-share research loop:
