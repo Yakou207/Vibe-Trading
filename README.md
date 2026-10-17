@@ -125,6 +125,26 @@ python scripts/initialize_csi300_paper_validation.py \
 Supersession 继承旧锚点的 formal run 和 comparison 哈希，但使用包含当前账户日期的基准
 快照。它本身不计数，也不会把历史补跑日期变成连续运营证据。
 
+如果漏跑了多个交易日且账户完全空仓（实际/影子持仓和股息税批次都为空、回撤状态为
+`normal`），逐日补跑没有经济意义：空仓账户在缺口期间没有任何盈亏。此时使用 epoch bridge：
+它用一次不可变增量采集整个缺口的数据并要求数据健康通过，取消过期的排队目标（记录在
+`bridge_manifest.json`），把账户日期移到缺口最后一个交易日，再创建引用旧锚点、旧周期、
+旧审计和 bridge 记录的 schema-2 非计数锚点。任一步失败都不会改变正式账户和 state：
+
+```bash
+python scripts/bridge_csi300_paper_epoch.py \
+  --as-of 2026-10-16 \
+  --state data/paper/csi300_baseline/pipeline_state.json \
+  --account data/paper/csi300_baseline/account.json \
+  --membership data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20260630.csv \
+  --comparison outputs/csi300_research/hfq-formal-20260713/benchmark_comparison.json \
+  --formal-run-manifest outputs/csi300_research/hfq-formal-20260713/manifest.json \
+  --reason "2026-07-22 至 2026-10-16 漏跑，账户全程空仓"
+```
+
+`--as-of` 必须是基准数据里最新的已收盘交易日。bridge 之后下一交易日照常运行
+`run_csi300_post_close.py`，审计返回 `COLLECTING` 才算新 epoch 第 1 个计数日。
+
 锚点成功附加到状态文件后，每个交易日只运行一条命令：
 
 ```bash
