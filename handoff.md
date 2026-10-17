@@ -1,16 +1,15 @@
 # Vibe-Trading CSI 300 handoff
 
-Last reviewed: 2026-07-27 Asia/Shanghai
+Last reviewed: 2026-10-17 Asia/Shanghai
 Repository: `/Users/yakou/Desktop/Vibe-Trading`
 Remote: `https://github.com/Yakou207/Vibe-Trading.git`
-Implementation branch: `codex/v2-evidence-repair`
+Implementation branch: `main` (V2 repair merged; fresh epoch bridged on 2026-10-17)
 
 ## Resume here
 
 1. Read `AGENTS.md` and this file completely.
 2. Run `git status --short`, `git branch --show-current`, `git rev-parse HEAD`, and
-   `git rev-parse origin/main`. Continue the clean `codex/v2-evidence-repair` branch until it is
-   reviewed and merged; after merge, resume only from a clean `main` that matches `origin/main`.
+   `git rev-parse origin/main`. Resume only from a clean `main` that matches `origin/main`.
 3. Do not connect a broker, send an order, enable DQN exposure, tune thresholds, or claim that
    historical returns prove future profit.
 4. Inspect the canonical paper account, pipeline state, validation anchor, and validation report
@@ -30,15 +29,23 @@ This is not deployable-profit proof. At the time of this handoff:
 - the formal universe is CSI 300, not the earlier 30-stock STAR Market fixture;
 - the point-in-time membership history has 300 active names on each checked date, 439 unique stocks,
   and 461 membership intervals;
-- the canonical account and pipeline state are dated `2026-07-21`;
-- cash is `100000.0`, actual and shadow positions are empty, and the drawdown regime is `normal`;
+- on 2026-10-17 the all-cash account was bridged from `2026-07-21` to `2026-10-16` with
+  `scripts/bridge_csi300_paper_epoch.py`: one immutable data increment for the gap, fresh data health,
+  seven stale 2026-07-21 targets cancelled, and the non-counted schema-2 anchor
+  `anchor-20261016-epoch-2` superseding the original anchor, the 2026-07-21 cycle and audit, and the
+  bridge record;
+- the canonical account and pipeline state are dated `2026-10-16`; cash is `100000.0`, actual and
+  shadow positions are empty, nothing is queued, and the drawdown regime is `normal`;
+- the new epoch audit is `NO_EVIDENCE` with zero sessions; `601059.SH` is a confirmed suspended
+  member (no price after 2026-09-14 in both sources) and is listed but not scored;
 - complete schema-version-2 cycles exist for `2026-07-15`, `2026-07-16`, and `2026-07-21`; all
   remain preserved failed evidence under the original anchor;
 - the latest cycle-local audit loads `valid_sessions=3` but remains `FAILED` because the original
   anchor-to-cycle chain has missing CSI 300 sessions;
 - operationally, the accepted continuous evidence count remains zero;
 - `live_trading_authorized=false` and DQN paper exposure is disabled;
-- the weekday 17:30 Asia/Shanghai automation is active;
+- the Codex weekday 17:30 automation is paused; a launchd wrapper exists on branch
+  `claude/exciting-shtern-3d10c7` but is not merged or installed;
 - the 2026-07-15 cycle passed data-health, approved-policy, execution-integrity, drawdown, DQN-off,
   and live-off gates, but failed the anchor-to-cycle trading-session continuity gate;
 - the 2026-07-14 factor/benchmark mismatch was caused by incomplete processed-stage reuse
@@ -50,12 +57,15 @@ This is not deployable-profit proof. At the time of this handoff:
 
 ## Canonical state and hashes
 
-The latest mutable canonical values were rechecked read-only on 2026-07-27:
+The latest mutable canonical values were recorded after the 2026-10-17 bridge:
 
 | Artifact | State | SHA-256 |
 |---|---|---|
-| `data/paper/csi300_baseline/account.json` | `last_processed_date=2026-07-21`, cash 100000, no positions | `6d2ddd37f7d1415cae49a7b728e05a5b8f5dfa028547f418f522845b10fe89b1` |
-| `data/paper/csi300_baseline/pipeline_state.json` | `last_successful_as_of=2026-07-21` | `263bffe8613bc21203750955053d28cb95fd7c73822d52377d2c8ff7b32fb845` |
+| `data/paper/csi300_baseline/account.json` | `last_processed_date=2026-10-16`, cash 100000, no positions, nothing queued | `795bda6210984fffe048ad51724534495c43bdb4e5bfe0722a5928c12d571740` |
+| `data/paper/csi300_baseline/pipeline_state.json` | `last_successful_as_of=2026-10-16`, active parent is the epoch-2 anchor | `868adb303d28cdd02e1d40df23675bc3df7c4a3e458068988dba18ac9c29c7be` |
+| `data/paper/csi300_baseline/validation/anchor-20261016-epoch-2/anchor_manifest.json` | active non-counted schema-2 anchor | `eb3bbf2d599d8412fec7a68b522b019f6ba9f5905f9eea1606c85b733027b65d` |
+| `data/paper/csi300_baseline/validation/bridge-20260721-20261016/bridge_manifest.json` | bridge record: cancelled targets, pre-bridge account/state snapshots, bridged manifests | `f0e183509c3d293e2d9e1a89c95e8d285519b630955f93094ada743836a7d7cd` |
+| `data/paper/csi300_baseline/account.json` before the bridge | `last_processed_date=2026-07-21` (snapshot kept as `bridge-20260721-20261016/account_before.json`) | `6d2ddd37f7d1415cae49a7b728e05a5b8f5dfa028547f418f522845b10fe89b1` |
 | `data/paper/csi300_baseline/validation/anchor-20260713/anchor_manifest.json` | non-counted anchor | `13c2ead2826740a7426e9ffb557b23219c8abfa3ab3de73d174be9ab9c0c3a2a` |
 | `outputs/paper_trading/csi300_baseline/cycles/2026-07-15/cycle_manifest.json` | complete V2 cycle chained to the original anchor | `66ec15a3d78c9181b88cb7be19e23f5e2c88c6ac91ee5d79c8899a84c88f1cbb` |
 | `outputs/paper_trading/csi300_baseline/cycles/2026-07-15/validation_report.json` | `FAILED`, one loaded session, missing `2026-07-14` | `1b2846aae18223ad8809ee80fc9d4d6ba8c359ffbbd55c07f2f75f41779fb01e` |
@@ -66,9 +76,9 @@ The latest mutable canonical values were rechecked read-only on 2026-07-27:
 | `outputs/csi300_research/hfq-formal-20260713/pnl_curve.json` | 1,231 formal CSI 300 comparison points | `abb86cff7adc98fcfb09a0a21da4fe610a9b7a671f1a927e7bdf0290f7f64107` |
 | `outputs/paper_trading/csi300_baseline/hfq_formal_dashboard.html` | formal backtest dashboard with PnL curve | `147addb8a7fe9f225cce0ce642a9986c378ede58f4aeae2804b99534e81daecc` |
 
-The 2026-07-21 cycle-local validation report is the latest authoritative audit. The root-level
-artifact is still the preserved stale `NO_EVIDENCE` file because this code repair deliberately did
-not rerun operational evidence. The repaired entrypoint atomically mirrors the next successful
+The 2026-07-21 cycle-local validation report is the final audit of the superseded epoch. The
+root-level artifact is still the preserved stale `NO_EVIDENCE` file until the first new-epoch cycle
+publishes its audit. The repaired entrypoint atomically mirrors the next successful
 audit and stores its cycle-local reference in pipeline state. Account and pipeline-state hashes
 must not change on a pre-commit failure.
 
@@ -336,12 +346,13 @@ item below still blocks any live-readiness claim:
 
 Immediate work order:
 
-1. Merge and deploy the repaired code without editing any existing anchor, cycle, or report.
-2. Establish a controlled non-counted epoch with `--supersede-current-epoch`. If the account must be
-   advanced across delayed dates, supersede again after that non-counted catch-up before starting
-   the fresh operational clock.
-3. Run focused regression tests, the full suite, compile/CLI checks, and available linting. Then use
-   only `scripts/run_csi300_post_close.py` for the next eligible post-close session.
+1. Done: repaired code merged; fresh epoch `anchor-20261016-epoch-2` created by the all-cash bridge.
+2. After the 2026-10-19 close, run only `scripts/run_csi300_post_close.py --as-of 2026-10-19` with
+   the fixed arguments above. If CSI announces a temporary adjustment for `601059.SH`, extend the
+   membership file before running.
+3. If the account is all cash after a future gap, use `scripts/bridge_csi300_paper_epoch.py`
+   instead of a session-by-session catch-up; with open positions, keep the supersession plus
+   non-counted catch-up procedure.
 4. Count the new date only if the cycle is schema version 2, the fresh epoch parent and account
    hashes match, data health and execution reconcile, and the audit returns `COLLECTING` rather than
    `FAILED`. Record the first accepted date in `AGENTS.md` and this handoff.

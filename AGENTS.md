@@ -63,6 +63,27 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-10-17 fresh validation epoch via all-cash bridge
+
+- The canonical account stopped at 2026-07-21 (CNY 100,000 cash, no positions or tax lots,
+  `normal` drawdown regime, seven queued targets). Replaying the roughly 60 missed sessions one
+  provider cycle at a time would add no economic information for an all-cash account.
+- `scripts/bridge_csi300_paper_epoch.py` collected 2026-07-22 through 2026-10-16 as one immutable
+  increment chained to the 2026-07-21 manifests, required fresh data health (price coverage
+  99.8879%, fundamental 100%, capital-flow proxy 98.53%, zero leakage, zero stale factors), cancelled
+  the seven stale targets in `bridge_manifest.json`, moved the account date to 2026-10-16, and
+  created the non-counted schema-2 anchor `anchor-20261016-epoch-2`. It supersedes the original
+  anchor, the 2026-07-21 cycle and audit, and the bridge record. No existing anchor, cycle, or
+  report was modified. The bridge refuses any account with positions, tax lots, or a non-normal
+  regime and restores the canonical files on failure.
+- The bridge exposed a daily-chain blocker: `601059.SH` has no price after 2026-09-14 in both
+  Sina and Tencent data, and the decision report required 300 current feature rows. The report now
+  accepts at most three members that both independent price sources confirm as suspended, lists
+  them with their last trade date, and never scores them. Any other gap still fails closed.
+- The new epoch audit is `NO_EVIDENCE` with zero sessions. Day 1 is the 2026-10-19 post-close run
+  of `scripts/run_csi300_post_close.py`; it counts only if the audit returns `COLLECTING`.
+  DQN exposure and live trading remain disabled.
+
 ### 2026-07-27 V2 evidence-chain repair
 
 - The same-date processed-factor reuse bug is repaired. Reuse now requires the raw-parent,
@@ -371,12 +392,9 @@ The historical membership reconstruction, CSI 300 formal backtest, drawdown-cont
 paper-evidence platform are complete. The next phase is operational validation, not more platform
 features or a return to the STAR30 diagnostic. Work in this order:
 
-1. Establish an explicit fresh validation epoch using the repaired code.
-   - Preserve every existing anchor, failed cycle, and report.
-   - Use `--supersede-current-epoch` with the fixed formal run/comparison and a benchmark containing
-     the canonical account date.
-   - If delayed sessions must be processed to advance the account, keep them in a non-accepted
-     epoch and supersede again at the latest committed state before starting the fresh clock.
+1. Fresh validation epoch: done on 2026-10-17 (`anchor-20261016-epoch-2`, all-cash bridge).
+   - Future gaps with an all-cash account use `scripts/bridge_csi300_paper_epoch.py`; gaps with open
+     positions still require explicit supersession plus non-counted catch-up.
 
 2. Produce the first fresh counted V2 cycle.
    - Use only `scripts/run_csi300_post_close.py` after the eligible A-share session closes.
