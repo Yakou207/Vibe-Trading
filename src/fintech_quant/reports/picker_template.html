@@ -285,7 +285,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
         <div><div class="section-head"><h2>研报共识</h2><span class="right">近 ${c.window_days} 天</span></div>
           <div class="mono" style="font-size:12px;line-height:1.8">研报 ${c.reports} 篇 · 机构 ${c.institutions} 家<br>评级：${ratings}<br>看多占比：${pct(c.bullish_share, 0)}<br>EPS 预测中位数：${eps}</div></div>
       </div>
-      <div class="section-head" style="margin-top:16px"><h2>Jev 判断</h2><span class="right">固定问题 → JSON 作答 → SOFT 阈值</span></div>
+      <div class="section-head" style="margin-top:16px"><h2>Jev 判断</h2><span class="right">固定问题 → 概率或 JSON 作答 → SOFT 阈值</span></div>
       <div id="jev"></div>`;
     renderJev(r.jev_record, r);
   }
