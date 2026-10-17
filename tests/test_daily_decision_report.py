@@ -67,6 +67,78 @@ def test_daily_decision_report_requires_fresh_benchmark_row() -> None:
         )
 
 
+def test_daily_decision_report_reports_confirmed_suspension_without_scoring_it() -> None:
+    from fintech_quant.research.daily_decision import build_daily_decision_report
+
+    dataset = _dataset()
+    dataset.features[:] = [
+        row
+        for row in dataset.features
+        if not (row.symbol == "600000.SH" and row.trade_date == date(2026, 1, 5))
+    ]
+
+    report = build_daily_decision_report(
+        dataset,
+        as_of=date(2026, 1, 5),
+        data_health=_health(passed=True),
+        expected_members=2,
+        suspended_members={"600000.SH": date(2026, 1, 2)},
+    )
+
+    assert report["active_member_count"] == 2
+    assert report["tradable_member_count"] == 1
+    assert report["suspended_members"] == [
+        {"symbol": "600000.SH", "last_trade_date": "2026-01-02"}
+    ]
+    assert {row["symbol"] for row in report["scores"]} == {"000001.SZ"}
+
+
+def test_daily_decision_report_rejects_unexplained_missing_member() -> None:
+    from fintech_quant.research.daily_decision import build_daily_decision_report
+
+    dataset = _dataset()
+    dataset.features[:] = [
+        row
+        for row in dataset.features
+        if not (row.symbol == "600000.SH" and row.trade_date == date(2026, 1, 5))
+    ]
+
+    with pytest.raises(ValueError, match="plus suspended 0 does not match expected 2"):
+        build_daily_decision_report(
+            dataset,
+            as_of=date(2026, 1, 5),
+            data_health=_health(passed=True),
+            expected_members=2,
+        )
+
+
+def test_daily_decision_report_caps_suspended_members() -> None:
+    from fintech_quant.research.daily_decision import build_daily_decision_report
+
+    with pytest.raises(ValueError, match="suspended member count 1 exceeds maximum 0"):
+        build_daily_decision_report(
+            _dataset(),
+            as_of=date(2026, 1, 5),
+            data_health=_health(passed=True),
+            expected_members=2,
+            suspended_members={"600000.SH": date(2026, 1, 2)},
+            max_suspended_members=0,
+        )
+
+
+def test_daily_decision_report_rejects_suspended_member_with_current_row() -> None:
+    from fintech_quant.research.daily_decision import build_daily_decision_report
+
+    with pytest.raises(ValueError, match="must not have a current feature row"):
+        build_daily_decision_report(
+            _dataset(),
+            as_of=date(2026, 1, 5),
+            data_health=_health(passed=True),
+            expected_members=2,
+            suspended_members={"600000.SH": date(2026, 1, 2)},
+        )
+
+
 def _dataset():
     from fintech_quant.research.dataset import (
         FeatureRow,

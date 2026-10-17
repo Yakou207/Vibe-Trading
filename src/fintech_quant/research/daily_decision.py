@@ -20,7 +20,15 @@ def build_daily_decision_report(
     expected_members: int = 300,
     input_refs: Mapping[str, object] | None = None,
     limits: RiskLimits | None = None,
+    suspended_members: Mapping[str, date] | None = None,
+    max_suspended_members: int = 3,
 ) -> dict[str, object]:
+    """Score one post-close session.
+
+    ``suspended_members`` maps active index members that have no price row on ``as_of`` to
+    their last trade date. The caller must confirm the suspension independently; they are
+    reported but never scored, so they can never become targets.
+    """
     if not data_health.passed:
         raise ValueError("data health did not pass")
     if expected_members <= 0:
@@ -41,10 +49,19 @@ def build_daily_decision_report(
         raise ValueError(f"benchmark row is missing index_close for {as_of.isoformat()}")
     current_features = [row for row in dataset.features if row.trade_date == as_of]
     active_symbols = {row.symbol for row in current_features}
-    if len(active_symbols) != expected_members:
+    suspended = dict(suspended_members or {})
+    if len(suspended) > max_suspended_members:
         raise ValueError(
-            f"active feature member count {len(active_symbols)} does not match "
-            f"expected {expected_members}"
+            f"suspended member count {len(suspended)} exceeds maximum {max_suspended_members}"
+        )
+    if active_symbols & set(suspended):
+        raise ValueError("suspended members must not have a current feature row")
+    if any(last >= as_of for last in suspended.values()):
+        raise ValueError("suspended member last trade date must precede as_of")
+    if len(active_symbols) + len(suspended) != expected_members:
+        raise ValueError(
+            f"active feature member count {len(active_symbols)} plus suspended "
+            f"{len(suspended)} does not match expected {expected_members}"
         )
 
     scores = build_stock_scores(dataset)
@@ -65,7 +82,12 @@ def build_daily_decision_report(
         "as_of": as_of.isoformat(),
         "date_range": [feature_dates[0].isoformat(), feature_dates[-1].isoformat()],
         "expected_members": expected_members,
-        "active_member_count": len(active_symbols),
+        "active_member_count": len(active_symbols) + len(suspended),
+        "tradable_member_count": len(active_symbols),
+        "suspended_members": [
+            {"symbol": symbol, "last_trade_date": last.isoformat()}
+            for symbol, last in sorted(suspended.items())
+        ],
         "data_health_passed": True,
         "data_health": data_health.to_json(),
         "inputs": dict(input_refs or {}),

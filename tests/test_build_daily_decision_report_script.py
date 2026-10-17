@@ -53,11 +53,43 @@ def test_build_daily_decision_report_script_rejects_stale_benchmark_without_repo
     assert health.exists()
 
 
+def test_build_daily_decision_report_script_records_suspension_confirmed_by_both_sources(
+    tmp_path: Path,
+) -> None:
+    inputs = _write_inputs(tmp_path, fresh_benchmark=True, suspended=("signal", "execution"))
+    output = tmp_path / "daily_decision.json"
+    health = tmp_path / "data_health.json"
+
+    completed = _run_script(inputs, output=output, health=health, price_coverage="0.7")
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["suspended_members"] == [
+        {"symbol": "600000.SH", "last_trade_date": "2026-01-02"}
+    ]
+    assert [row["symbol"] for row in payload["scores"]] == ["000001.SZ"]
+
+
+def test_build_daily_decision_report_script_rejects_gap_missing_from_one_source(
+    tmp_path: Path,
+) -> None:
+    inputs = _write_inputs(tmp_path, fresh_benchmark=True, suspended=("signal",))
+    output = tmp_path / "daily_decision.json"
+    health = tmp_path / "data_health.json"
+
+    completed = _run_script(inputs, output=output, health=health, price_coverage="0.7")
+
+    assert completed.returncode != 0
+    assert "600000.SH has no confirmed suspension for 2026-01-05" in completed.stderr
+    assert not output.exists()
+
+
 def _run_script(
     inputs: dict[str, Path],
     *,
     output: Path,
     health: Path,
+    price_coverage: str = "1",
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -82,7 +114,7 @@ def _run_script(
             "--fundamental-warmup-days",
             "0",
             "--minimum-price-coverage",
-            "1",
+            price_coverage,
             "--minimum-fundamental-coverage",
             "1",
             "--minimum-capital-flow-coverage",
@@ -99,7 +131,9 @@ def _run_script(
     )
 
 
-def _write_inputs(root: Path, *, fresh_benchmark: bool) -> dict[str, Path]:
+def _write_inputs(
+    root: Path, *, fresh_benchmark: bool, suspended: tuple[str, ...] = ()
+) -> dict[str, Path]:
     from fintech_quant.data.research_dataset import DAILY_BAR_FIELDS, OUTPUT_FEATURE_FIELDS
     from fintech_quant.data.run_artifacts import RunArtifactStore, sha256_file
     from fintech_quant.data.factor_store import CAPITAL_FLOW_FIELDS, FUNDAMENTAL_FIELDS
@@ -130,6 +164,7 @@ def _write_inputs(root: Path, *, fresh_benchmark: bool) -> dict[str, Path]:
             _feature(symbol, trade_date, index)
             for trade_date in dates
             for index, symbol in enumerate(symbols)
+            if not _is_suspended("signal", symbol, trade_date, suspended)
         ],
         fieldnames=OUTPUT_FEATURE_FIELDS,
     )
@@ -144,7 +179,12 @@ def _write_inputs(root: Path, *, fresh_benchmark: bool) -> dict[str, Path]:
     execution = RunArtifactStore(root / "processed", "execution", layer="processed")
     execution.write_csv(
         "daily.csv",
-        [_daily(symbol, trade_date) for trade_date in dates for symbol in symbols],
+        [
+            _daily(symbol, trade_date)
+            for trade_date in dates
+            for symbol in symbols
+            if not _is_suspended("execution", symbol, trade_date, suspended)
+        ],
         fieldnames=DAILY_BAR_FIELDS,
     )
     execution_manifest = execution.write_manifest(
@@ -209,6 +249,10 @@ def _write_inputs(root: Path, *, fresh_benchmark: bool) -> dict[str, Path]:
         "factor_manifest": factor_manifest,
         "action_manifest": action_manifest,
     }
+
+
+def _is_suspended(source: str, symbol: str, trade_date: str, suspended: tuple[str, ...]) -> bool:
+    return source in suspended and symbol == "600000.SH" and trade_date == "2026-01-05"
 
 
 def _feature(symbol: str, trade_date: str, index: int) -> dict[str, object]:

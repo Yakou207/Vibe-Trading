@@ -15,7 +15,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from fintech_quant.data.historical_universe import load_membership_intervals  # noqa: E402
+from fintech_quant.data.historical_universe import (  # noqa: E402
+    active_symbols,
+    load_membership_intervals,
+)
 from fintech_quant.data.manifest_chain import (  # noqa: E402
     VerifiedManifest,
     load_verified_manifest,
@@ -51,6 +54,7 @@ def main() -> int:
     parser.add_argument("--fundamental-warmup-days", type=int, default=180)
     parser.add_argument("--maximum-fundamental-age-days", type=int, default=180)
     parser.add_argument("--maximum-capital-flow-age-sessions", type=int, default=3)
+    parser.add_argument("--max-suspended-members", type=int, default=3)
     parser.add_argument("--created-at", default=None)
     args = parser.parse_args()
 
@@ -142,6 +146,10 @@ def main() -> int:
         data_health=health,
         expected_members=args.expected_members,
         input_refs=input_refs,
+        suspended_members=_confirmed_suspensions(
+            active_symbols(intervals, as_of), features, execution_prices, as_of
+        ),
+        max_suspended_members=args.max_suspended_members,
     )
     report["created_at"] = args.created_at or datetime.now(timezone.utc).isoformat()
     report["git_sha"] = _git_sha()
@@ -171,6 +179,34 @@ def _request(manifest: VerifiedManifest) -> Mapping[str, object]:
 def _require_request(manifest: VerifiedManifest, key: str, expected: object) -> None:
     if _request(manifest).get(key) != expected:
         raise ValueError(f"processed manifest request must set {key}={expected}")
+
+
+def _confirmed_suspensions(
+    members: tuple[str, ...], features: Path, execution_prices: Path, as_of: date
+) -> dict[str, date]:
+    """Members absent on ``as_of`` from both independent price sources but traded earlier."""
+    signal_dates = _trade_dates_by_symbol(features, set(members))
+    execution_dates = _trade_dates_by_symbol(execution_prices, set(members))
+    suspended: dict[str, date] = {}
+    for symbol in members:
+        signal = signal_dates.get(symbol, set())
+        if as_of in signal:
+            continue
+        execution = execution_dates.get(symbol, set())
+        if as_of in execution or not signal or not execution:
+            raise ValueError(f"{symbol} has no confirmed suspension for {as_of.isoformat()}")
+        suspended[symbol] = max(signal)
+    return suspended
+
+
+def _trade_dates_by_symbol(path: Path, symbols: set[str]) -> dict[str, set[date]]:
+    result: dict[str, set[date]] = {}
+    with path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            symbol = str(row.get("symbol", ""))
+            if symbol in symbols and row.get("trade_date"):
+                result.setdefault(symbol, set()).add(date.fromisoformat(str(row["trade_date"])))
+    return result
 
 
 def _require_latest_trade_date(path: Path, as_of: date, *, label: str) -> None:
