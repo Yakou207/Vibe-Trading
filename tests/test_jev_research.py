@@ -182,6 +182,34 @@ def test_consensus_and_financial_trend_annualise_interim_roe() -> None:
     assert "净利润增速连续两期加速" in texts
 
 
+def test_deepseek_key_selects_deepseek_flash_endpoint() -> None:
+    client = client_from_env({"DEEPSEEK_API_KEY": "k"})
+    assert client is not None
+    assert (client.provider, client.model, client.base_url) == (
+        "openai",
+        "deepseek-flash",
+        "https://api.deepseek.com",
+    )
+
+
+def test_env_file_loader_keeps_existing_environment(tmp_path, monkeypatch) -> None:
+    from scripts.serve_trading_desk import load_env_file
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "# comment\nDEEPSEEK_API_KEY='abc'\nEMPTY=\nJEV_MODEL=from-file\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "placeholder")  # recorded, so teardown restores it
+    monkeypatch.delenv("DEEPSEEK_API_KEY")
+    monkeypatch.setenv("JEV_MODEL", "from-shell")
+
+    assert load_env_file(env) == ["DEEPSEEK_API_KEY"]
+    import os
+
+    assert os.environ["DEEPSEEK_API_KEY"] == "abc"
+    assert os.environ["JEV_MODEL"] == "from-shell"
+
+
 def test_client_from_env_requires_key_and_explicit_openai_model() -> None:
     assert client_from_env({}) is None
     client = client_from_env({"ANTHROPIC_API_KEY": "k"})
@@ -289,7 +317,13 @@ def test_research_and_jev_payload_end_to_end(tmp_path: Path) -> None:
     transport = FakeTransport(_reply({}, stance="neutral"), provider="openai")
     client = LlmClient(provider="openai", api_key="k", model="deepseek-chat", transport=transport)
     judgment = jev_payload(
-        data, "600001", cache_dir=tmp_path / "cache", jev_record_dir=tmp_path / "jev", client=client
+        data,
+        "600001",
+        cache_dir=tmp_path / "cache",
+        jev_record_dir=tmp_path / "jev",
+        client=client,
+        today=TODAY,
+        fetchers=_fetchers(),
     )
 
     assert judgment["judgment"] == "neutral"

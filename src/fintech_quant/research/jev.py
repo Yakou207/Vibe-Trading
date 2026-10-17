@@ -60,6 +60,8 @@ SYSTEM_PROMPT = (
     "你的结论仅供研究参考，不构成投资建议。"
 )
 DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-flash"
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 
 class JevNotConfigured(RuntimeError):
@@ -143,8 +145,15 @@ class LlmClient:
 
 
 def client_from_env(env: Mapping[str, str] | None = None) -> LlmClient | None:
-    """Anthropic when ANTHROPIC_API_KEY/JEV_API_KEY is set, else any OpenAI-compatible endpoint."""
+    """DeepSeek when DEEPSEEK_API_KEY is set; Anthropic for ANTHROPIC_API_KEY; else OpenAI-compatible."""
     values = os.environ if env is None else env
+    if values.get("DEEPSEEK_API_KEY") and not values.get("JEV_PROVIDER"):
+        return LlmClient(
+            provider="openai",
+            api_key=values["DEEPSEEK_API_KEY"],
+            model=values.get("JEV_MODEL") or DEFAULT_DEEPSEEK_MODEL,
+            base_url=values.get("JEV_BASE_URL") or DEEPSEEK_BASE_URL,
+        )
     provider = values.get("JEV_PROVIDER") or (
         "anthropic" if values.get("ANTHROPIC_API_KEY") else "openai"
     )

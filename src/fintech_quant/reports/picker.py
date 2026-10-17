@@ -391,10 +391,16 @@ def jev_payload(
     cache_dir: Path | None,
     jev_record_dir: Path | None,
     client: LlmClient | None = None,
+    today: date | None = None,
     fetchers: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     research = research_payload(
-        data, query, cache_dir=cache_dir, jev_record_dir=jev_record_dir, fetchers=fetchers
+        data,
+        query,
+        cache_dir=cache_dir,
+        jev_record_dir=jev_record_dir,
+        today=today,
+        fetchers=fetchers,
     )
     if "error" in research:
         return research

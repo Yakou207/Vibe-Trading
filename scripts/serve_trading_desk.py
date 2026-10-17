@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import sys
 import threading
@@ -232,7 +233,27 @@ def watch(state: DeskState, interval: float, stop: threading.Event) -> None:
             print(f"desk refresh skipped: {exc}", file=sys.stderr, flush=True)
 
 
+def load_env_file(path: Path) -> list[str]:
+    """Load KEY=VALUE lines from a local .env without overriding the real environment."""
+    if not path.is_file():
+        return []
+    loaded = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        value = value.strip("'\"")
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+            loaded.append(key)
+    return loaded
+
+
 def main() -> int:
+    loaded = load_env_file(ROOT / ".env")
+    if loaded:
+        print(f"loaded .env keys: {', '.join(sorted(loaded))}", flush=True)
     parser = argparse.ArgumentParser(
         description="Serve the read-only CSI 300 trading-desk dashboard."
     )
