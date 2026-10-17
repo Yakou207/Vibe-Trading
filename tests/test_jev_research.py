@@ -353,3 +353,4 @@ def test_research_and_jev_payload_end_to_end(tmp_path: Path) -> None:
         data, "600001", cache_dir=tmp_path / "cache", jev_record_dir=tmp_path / "jev", today=TODAY
     )
     assert again["jev_record"]["packet_sha256"] == judgment["packet_sha256"]
+    assert again["jev_record"]["cached"] is True

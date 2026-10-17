@@ -380,7 +380,7 @@ def research_payload(
     if jev_record_dir is not None:
         record = jev_record_dir / data.as_of / f"{symbol}-{research['jev_packet_sha256'][:12]}.json"
         if record.exists():
-            research["jev_record"] = json.loads(record.read_text(encoding="utf-8"))
+            research["jev_record"] = {**json.loads(record.read_text(encoding="utf-8")), "cached": True}
     return research
 
 
