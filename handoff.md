@@ -366,7 +366,7 @@ Immediate work order:
 ## File map
 
 - Project contract and status: `AGENTS.md`
-- Operating instructions: `README.md`
+- Project overview: `README.md`; operating instructions: `docs/operations.md`
 - V2 design: `docs/superpowers/specs/2026-07-14-csi300-paper-evidence-v2-design.md`
 - V2 implementation plan: `docs/superpowers/plans/2026-07-14-csi300-paper-evidence-v2.md`
 - Daily CSI 300 entry: `scripts/run_csi300_post_close.py`
