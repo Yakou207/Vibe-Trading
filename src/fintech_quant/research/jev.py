@@ -35,8 +35,8 @@ QUESTIONS: tuple[dict[str, object], ...] = (
     },
     {
         "id": "earnings_support",
-        "labels": ["完全不支撑", "较弱", "一般", "较强", "强支撑"],
-        "question": "最近几期财报趋势是否支撑当前股价与技术形态？0=完全不支撑，1=强支撑",
+        "labels": ["明显恶化", "偏弱", "持平", "较强", "强劲"],
+        "question": "只看最近几期财报本身，盈利与成长趋势有多强？0=明显恶化，1=强劲",
         "min": 0.45,
     },
     {
@@ -397,9 +397,17 @@ def ask_jev(
     return {**record, "cached": False}
 
 
+def questions_sha() -> str:
+    """Hash of everything that defines the questions; changing any wording invalidates old records."""
+    definition = _canonical(
+        {"questions": list(QUESTIONS), "system": SYSTEM_PROMPT, "stance": STANCE_QUESTION}
+    )
+    return hashlib.sha256(definition.encode("utf-8")).hexdigest()
+
+
 def record_name(symbol: str, packet_sha: str, model: str) -> str:
     slug = re.sub(r"[^A-Za-z0-9.-]+", "_", model).strip("_")[:40]
-    return f"{symbol}-{packet_sha[:12]}-{slug}.json"
+    return f"{symbol}-{packet_sha[:12]}-{questions_sha()[:8]}-{slug}.json"
 
 
 def parse_reply(reply: str) -> dict[str, object]:

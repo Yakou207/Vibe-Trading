@@ -460,6 +460,21 @@ def test_decision_probabilities_feed_the_same_soft_thresholds(tmp_path: Path) ->
     assert list((tmp_path / "2026-10-16").glob("600001.SH-*-typesafe_jev-1.14.json"))
 
 
+def test_changing_question_wording_invalidates_saved_records(tmp_path: Path, monkeypatch) -> None:
+    from fintech_quant.research import jev
+
+    transport = FakeTransport(_reply({}))
+    client = LlmClient(provider="anthropic", api_key="k", model="m", transport=transport)
+    packet = {"symbol": "600001.SH", "as_of": "2026-10-16"}
+    ask_jev(packet, client=client, record_dir=tmp_path)
+
+    reworded = tuple({**q, "question": str(q["question"]) + "（改）"} for q in jev.QUESTIONS)
+    monkeypatch.setattr(jev, "QUESTIONS", reworded)
+    second = ask_jev(packet, client=client, record_dir=tmp_path)
+
+    assert second["cached"] is False and len(transport.calls) == 2
+
+
 def test_decision_without_probabilities_fails_closed() -> None:
     from fintech_quant.research.jev import JevDecisionClient
 

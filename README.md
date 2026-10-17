@@ -240,8 +240,16 @@ python scripts/refresh_momentum_pool.py --replay-start 2024-01-02    # 按时点
   支持 / 中性 / 否决。temperature 0，记录模型、提示词哈希、资料包哈希和原始回复到 `outputs/jev/`，
   同一资料包只调用一次。Jev 只是参考：不能把技术面的“回避”变成入场，不影响计数策略、影子池或证据。
 
-启用 Jev：启动看板前导出 `ANTHROPIC_API_KEY`（默认模型 `claude-sonnet-5-5`，可用 `JEV_MODEL` 覆盖），
-或导出 `OPENAI_API_KEY`、`JEV_MODEL`、`JEV_BASE_URL` 使用 DeepSeek/通义等 OpenAI 兼容接口。未配置时
+启用 Jev：在仓库根目录的 `.env`（已被 git 忽略）中填写，看板启动时自动读取：
+
+- **TypeSafe Jev 决策模型（推荐）**：`JEV_MODEL=Jev 1.14` + `OPENROUTER_API_KEY`。经 OpenRouter
+  decisions 接口发送“资料包 + 类型化问题”，5 道题以有序等级的 `score` 题提问，另加一题 `choice`
+  整体倾向；Jev 直接返回各等级概率，用概率加权后的等级（0–1）套同一组 SOFT 阈值。一次约 0.0002 美元、
+  2–5 秒；记录保存实际服务的快照与费用。
+- **DeepSeek（对话模型）**：只填 `DEEPSEEK_API_KEY`（默认 `deepseek-flash`），会写出文字理由与总结。
+- 也支持 `ANTHROPIC_API_KEY`，或 `OPENAI_API_KEY` + `JEV_MODEL` + `JEV_BASE_URL`。
+
+判断记录按“股票 + 资料包哈希 + 问题集哈希 + 模型”存档，换模型或改问题都会重新判断。未配置时
 其余信息照常显示。这些信息与 NLP 只用于展示和 Jev，计数基线的情绪分量没有改动。
 
 ## 盘前选股简报与人工执行台账

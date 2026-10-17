@@ -28,6 +28,7 @@ from fintech_quant.research.jev import (
     ask_jev,
     client_from_env,
     config_status,
+    questions_sha,
     record_name,
 )
 from fintech_quant.research.momentum_pool import pool_metrics
@@ -389,7 +390,9 @@ def research_payload(
         packet_sha = str(research["jev_packet_sha256"])
         exact = jev_record_dir / data.as_of / record_name(symbol, packet_sha, model)
         saved = sorted(
-            (jev_record_dir / data.as_of).glob(f"{symbol}-{packet_sha[:12]}-*.json"),
+            (jev_record_dir / data.as_of).glob(
+                f"{symbol}-{packet_sha[:12]}-{questions_sha()[:8]}-*.json"
+            ),
             key=lambda path: path.stat().st_mtime,
         )
         record = (
@@ -479,15 +482,12 @@ def jev_packet(stock: Mapping[str, object], research: Mapping[str, object]) -> d
         "research_consensus": research.get("consensus"),
         "financials": [
             {
-                k: p.get(k)
-                for k in (
-                    "period",
-                    "revenue_yoy",
-                    "net_profit_yoy",
-                    "deducted_profit_yoy",
-                    "roe",
-                    "net_margin",
-                )
+                "报告期": p.get("period"),
+                "营收同比": _signed_pct(p.get("revenue_yoy")),
+                "净利润同比": _signed_pct(p.get("net_profit_yoy")),
+                "扣非净利润同比": _signed_pct(p.get("deducted_profit_yoy")),
+                "ROE（报告期，未年化）": _signed_pct(p.get("roe")),
+                "销售净利率": _signed_pct(p.get("net_margin")),
             }
             for p in research.get("financials", [])[:6]  # type: ignore[union-attr]
         ],
@@ -495,3 +495,8 @@ def jev_packet(stock: Mapping[str, object], research: Mapping[str, object]) -> d
             f["text"] for f in research.get("financial_trend", {}).get("flags", [])
         ],  # type: ignore[union-attr]
     }
+
+
+def _signed_pct(value: object) -> str | None:
+    """Readable percentages for model input: 0.42 -> '+42.0%' (raw ratios get misread as 0.42%)."""
+    return None if not isinstance(value, (int, float)) else f"{float(value):+.1%}"
