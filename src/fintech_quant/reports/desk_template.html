@@ -1,0 +1,611 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__DESK_TITLE__</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0e0f13;
+  --surface-1: #17181d;
+  --surface-2: #1f2027;
+  --border: #2c2d36;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8a897f;
+  --accent: #e87ba4;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --up: #e66767; --down: #199e70;
+  --floor-a: #1b1c22; --floor-b: #202129; --wall: #121318; --desk: #2b2c35; --desk-top: #383946;
+  --screen: #0a0b0e; --grid: #26272e;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #eceae4; --surface-1: #fcfcfb; --surface-2: #f3f2ee; --border: #d9d7cf;
+    --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #7a7972;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+    --up: #d03b3b; --down: #008300;
+    --floor-a: #d8d5cc; --floor-b: #cfccc2; --wall: #bdb9ad; --desk: #8f8b80; --desk-top: #a7a397;
+    --screen: #1f2027; --grid: #e7e5df;
+  }
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text-primary);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 12px 16px 32px; }
+.mono { font-family: var(--mono); }
+.muted { color: var(--text-muted); }
+.panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; }
+h2 { font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; margin: 0; color: var(--text-secondary); }
+
+/* top bar */
+.topbar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 10px 14px; margin-bottom: 10px; }
+.brand { font: 800 18px/1 var(--mono); letter-spacing: .02em; }
+.brand span { color: var(--accent); }
+.sub { font: 11px var(--mono); color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.progress { display: flex; align-items: center; gap: 8px; font: 12px var(--mono); }
+.bar { width: 160px; height: 10px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--border); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: repeating-linear-gradient(135deg, var(--accent) 0 4px, transparent 4px 6px), var(--accent); }
+.pills { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.pill { font: 600 10px/1 var(--mono); padding: 5px 7px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-secondary); white-space: nowrap; }
+.pill.ok::before { content: "● "; color: var(--good); }
+.pill.warn::before { content: "▲ "; color: var(--warning); }
+.pill.bad::before { content: "✕ "; color: var(--critical); }
+.clock { font: 700 16px var(--mono); padding: 5px 9px; background: var(--screen); color: #f0efec; border-radius: 4px; }
+
+/* agent cards */
+.agents { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.agent { padding: 10px 12px 8px; position: relative; min-height: 96px; transition: border-color .2s, transform .2s; }
+.agent.active { border-color: var(--accent); transform: translateY(-1px); }
+.agent-head { display: flex; align-items: center; gap: 8px; }
+.avatar { width: 18px; height: 18px; border-radius: 5px; flex: none; position: relative; }
+.avatar::after { content: ""; position: absolute; left: 4px; top: 6px; width: 3px; height: 3px; background: #fff; box-shadow: 7px 0 #fff; }
+.agent-name { font: 800 14px/1 var(--mono); }
+.agent-role { font-size: 11px; color: var(--text-muted); }
+.agent-metric { margin-left: auto; font: 700 13px var(--mono); white-space: nowrap; }
+.agent-bar { height: 3px; background: var(--surface-2); margin: 8px 0 6px; border-radius: 2px; overflow: hidden; }
+.agent-bar > i { display: block; height: 100%; border-radius: 2px; }
+.agent-line { font: 11px/1.4 var(--mono); color: var(--text-secondary); min-height: 30px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.state { font: 600 10px var(--mono); margin-left: 6px; }
+.state.ok { color: var(--good); } .state.alert { color: var(--warning); } .state.blocked { color: var(--critical); } .state.idle { color: var(--text-muted); }
+.caret::after { content: "▍"; animation: blink 1s steps(1) infinite; color: var(--accent); }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* office */
+.office { position: relative; padding: 0; overflow: hidden; margin-bottom: 10px; }
+.office canvas { display: block; width: min(100%, 1040px); margin: 0 auto; height: auto; image-rendering: pixelated; image-rendering: crisp-edges; }
+.office-strip { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); font: 10px var(--mono); color: var(--text-secondary); white-space: nowrap; overflow: hidden; max-width: 46%; }
+.bubble { position: absolute; max-width: 260px; background: #f0efec; color: #0b0b0b; font: 11px/1.35 var(--mono); padding: 6px 8px; border-radius: 4px;
+  box-shadow: 3px 3px 0 rgba(0,0,0,.4); transform: translate(-50%, -100%); pointer-events: none; transition: opacity .2s; }
+.bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; border: 6px solid transparent; border-bottom: 0; border-top-color: #f0efec; transform: translateX(-50%); }
+.bubble b { color: #b23a63; }
+.mode-tag { position: absolute; left: 10px; bottom: 8px; font: 600 10px var(--mono); color: #c3c2b7; background: rgba(0,0,0,.45); padding: 4px 6px; border-radius: 3px; }
+
+/* lower grid */
+.grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px; margin-bottom: 10px; }
+.section { padding: 12px 14px; }
+.section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.section-head .right { margin-left: auto; font: 11px var(--mono); color: var(--text-muted); }
+.tabs { display: flex; gap: 4px; }
+.tabs button { font: 600 11px var(--mono); background: var(--surface-2); color: var(--text-secondary); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+.tabs button[aria-pressed="true"] { color: var(--text-primary); border-color: var(--accent); }
+.hero { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+.hero .big { font: 800 26px var(--mono); }
+.chart-wrap { position: relative; height: 260px; }
+.fallback { padding: 30px; text-align: center; color: var(--text-muted); }
+table { width: 100%; border-collapse: collapse; font: 11.5px var(--mono); }
+th { text-align: left; font-weight: 600; color: var(--text-muted); padding: 4px 6px; border-bottom: 1px solid var(--border); }
+td { padding: 4px 6px; border-bottom: 1px solid var(--grid); color: var(--text-secondary); vertical-align: middle; }
+td.num, th.num { text-align: right; }
+.pass { color: var(--good); } .fail { color: var(--critical); }
+.code { font: 11.5px/1.6 var(--mono); }
+.code .k { color: var(--text-primary); } .code .c { color: var(--text-muted); }
+.kv { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; }
+.kv .k { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kv span:last-child { text-align: right; }
+
+/* funnel */
+.funnel-row { display: grid; grid-template-columns: 150px 1fr 44px; gap: 8px; align-items: center; margin: 4px 0; font: 11.5px var(--mono); }
+.funnel-row .track { height: 14px; background: var(--surface-2); border-radius: 0 4px 4px 0; overflow: hidden; }
+.funnel-row .track i { display: block; height: 100%; background: var(--s1); border-radius: 0 4px 4px 0; min-width: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; align-items: center; font: 10.5px var(--mono); color: var(--text-muted); }
+.chip { border: 1px solid var(--border); border-radius: 3px; padding: 2px 6px; color: var(--text-secondary); }
+.chip.first { background: var(--accent); color: #0b0b0b; border-color: var(--accent); }
+
+/* candidates */
+.stack { display: flex; gap: 2px; height: 10px; width: 160px; background: var(--surface-2); border-radius: 0 3px 3px 0; }
+.stack i { display: block; height: 100%; }
+.stack i:last-child { border-radius: 0 3px 3px 0; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--text-secondary); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; background: var(--c); }
+.badge { font: 600 10px var(--mono); padding: 2px 5px; border-radius: 3px; border: 1px solid var(--border); }
+.badge.target { border-color: var(--accent); color: var(--text-primary); }
+.up { color: var(--up); } .down { color: var(--down); }
+
+/* timeline + log */
+.timeline { display: flex; gap: 4px; flex-wrap: wrap; }
+.day { font: 10.5px var(--mono); padding: 5px 7px; border-radius: 4px; border: 1px solid var(--border); }
+.day.complete::before { content: "✓ "; color: var(--good); }
+.day.partial::before { content: "◐ "; color: var(--warning); }
+.day.missing::before { content: "✕ "; color: var(--critical); }
+.log { max-height: 240px; overflow: auto; font: 11px/1.55 var(--mono); }
+.log div { padding: 2px 0; border-bottom: 1px dashed var(--grid); color: var(--text-secondary); }
+.log .who { display: inline-block; width: 64px; font-weight: 700; color: var(--text-primary); }
+.log .warn .who::before { content: "▲"; color: var(--warning); margin-right: 3px; }
+.log .error .who::before { content: "✕"; color: var(--critical); margin-right: 3px; }
+footer { font: 10.5px var(--mono); color: var(--text-muted); margin-top: 8px; word-break: break-all; }
+
+@media (max-width: 1000px) {
+  .agents { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .office-strip { display: none; }
+}
+@media (max-width: 520px) {
+  .wrap { padding: 8px 16px 24px; }
+  .agents { grid-template-columns: minmax(0, 1fr); }
+  .funnel-row { grid-template-columns: 110px 1fr 36px; }
+  .stack { width: 90px; }
+  .bubble { max-width: 180px; font-size: 10px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="panel topbar">
+    <div>
+      <div class="brand">VIBE<span>·</span>DESK</div>
+      <div class="sub">CSI 300 · 多因子基线 · 纸面交易</div>
+    </div>
+    <div class="progress" title="有效交易日 / 要求的 40 个">
+      <span class="muted">证据</span>
+      <div class="bar"><i id="evidence-bar"></i></div>
+      <span id="evidence-text"></span>
+    </div>
+    <div class="progress"><span class="muted">日历</span><span id="calendar-text"></span></div>
+    <div class="pills" id="pills"></div>
+    <div class="clock" id="clock" title="上海时间">--:--:--</div>
+  </header>
+
+  <section class="agents" id="agents" aria-label="Desk agents"></section>
+
+  <section class="panel office" aria-label="Trading floor">
+    <canvas id="office" width="480" height="250"></canvas>
+    <div class="office-strip" id="strip"></div>
+    <div class="bubble" id="bubble" style="opacity:0"></div>
+    <div class="mode-tag" id="mode-tag"></div>
+  </section>
+
+  <div class="grid">
+    <section class="panel section">
+      <div class="section-head">
+        <h2 id="curve-title">净值 · 纸面账户 vs CSI 300</h2>
+        <div class="tabs" role="group" aria-label="Curve">
+          <button type="button" data-curve="paper" aria-pressed="true">纸面证据</button>
+          <button type="button" data-curve="backtest" aria-pressed="false">正式回测</button>
+          <button type="button" id="table-toggle" aria-pressed="false">表格</button>
+        </div>
+        <span class="right" id="curve-note"></span>
+      </div>
+      <div class="hero" id="hero"></div>
+      <div class="chart-wrap"><canvas id="pnl" aria-label="Equity curve"></canvas><div class="fallback" id="pnl-fallback" hidden>图表组件不可用</div></div>
+      <div id="curve-table" hidden></div>
+    </section>
+    <section class="panel section">
+      <div class="section-head"><h2>thresholds · 门禁</h2><span class="right">每一个桌面相信的数字</span></div>
+      <div class="code" id="gates"></div>
+      <div class="chips" id="chips"></div>
+    </section>
+  </div>
+
+  <div class="grid">
+    <section class="panel section">
+      <div class="section-head">
+        <h2>候选 · 评分拆解</h2>
+        <div class="legend">
+          <span style="--c: var(--s1)">基本面/35</span><span style="--c: var(--s2)">技术/25</span>
+          <span style="--c: var(--s3)">资金代理/25</span><span style="--c: var(--s4)">情绪/15</span>
+        </div>
+        <span class="right" id="quote-status"></span>
+      </div>
+      <table id="candidates"></table>
+    </section>
+    <section class="panel section">
+      <div class="section-head"><h2>漏斗 · filter order</h2><span class="right">最便宜的过滤在最前</span></div>
+      <div id="funnel"></div>
+      <div class="section-head" style="margin-top:14px"><h2>证据时间线</h2><span class="right">自锚点起的 CSI 300 交易日</span></div>
+      <div class="timeline" id="timeline"></div>
+    </section>
+  </div>
+
+  <section class="panel section">
+    <div class="section-head"><h2>桌面日志</h2><span class="right" id="log-note"></span></div>
+    <div class="log" id="log"></div>
+  </section>
+  <footer id="footer"></footer>
+</div>
+
+<script type="application/json" id="desk-data">__DESK_SNAPSHOT__</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+<script>
+(() => {
+  "use strict";
+  const LIVE = __DESK_LIVE__;
+  const ORDER = ["CRAWLER", "SCAN", "VET", "SIZE", "FILLS", "RISK", "AUDIT", "CHIEF"];
+  const SLOT = { CRAWLER: "--s1", SCAN: "--s3", VET: "--s7", SIZE: "--s6", FILLS: "--s5", RISK: "--s4", AUDIT: "--s2", CHIEF: "--s8" };
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const pct = (v, d = 2) => (v == null || Number.isNaN(Number(v)) ? "—" : `${(Number(v) * 100).toFixed(d)}%`);
+  const signed = (v, d = 2) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(d)}%`);
+  const cny = new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 0 });
+
+  let snap = JSON.parse($("desk-data").textContent);
+  let curveMode = "paper";
+  let chart = null;
+
+  /* ---------- header, cards, panels ---------- */
+  function renderHeader() {
+    const h = snap.header;
+    $("evidence-bar").style.width = `${Math.min(100, (h.valid_sessions / h.required_sessions) * 100)}%`;
+    $("evidence-text").textContent = `${h.valid_sessions}/${h.required_sessions} 交易日`;
+    $("calendar-text").textContent = `${h.calendar_days}/${h.required_calendar_days} 天`;
+    const statusCls = h.status === "ELIGIBLE_FOR_REVIEW" ? "ok" : h.status === "FAILED" ? "bad" : "warn";
+    const quoteCls = snap.quotes_status === "live" || snap.quotes_status === "file" ? "ok" : snap.quotes_status === "off" ? "warn" : "bad";
+    $("pills").innerHTML = [
+      [statusCls, `AUDIT ${h.status}`],
+      ["ok", "PAPER ONLY"],
+      [h.live_trading_authorized ? "bad" : "ok", "LIVE OFF"],
+      ["ok", "DQN OFF"],
+      [quoteCls, `QUOTES ${snap.quotes_status.toUpperCase().slice(0, 18)}`],
+      ["warn", `AS OF ${snap.as_of}`],
+    ].map(([c, t]) => `<span class="pill ${c}">${esc(t)}</span>`).join("") + `<span class="pill" id="conn">${LIVE ? "SSE …" : "STATIC"}</span>`;
+  }
+
+  function renderAgents() {
+    $("agents").innerHTML = ORDER.map((id) => {
+      const a = snap.agents.find((x) => x.id === id);
+      if (!a) return "";
+      return `<article class="panel agent" id="card-${id}">
+        <div class="agent-head">
+          <span class="avatar" style="background: var(${SLOT[id]})"></span>
+          <div><div class="agent-name">${id}<span class="state ${a.status}">${a.status.toUpperCase()}</span></div>
+          <div class="agent-role">${esc(a.role)}</div></div>
+          <span class="agent-metric">${esc(a.metric)}</span>
+        </div>
+        <div class="agent-bar"><i style="width:${(a.progress * 100).toFixed(1)}%; background: var(${SLOT[id]})"></i></div>
+        <div class="agent-line" id="line-${id}">${esc(a.headline)}</div>
+      </article>`;
+    }).join("");
+  }
+
+  function fmtValue(v) {
+    if (Array.isArray(v)) return v.map((x) => (typeof x === "number" ? pct(x, 1) : x)).join(" · ");
+    if (typeof v === "number" && Math.abs(v) < 1 && v !== 0) return pct(v, 2);
+    if (typeof v === "boolean") return v ? "true" : "false";
+    return v ?? "—";
+  }
+
+  function renderGates() {
+    const hard = snap.gates.map((g) =>
+      `<div class="kv"><span class="${g.passed ? "pass" : "fail"}">${g.passed ? "✓" : "✕"}</span><span class="k" title="${esc(g.name)}">${esc(g.name)}</span>` +
+      `<span><span class="muted">${esc(fmtValue(g.observed))}</span> <span class="c">req ${esc(fmtValue(g.required))}</span></span></div>`).join("");
+    const keys = ["buy_threshold", "minimum_score_confidence", "maximum_position_weight", "drawdown_reduce", "drawdown_liquidate",
+      "drawdown_validation_limit", "slippage_rate", "commission_rate", "minimum_commission", "broad_market_drop_threshold", "max_main_outflow_days"];
+    const policy = snap.policy.filter((p) => keys.includes(p.name)).map((p) =>
+      `<div class="kv"><span></span><span class="k">${esc(p.name)}</span><span class="muted">${esc(p.value)}</span></div>`).join("");
+    $("gates").innerHTML = `<div class="c">HARD · 审计门禁（逐条确定性校验）</div>${hard || '<div class="muted">无审计报告</div>'}` +
+      `<div class="c" style="margin-top:8px">POLICY · 冻结参数（证据期内禁止调参）</div>${policy}`;
+    $("chips").innerHTML = "filter →" + ["data_gate", "score_gate", "confidence_gate", "risk_veto", "sizing", "D+1 open"].map((c, i) =>
+      `<span class="chip ${i === 0 ? "first" : ""}">${c}</span>`).join("→");
+  }
+
+  function quoteCell(q) {
+    if (!q) return '<td class="num muted">—</td>';
+    const cls = q.change_pct == null ? "" : q.change_pct >= 0 ? "up" : "down";
+    const chg = q.change_pct == null ? "" : ` ${q.change_pct >= 0 ? "+" : ""}${Number(q.change_pct).toFixed(2)}%`;
+    return `<td class="num ${cls}">${Number(q.price).toFixed(2)}${chg}</td>`;
+  }
+
+  function renderCandidates() {
+    const slots = ["--s1", "--s2", "--s3", "--s4"];
+    const keys = ["fundamental", "technical", "capital_flow", "sentiment"];
+    const rows = snap.candidates.map((c) => {
+      const segs = keys.map((k, i) => {
+        const part = c.components[k];
+        const title = `${k} ${part.score}/${part.max}: ${part.reasons.join(" ")}`;
+        return part.score > 0 ? `<i title="${esc(title)}" style="width:${(part.score / 100) * 100}%; background: var(${slots[i]})"></i>` : "";
+      }).join("");
+      const badge = c.target_weight ? `<span class="badge target">目标 ${pct(c.target_weight, 0)}</span>`
+        : c.vetoed ? '<span class="badge">否决</span>' : !c.passes_score ? '<span class="badge">&lt; 阈值</span>' : '<span class="badge">置信不足</span>';
+      return `<tr><td><span class="k" style="color:var(--text-primary)">${esc(c.symbol)}</span> <span class="muted">${esc(c.name)}</span></td>
+        <td class="num">${c.total.toFixed(1)}</td><td><div class="stack">${segs}</div></td><td class="num">${c.confidence.toFixed(2)}</td>${quoteCell(c.quote)}<td>${badge}</td></tr>`;
+    }).join("");
+    $("candidates").innerHTML = `<thead><tr><th>标的</th><th class="num">总分</th><th>构成</th><th class="num">置信</th><th class="num">行情</th><th>状态</th></tr></thead><tbody>${rows}</tbody>`;
+    $("quote-status").textContent = `行情：${snap.quotes_status}`;
+  }
+
+  function renderFunnel() {
+    const max = Math.max(1, ...snap.funnel.map((f) => f.count));
+    $("funnel").innerHTML = snap.funnel.map((f) =>
+      `<div class="funnel-row"><span>${esc(f.label)}</span><div class="track"><i style="width:${(f.count / max) * 100}%"></i></div><span class="num" style="text-align:right">${f.count}</span></div>`).join("");
+    $("timeline").innerHTML = snap.timeline.map((d) => `<span class="day ${d.status}" title="${d.status}">${d.date.slice(5)}</span>`).join("") ||
+      '<span class="muted">尚无锚点后的交易日</span>';
+  }
+
+  /* ---------- PnL chart ---------- */
+  function curveData() {
+    if (curveMode === "paper") {
+      const p = snap.paper_curve;
+      return { title: "净值 · 纸面账户 vs CSI 300（审计锚点起）", dates: p.dates, note: `${p.dates.length} 个点`,
+        series: [["纸面账户", p.equity, "--s1", []], ["影子账户（无回撤控制）", p.shadow_equity, "--s2", [6, 4]], ["CSI 300（同基数）", p.csi300, "--s3", [2, 3]]] };
+    }
+    const b = snap.backtest_curve;
+    if (!b) return { title: "正式回测不可用", dates: [], series: [], note: "" };
+    const s = b.series;
+    return { title: "正式回测 · CSI 300 HFQ 时点数据（历史结果，不代表未来）", dates: b.dates, note: `sha256 ${b.sha256.slice(0, 10)}…`,
+      series: [[s.risk_controlled.label, s.risk_controlled.equity, "--s1", []], [s.baseline.label, s.baseline.equity, "--s2", [6, 4]], [s.csi300.label, s.csi300.equity, "--s3", [2, 3]]] };
+  }
+
+  function renderCurve() {
+    const d = curveData();
+    $("curve-title").textContent = d.title;
+    $("curve-note").textContent = d.note;
+    const last = (arr) => arr && arr.length ? arr[arr.length - 1] : null;
+    const first = (arr) => arr && arr.length ? arr[0] : null;
+    $("hero").innerHTML = d.series.map(([label, data]) => {
+      const r = first(data) ? last(data) / first(data) - 1 : null;
+      return `<div><div class="muted" style="font-size:11px">${esc(label)}</div><div class="${label === d.series[0][0] ? "big" : "mono"}">${last(data) == null ? "—" : cny.format(last(data))}</div><div class="mono muted">${signed(r)}</div></div>`;
+    }).join("") + (snap.header.live_equity ? `<div><div class="muted" style="font-size:11px">盘中估值（实时行情）</div><div class="mono">${cny.format(snap.header.live_equity)}</div></div>` : "");
+    const rows = d.dates.slice(-12).map((day, i, arr) => {
+      const idx = d.dates.length - arr.length + i;
+      return `<tr><td>${day}</td>${d.series.map(([, data]) => `<td class="num">${data[idx] == null ? "—" : cny.format(data[idx])}</td>`).join("")}</tr>`;
+    }).join("");
+    $("curve-table").innerHTML = `<table><thead><tr><th>日期</th>${d.series.map(([l]) => `<th class="num">${esc(l)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`;
+    if (typeof window.Chart !== "function") { $("pnl").hidden = true; $("pnl-fallback").hidden = false; return; }
+    const datasets = d.series.map(([label, data, slot, dash]) => ({
+      label, data, borderColor: css(slot), borderDash: dash, borderWidth: 2, pointRadius: d.dates.length < 40 ? 4 : 0,
+      pointBackgroundColor: css(slot), pointHoverRadius: 5, tension: 0, spanGaps: true, fill: false,
+    }));
+    if (chart) chart.destroy();
+    chart = new Chart($("pnl"), {
+      type: "line", data: { labels: d.dates, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false, animation: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: { position: "top", align: "start", labels: { color: css("--text-secondary"), boxWidth: 14, font: { family: "monospace", size: 11 } } },
+          tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${cny.format(c.parsed.y)}` } },
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { color: css("--text-muted"), maxTicksLimit: 8, maxRotation: 0 } },
+          y: { grid: { color: css("--grid") }, ticks: { color: css("--text-muted"), callback: (v) => cny.format(v) } },
+        },
+      },
+    });
+  }
+
+  document.querySelectorAll("[data-curve]").forEach((btn) => btn.addEventListener("click", () => {
+    curveMode = btn.dataset.curve;
+    document.querySelectorAll("[data-curve]").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    renderCurve();
+  }));
+  $("table-toggle").addEventListener("click", (e) => {
+    const on = e.currentTarget.getAttribute("aria-pressed") !== "true";
+    e.currentTarget.setAttribute("aria-pressed", String(on));
+    $("curve-table").hidden = !on;
+  });
+
+  /* ---------- pixel office ---------- */
+  const cv = $("office");
+  const ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height;
+  const DESKS = {
+    CRAWLER: [70, 128], SCAN: [150, 128], VET: [230, 128], SIZE: [310, 128],
+    FILLS: [70, 196], RISK: [150, 196], AUDIT: [230, 196], CHIEF: [410, 150],
+  };
+  let active = null, packet = null, frame = 0;
+
+  function rect(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+
+  function drawRoom() {
+    for (let y = 70; y < H; y += 10) for (let x = 0; x < W; x += 10) rect(x, y, 10, 10, ((x + y) / 10) % 2 ? css("--floor-a") : css("--floor-b"));
+    rect(0, 0, W, 70, css("--wall"));
+    rect(0, 68, W, 2, css("--border"));
+    // wall screen with mini curve
+    rect(150, 8, 180, 56, css("--border"));
+    rect(152, 10, 176, 52, css("--screen"));
+    const series = snap.backtest_curve ? snap.backtest_curve.series.risk_controlled.equity : snap.paper_curve.equity;
+    const bench = snap.backtest_curve ? snap.backtest_curve.series.csi300.equity : snap.paper_curve.csi300;
+    plotMini(series, css("--s1"), bench);
+    plotMini(bench, css("--s3"), series);
+    // banners, clock, rack, plants
+    [[20, "#3987e5"], [440, "#e87ba4"]].forEach(([x, c]) => { rect(x, 10, 22, 34, css("--surface-2")); rect(x + 4, 16, 14, 3, c); rect(x + 4, 22, 14, 3, c); rect(x + 6, 44, 10, 6, css("--surface-2")); });
+    rect(352, 16, 46, 22, css("--screen")); clockPixels(355, 20);
+    rect(448, 80, 22, 70, css("--surface-2"));
+    for (let i = 0; i < 8; i++) rect(452, 86 + i * 8, 4, 3, (frame >> 3) % 8 === i ? css("--good") : css("--border"));
+    plant(16, 92); plant(16, 220); plant(372, 222); plant(456, 222);
+    // couch
+    rect(300, 222, 60, 12, css("--desk")); rect(300, 218, 60, 5, css("--desk-top"));
+  }
+
+  function plotMini(data, color, other) {
+    if (!data || data.length < 2) return;
+    const all = data.concat(other || []).filter((v) => v != null);
+    const lo = Math.min(...all), hi = Math.max(...all);
+    const step = Math.max(1, Math.floor(data.length / 170));
+    ctx.fillStyle = color;
+    for (let i = 0, px = 0; i < data.length; i += step, px++) {
+      if (data[i] == null) continue;
+      const y = 58 - ((data[i] - lo) / (hi - lo || 1)) * 42;
+      ctx.fillRect(155 + px * (170 / Math.ceil(data.length / step)), Math.round(y), 1, 1);
+    }
+  }
+
+  function clockPixels(x, y) {
+    const t = new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false }).slice(0, 5);
+    ctx.fillStyle = "#1baf7a"; ctx.font = "10px monospace"; ctx.fillText(t, x + 4, y + 11);
+  }
+
+  function plant(x, y) { rect(x + 2, y + 10, 8, 8, css("--desk")); rect(x, y, 4, 10, "#199e70"); rect(x + 4, y - 4, 4, 14, "#1baf7a"); rect(x + 8, y + 2, 4, 8, "#008300"); }
+
+  function drawDesk(id) {
+    const [x, y] = DESKS[id];
+    const a = snap.agents.find((g) => g.id === id) || { status: "idle" };
+    const color = css(SLOT[id]);
+    const big = id === "CHIEF";
+    const w = big ? 64 : 48;
+    // monitor
+    rect(x - 14, y - 30, 28, 18, css("--border"));
+    rect(x - 12, y - 28, 24, 14, css("--screen"));
+    if (a.status === "blocked") { ctx.fillStyle = css("--critical"); for (let i = 0; i < 10; i++) { ctx.fillRect(x - 5 + i, y - 26 + i, 1, 1); ctx.fillRect(x + 4 - i, y - 26 + i, 1, 1); } }
+    else for (let i = 0; i < 8; i++) { const hgt = 2 + ((i * 7 + (id === active ? frame : 0) / 3) % 9); rect(x - 10 + i * 3, y - 15 - hgt, 2, hgt, color); }
+    // character
+    const working = id === active || a.status === "ok";
+    const bob = working ? Math.round(Math.sin((frame + id.length * 9) / 6)) : 0;
+    const cy = y - 10 + bob;
+    rect(x - 7, cy - 10, 14, 12, color);
+    rect(x - 4, cy - 6, 2, 3, "#ffffff"); rect(x + 2, cy - 6, 2, 3, "#ffffff");
+    if (a.status === "alert" && (frame >> 4) % 2) { rect(x + 9, cy - 18, 3, 7, css("--warning")); rect(x + 9, cy - 9, 3, 2, css("--warning")); }
+    if (a.status === "idle" && !working) { ctx.fillStyle = css("--text-muted"); ctx.font = "8px monospace"; ctx.fillText("z", x + 9, cy - 12 - ((frame >> 3) % 4)); }
+    // desk
+    rect(x - w / 2, y, w, 6, css("--desk-top"));
+    rect(x - w / 2, y + 6, w, 10, css("--desk"));
+    if (working && id === active && (frame >> 2) % 2) { rect(x - 9, y - 1, 3, 2, color); rect(x + 6, y - 1, 3, 2, color); }
+    // nameplate
+    ctx.fillStyle = css("--text-secondary"); ctx.font = "7px monospace"; ctx.textAlign = "center"; ctx.fillText(id, x, y + 26); ctx.textAlign = "left";
+  }
+
+  function drawPacket() {
+    if (!packet) return;
+    packet.t += 0.035;
+    if (packet.t >= 1) { packet = null; return; }
+    const [x0, y0] = DESKS[packet.from], [x1, y1] = DESKS[packet.to];
+    // manhattan path: up to corridor, across, down
+    const cy = 92, t = packet.t;
+    let x, y;
+    if (t < 0.25) { x = x0; y = y0 - 20 + (cy - (y0 - 20)) * (t / 0.25); }
+    else if (t < 0.75) { x = x0 + (x1 - x0) * ((t - 0.25) / 0.5); y = cy; }
+    else { x = x1; y = cy + ((y1 - 20) - cy) * ((t - 0.75) / 0.25); }
+    rect(x - 2, y - 2, 5, 5, css("--accent"));
+    rect(x - 4, y, 2, 1, css("--accent"));
+  }
+
+  function tick() {
+    frame++;
+    drawRoom();
+    ORDER.forEach(drawDesk);
+    drawPacket();
+    requestAnimationFrame(tick);
+  }
+
+  function placeBubble(id, text) {
+    const b = $("bubble");
+    const [x, y] = DESKS[id];
+    const r = cv.getBoundingClientRect();
+    const offset = r.left - cv.parentElement.getBoundingClientRect().left;
+    const sx = r.width / W, sy = r.height / H;
+    b.innerHTML = `<b>${esc(id)}</b> ${esc(text)}`;
+    const left = offset + Math.min(Math.max(x * sx, 100), r.width - 100);
+    b.style.left = `${left}px`;
+    b.style.top = `${(y - 44) * sy}px`;
+    b.style.opacity = "1";
+  }
+
+  /* ---------- replay of the cycle's event log ---------- */
+  let replayTimer = null;
+  function replay() {
+    clearTimeout(replayTimer);
+    $("log").innerHTML = "";
+    const events = snap.events;
+    $("log-note").textContent = `${snap.mode === "intraday" ? "盘中" : "收盘后"}回放 · ${snap.as_of} 周期 · ${events.length} 条`;
+    $("mode-tag").textContent = `${snap.mode === "intraday" ? "INTRADAY" : "POST-CLOSE REPLAY"} · cycle ${snap.as_of}`;
+    let i = 0, prev = null;
+    const step = () => {
+      const e = events[i % events.length];
+      document.querySelectorAll(".agent.active").forEach((n) => n.classList.remove("active"));
+      const card = $(`card-${e.agent}`);
+      if (card) card.classList.add("active");
+      if (prev && prev !== e.agent) packet = { from: prev, to: e.agent, t: 0 };
+      active = e.agent; prev = e.agent;
+      placeBubble(e.agent, e.text);
+      typeLine(e.agent, e.text);
+      if (i < events.length) {
+        const row = document.createElement("div");
+        row.className = e.level;
+        row.innerHTML = `<span class="who">${esc(e.agent)}</span>${esc(e.text)}`;
+        $("log").prepend(row);
+      }
+      i++;
+      replayTimer = setTimeout(step, i < events.length ? 2200 : 4200);
+    };
+    step();
+  }
+
+  function typeLine(id, text) {
+    const el = $(`line-${id}`);
+    if (!el) return;
+    let n = 0;
+    el.classList.add("caret");
+    const t = setInterval(() => {
+      n += 2;
+      el.textContent = text.slice(0, n);
+      if (n >= text.length) { clearInterval(t); el.classList.remove("caret"); }
+    }, 28);
+  }
+
+  function renderStrip() {
+    const items = snap.targets.map((t) => {
+      const q = t.quote;
+      const chg = q && q.change_pct != null ? ` ${q.change_pct >= 0 ? "▲" : "▼"}${Math.abs(q.change_pct).toFixed(2)}%` : "";
+      return `${t.symbol} ${t.name} ${(t.target_weight * 100).toFixed(0)}%${chg}`;
+    });
+    $("strip").textContent = items.length ? `TARGETS · ${items.join(" · ")}` : "NO TARGETS · 保持现金";
+  }
+
+  function renderFooter() {
+    $("footer").textContent = `cycle ${snap.cycle.path} · manifest ${snap.cycle.manifest_sha256} · parent ${snap.cycle.parent_sha256 || "—"} · git ${snap.cycle.git_sha || "—"} · generated ${snap.generated_at}. 只读视图：不修改账户、不下单、不构成投资建议。`;
+  }
+
+  function renderAll(withReplay) {
+    renderHeader(); renderAgents(); renderGates(); renderCandidates(); renderFunnel(); renderCurve(); renderStrip(); renderFooter();
+    if (withReplay) replay();
+  }
+
+  setInterval(() => {
+    const now = new Date();
+    const t = now.toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
+    const hm = Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    const wd = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Shanghai", weekday: "short" }).format(now);
+    const weekend = wd === "Sat" || wd === "Sun";
+    const session = weekend ? "休市" : hm < 555 ? "盘前" : hm < 570 ? "集合竞价" : hm < 690 ? "交易中" : hm < 780 ? "午休" : hm < 900 ? "交易中" : "收盘";
+    $("clock").textContent = `${t} ${session}`;
+  }, 1000);
+
+  renderAll(true);
+  requestAnimationFrame(tick);
+  window.addEventListener("resize", () => active && placeBubble(active, $("bubble").textContent.replace(/^\S+\s/, "")));
+
+  if (LIVE && "EventSource" in window) {
+    const source = new EventSource("/api/stream");
+    source.addEventListener("snapshot", (ev) => {
+      const next = JSON.parse(ev.data);
+      const newCycle = next.as_of !== snap.as_of || next.cycle.manifest_sha256 !== snap.cycle.manifest_sha256;
+      snap = next;
+      renderAll(newCycle);
+      const conn = $("conn");
+      if (conn) { conn.textContent = "SSE LIVE"; conn.className = "pill ok"; }
+    });
+    source.onopen = () => { const c = $("conn"); if (c) { c.textContent = "SSE LIVE"; c.className = "pill ok"; } };
+    source.onerror = () => { const c = $("conn"); if (c) { c.textContent = "SSE 重连中"; c.className = "pill warn"; } };
+  }
+})();
+</script>
+</body>
+</html>
