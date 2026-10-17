@@ -143,6 +143,22 @@ python scripts/audit_csi300_paper_validation.py \
 CSI 300 正超额收益和不高于 10% 的回撤门禁全部通过前，禁止接入实盘。即使状态达到
 `ELIGIBLE_FOR_REVIEW`，系统仍保持 `live_trading_authorized=false`，DQN 也不得增加模拟仓位。
 
+## 交易桌实时看板
+
+`scripts/serve_trading_desk.py` 把最新完整 V2 cycle 渲染成“交易桌”视图：8 个桌面代理
+（CRAWLER 数据门禁、SCAN 评分、VET 风险否决、SIZE 仓位、FILLS 执行、RISK 回撤、AUDIT 审计、
+CHIEF 主管）对应已有的确定性流水线阶段，并配有像素办公室动画、过滤漏斗、审计门禁、评分拆解、
+纸面 NAV 对 CSI 300 曲线和正式回测曲线。只读：不修改账户、不下单。零第三方依赖（标准库
+HTTP + SSE），新 cycle 落盘后自动推送到浏览器。
+
+```bash
+python scripts/serve_trading_desk.py            # http://127.0.0.1:8765
+python scripts/serve_trading_desk.py --live-quotes --quote-interval 30   # 盘中 AkShare 行情估值
+python scripts/serve_trading_desk.py --export outputs/trading_desk.html  # 静态单文件快照
+```
+
+逆向分析与路线图见 `docs/research/2026-10-17-ai-trading-desk-teardown.md`。
+
 ## Phase 1 Research Loop
 
 The first working slice is a daily A-share research loop:
