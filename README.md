@@ -57,6 +57,8 @@ Excess return over CSI 300 is positive in all four walk-forward segments
 (+27.7%, +19.0%, +26.6%, +20.7%). The 8% / 9% / 10% drawdown controller is what keeps the
 risk-controlled variant inside the 10% drawdown target.
 
+**Restatement (2026-10-18):** an [attribution review](docs/research/2026-10-18-backtest-attribution.md) found that the backtest's broad-market risk rule uses each day's close to trade at that day's open, a same-day look-ahead. The figures above are therefore not evidence of skill: the dividend-inclusive CSI 300 returned +3.7%, not −9.1%, and on the strategy's own exposure path stock selection lagged the index.
+
 Shadow top-5 momentum pool (untuned replay on point-in-time membership, 2024-01-02 → 2026-10-16):
 +36.0% vs CSI 300 +23.2%, but 22.3% maximum drawdown, so it stays a shadow book and never drives the
 counted strategy.
