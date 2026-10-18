@@ -192,6 +192,7 @@ docs/            operations guide, research notes, design specs
 - [x] Point-in-time CSI 300 data, formal backtest and drawdown control
 - [x] Hash-chained paper-evidence V2 with deterministic audit
 - [x] Research desk, stock picker, shadow pool, event NLP and Jev judgment
+- [x] Cross-sectional factor lab: 27 neutralized factors, IC/quintile metrics, locked hold-out
 - [ ] Accumulate 40 counted paper sessions over 56 calendar days
 - [ ] LLM-assisted extraction from full announcement and report text
 - [ ] Independent replay audit of tax lots and corporate actions
@@ -201,6 +202,7 @@ docs/            operations guide, research notes, design specs
 
 - [Operations guide](docs/operations.md): every command and pipeline stage
 - [Martin Luk setup on A-shares](docs/research/2026-10-17-martin-luk-momentum-setup.md): method, replay and limits
+- [Factor lab](docs/research/2026-10-19-factor-lab.md): IC, quintiles and combined signals with a locked hold-out
 - [AI trading desk teardown](docs/research/2026-10-17-ai-trading-desk-teardown.md): design references and roadmap
 - [Project contract](AGENTS.md) and [handoff](handoff.md): research rules and current operational state
 
