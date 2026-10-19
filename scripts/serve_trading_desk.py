@@ -113,6 +113,10 @@ class DeskState:
         path = self.args.pool_root / "state.json"
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
+    def pool_v2_state(self) -> dict[str, object] | None:
+        path = self.args.pool_v2_root / "state.json"
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
     def subscribe(self) -> queue.Queue[str]:
         subscriber: queue.Queue[str] = queue.Queue()
         with self.lock:
@@ -149,7 +153,7 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
             elif path == "/api/universe":
                 self._json(universe_payload(state.picker()))
             elif path == "/api/picks":
-                self._json(picks_payload(state.picker(), state.pool_state()))
+                self._json(picks_payload(state.picker(), state.pool_state(), state.pool_v2_state()))
             elif path == "/api/stock":
                 self._json(stock_payload(state.picker(), self._query()))
             elif path == "/api/research":
@@ -269,6 +273,7 @@ def main() -> int:
         "--state", type=Path, default=Path("data/paper/csi300_baseline/pipeline_state.json")
     )
     parser.add_argument("--pool-root", type=Path, default=Path("outputs/momentum_pool"))
+    parser.add_argument("--pool-v2-root", type=Path, default=Path("outputs/momentum_pool_v2"))
     parser.add_argument("--intel-cache", type=Path, default=Path("outputs/research_cache"))
     parser.add_argument("--jev-records", type=Path, default=Path("outputs/jev"))
     parser.add_argument("--quotes", type=Path, default=None, help="Realtime quote CSV to watch.")

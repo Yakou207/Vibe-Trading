@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from fintech_quant.reports.picker import PickerData, picks_payload, resolve_symbol, stock_payload
+from fintech_quant.research import momentum_pool_v2
 from fintech_quant.research.momentum_pool import initial_pool_state, step_pool
 from fintech_quant.research.momentum_setup import momentum_table, screen
 from scripts.refresh_momentum_pool import _require_safe_output
@@ -75,6 +76,39 @@ def test_picks_payload_lists_candidates_and_pool_view() -> None:
     assert payload["pool"]["pool"][0]["name"] == "领涨股份"
     assert payload["pool"]["metrics"]["equity"] == pytest.approx(100000.0)
     assert payload["pool"]["stale"] is False
+
+
+def test_picks_payload_shows_v2_watchlist_ages_and_position_r_status() -> None:
+    data = _data()
+    pool_v2 = momentum_pool_v2.step_pool(
+        momentum_pool_v2.initial_pool_state(),
+        as_of=data.as_of,
+        series=data.series,
+        screen_results=data.screen_results,
+        previous_session=None,
+    )
+    close = data.series["600002.SH"].bars[-1].close
+    pool_v2["book"]["positions"]["600002.SH"] = {
+        "entry_date": "2025-01-01",
+        "entry_price": close / 1.02,
+        "stop": close / 1.02 * 0.98,
+        "shares": 10.0,
+        "cost": 200.0,
+        "peak_close": close,
+        "sessions_held": 4,
+    }
+
+    view = picks_payload(data, None, pool_v2)["pool_v2"]
+
+    assert view["watchlist"][0]["symbol"] == "600001.SH"
+    assert view["watchlist"][0]["age"] == 0
+    assert view["pending"][0]["symbol"] == "600001.SH"
+    position = view["positions"]["600002.SH"]
+    assert position["name"] == "下跌股份"
+    assert position["r_multiple"] == pytest.approx(1.0)
+    assert position["trail"] == "ema9"
+    assert position["time_stop_in"] == 11
+    assert view["metrics"]["brake"] == "normal"
 
 
 @pytest.mark.parametrize(

@@ -162,6 +162,7 @@ python scripts/serve_trading_desk.py          # desk at http://127.0.0.1:8765, p
 
 ```bash
 python scripts/refresh_momentum_pool.py       # shadow pool, once per closed session
+python scripts/refresh_momentum_pool_v2.py    # shadow pool v2, after the v1 refresh
 ```
 
 Optional model keys go in a git-ignored `.env`: `JEV_MODEL=Jev 1.14` with `OPENROUTER_API_KEY`

@@ -32,6 +32,8 @@ from fintech_quant.research.jev import (
     record_name,
 )
 from fintech_quant.research.momentum_pool import pool_metrics
+from fintech_quant.research.momentum_pool_v2 import pool_metrics as pool_v2_metrics
+from fintech_quant.research.momentum_pool_v2 import position_status
 from fintech_quant.research.momentum_setup import (
     Bar,
     SymbolSeries,
@@ -171,7 +173,11 @@ def stock_payload(data: PickerData, query: str) -> dict[str, object]:
     }
 
 
-def picks_payload(data: PickerData, pool_state: Mapping[str, object] | None) -> dict[str, object]:
+def picks_payload(
+    data: PickerData,
+    pool_state: Mapping[str, object] | None,
+    pool_v2_state: Mapping[str, object] | None = None,
+) -> dict[str, object]:
     rows = []
     for row in data.screen_results:
         if row["state"] not in {"trigger", "setup"}:
@@ -201,6 +207,7 @@ def picks_payload(data: PickerData, pool_state: Mapping[str, object] | None) -> 
         "state_counts": dict(counts),
         "candidates": rows,
         "pool": None if pool_state is None else pool_view(data, pool_state),
+        "pool_v2": None if pool_v2_state is None else pool_v2_view(data, pool_v2_state),
         "sources": data.sources,
     }
 
@@ -227,6 +234,41 @@ def pool_view(data: PickerData, pool_state: Mapping[str, object]) -> dict[str, o
         "positions": positions,
         "closed_trades": list(pool_state.get("closed_trades") or [])[-20:],  # type: ignore[arg-type]
         "metrics": pool_metrics(pool_state),
+        "stale": pool_state.get("as_of") != data.as_of,
+    }
+
+
+def pool_v2_view(data: PickerData, pool_state: Mapping[str, object]) -> dict[str, object]:
+    """v2 book with watchlist ages, each position's R multiple and which exit rules are armed."""
+    book = dict(pool_state["book"])  # type: ignore[arg-type]
+    positions = {}
+    for symbol, position in dict(book["positions"]).items():
+        item = data.series.get(symbol)
+        index = None
+        if item is not None:
+            dates = [i for d, i in item.index_by_date.items() if d <= data.as_of]
+            index = max(dates) if dates else None
+        status = (
+            {}
+            if item is None or index is None
+            else position_status(
+                position,
+                close=item.bars[index].close,
+                ema9=item.ema9[index],
+                ema21=item.ema21[index],
+            )
+        )
+        positions[symbol] = {**position, **status, "name": data.names.get(symbol, "")}
+    return {
+        "as_of": pool_state.get("as_of"),
+        "watchlist": [
+            {**row, "name": data.names.get(str(row["symbol"]), "")}
+            for row in pool_state.get("watchlist") or []  # type: ignore[union-attr]
+        ],
+        "pending": list(book["pending"]),
+        "positions": positions,
+        "closed_trades": list(book["closed_trades"])[-20:],
+        "metrics": pool_v2_metrics(pool_state),
         "stale": pool_state.get("as_of") != data.as_of,
     }
 

@@ -222,9 +222,12 @@ K 线与 9/21/50 EMA、锚定在半年高低点的 AVWAP、共振区和参考止
 ```bash
 python scripts/refresh_momentum_pool.py                              # 每日固定时段刷新
 python scripts/refresh_momentum_pool.py --replay-start 2024-01-02    # 按时点成分历史回放
+python scripts/refresh_momentum_pool_v2.py                           # v2：观察名单 + 风险仓位 + 回撤刹车，写 outputs/momentum_pool_v2/
+python scripts/refresh_momentum_pool_v2.py --replay-start 2024-01-02 # v1 与 v2 同一筛选回放对比
 ```
 
 方法改写、回放结果和局限见 [`docs/research/2026-10-17-martin-luk-momentum-setup.md`](research/2026-10-17-martin-luk-momentum-setup.md)。
+v2 的预先声明规则与单次回放见 [`docs/research/2026-10-19-shadow-pool-v2.md`](research/2026-10-19-shadow-pool-v2.md)。
 
 ### 全平台信息、NLP、财报分析与 Jev 判断
 

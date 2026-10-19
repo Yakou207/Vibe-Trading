@@ -147,6 +147,10 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
         <div id="pool"></div>
       </section>
       <section class="panel section">
+        <div class="section-head"><h2>影子池 v2 · 观察名单 + 风险仓位</h2><span class="right" id="pool-v2-meta"></span></div>
+        <div id="pool-v2"></div>
+      </section>
+      <section class="panel section">
         <div class="section-head"><h2>候选 · 触发与观察</h2><span class="right" id="cand-meta"></span></div>
         <div id="candidates"></div>
       </section>
@@ -190,10 +194,33 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
         ${held ? `<table style="margin-top:8px"><thead><tr><th>持仓</th><th>入场</th><th class="num">浮动</th></tr></thead><tbody>${held}</tbody></table>` : ""}
         <div class="note">影子账户：独立于 V2 计数账户，不改变证据窗口；止损 = 信号日低点，收盘跌破 9 EMA 离场；按 hfq 价格计收益（含分红），T+1。</div>`;
     }
+    renderPoolV2(p.pool_v2);
     $("cand-meta").textContent = `${p.candidates.length} 只`;
     $("candidates").innerHTML = p.candidates.length ? `<table><thead><tr><th>标的</th><th>状态</th><th class="num">动量</th><th class="num">共振</th><th class="num">止损</th><th class="num">基线</th></tr></thead><tbody>${
       p.candidates.map((r) => `<tr class="click" data-symbol="${esc(r.symbol)}"><td>${esc(r.symbol)} <span class="muted">${esc(r.name)}</span></td><td>${badge(r.state)}</td><td class="num">${pct(r.momentum_pct, 0)}</td><td class="num">${r.confluence}</td><td class="num">${pct(r.stop_pct)}</td><td class="num">${r.baseline_total == null ? "—" : num(r.baseline_total, 1)}</td></tr>`).join("")}</tbody></table>` : '<div class="empty">今天没有符合条件的候选。</div>';
     document.querySelectorAll("tr.click").forEach((tr) => tr.addEventListener("click", () => load(tr.dataset.symbol)));
+  }
+
+  const BRAKE = { normal: "正常", reduced: "风险减半", liquidated: "暂停新开仓" };
+  const EXIT = { gap_below_stop: "跳空破止损", stop: "止损", close_below_ema9: "破 9 EMA", close_below_ema21: "破 21 EMA", profit_giveback: "利润回吐", time_stop: "时间止损", invalidated: "转为回避" };
+
+  function renderPoolV2(pool) {
+    if (!pool) { $("pool-v2").innerHTML = '<div class="empty">v2 尚未初始化：运行 scripts/refresh_momentum_pool_v2.py</div>'; return; }
+    const m = pool.metrics;
+    $("pool-v2-meta").textContent = `刷新于 ${pool.as_of}${pool.stale ? " · 未更新" : ""}`;
+    const watch = pool.watchlist.map((r) => `<tr class="click" data-symbol="${esc(r.symbol)}"><td>${esc(r.symbol)}<br><span class="muted">${esc(r.name || "")}</span></td><td>${badge(r.state)}</td><td class="num">${r.age}/10</td><td class="num">${pct(r.stop_pct)}</td></tr>`).join("");
+    const held = Object.entries(pool.positions).map(([s, x]) => `<tr class="click" data-symbol="${esc(s)}"><td>${esc(s)}<br><span class="muted">${esc(x.name || "")} · ${esc(x.entry_date)}</span></td><td class="num ${x.r_multiple >= 0 ? "up" : "down"}">${num(x.r_multiple, 2)}R<br><span class="muted">峰值 ${num(x.peak_r, 1)}R</span></td><td>${x.trail === "ema21" ? "21 EMA" : "9 EMA"} 跟踪${x.giveback_armed ? `<br><span class="muted">回吐线 ${num(x.giveback_exit_r, 2)}R</span>` : ""}</td><td class="num">${x.time_stop_active ? "时间止损生效" : `${x.time_stop_in} 日后`}</td></tr>`).join("");
+    const closed = pool.closed_trades.slice(-5).reverse().map((t) => `<tr><td>${esc(t.symbol)}</td><td>${esc(t.exit_date)}</td><td>${esc(EXIT[t.reason] || t.reason)}</td><td class="num ${t.r_multiple >= 0 ? "up" : "down"}">${num(t.r_multiple, 2)}R</td></tr>`).join("");
+    const pending = pool.pending.map((r) => esc(r.symbol)).join("、") || "无";
+    $("pool-v2").innerHTML = `<div class="kpis">
+        <div class="kpi"><div class="v">¥${Math.round(m.equity).toLocaleString()}</div><div class="l">影子权益 · ${m.positions}/8 仓</div></div>
+        <div class="kpi"><div class="v">${pct(m.total_return)}</div><div class="l">累计 · 回撤 ${pct(m.drawdown)}</div></div>
+        <div class="kpi"><div class="v">${esc(BRAKE[m.brake] || m.brake)}</div><div class="l">组合刹车</div></div></div>
+      ${watch ? `<table><thead><tr><th>观察名单</th><th>状态</th><th class="num">天数</th><th class="num">止损</th></tr></thead><tbody>${watch}</tbody></table>` : '<div class="empty">观察名单为空</div>'}
+      <div class="note">下个交易日开盘拟买入：${pending}</div>
+      ${held ? `<table style="margin-top:8px"><thead><tr><th>持仓</th><th class="num">R 倍数</th><th>离场规则</th><th class="num">时间止损</th></tr></thead><tbody>${held}</tbody></table>` : ""}
+      ${closed ? `<table style="margin-top:8px"><thead><tr><th>最近平仓</th><th>日期</th><th>原因</th><th class="num">R</th></tr></thead><tbody>${closed}</tbody></table>` : ""}
+      <div class="note">v2 预先声明规则：每日前 5 进入观察名单（10 日未触发、转为回避或买入即移出，上限 20）；触发后次日开盘买入，单笔风险 0.75% 权益、单仓 ≤ 15%、止损距离 > 4% 不买，最多 8 仓；离场依次为止损、9 EMA（达 2R 后改 21 EMA）、回吐一半峰值利润、15 日未到 1R、转为回避；回撤 8% 风险减半、10% 暂停新开仓、按无刹车影子账户回到 8%/6% 恢复。不计入 V2 证据。</div>`;
   }
 
   function renderStock(s) {
