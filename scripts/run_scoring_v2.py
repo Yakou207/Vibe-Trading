@@ -348,7 +348,8 @@ def render_report(study: dict, json_path: Path) -> str:
         "- The nine factors were specified after the factor-lab report, which displayed "
         "hold-out statistics for all 27 factors, so the factor list is not fully blind to the "
         "hold-out even though signs and weights are fit on training dates only.",
-        "- The v2 score is shown in the picker as a research score. It does not drive the "
+        "- The v2 score is shown in the picker and next to the counted score in the pre-market "
+        "brief (targets and near misses) as a research score. It does not drive the "
         "counted strategy, which stays frozen until its evidence window completes.",
         "",
         f"JSON: `{json_path}` (gitignored). Rerun: "

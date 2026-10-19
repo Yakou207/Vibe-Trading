@@ -51,6 +51,7 @@ close, so it never depends on later prices or fundamentals.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -178,6 +179,27 @@ def score_scoring_v2(factors: dict[str, pd.DataFrame], fit: ScoringV2Fit) -> Sco
         categories=categories,
         coverage=coverage(factors),
     )
+
+
+def snapshot_view(
+    snapshot: Mapping[str, object] | None, symbol: str, as_of: str
+) -> dict[str, object] | None:
+    """One stock's research score from a ``latest_scores.json`` snapshot, for display only."""
+    if not snapshot:
+        return None
+    row = dict(snapshot.get("scores") or {}).get(symbol)  # type: ignore[arg-type]
+    return {
+        "label": snapshot.get("label"),
+        "as_of": snapshot.get("as_of"),
+        "stale": snapshot.get("as_of") != as_of,
+        "counted": False,
+        "score": None if row is None else row["score"],
+        "coverage": None if row is None else row["coverage"],
+        "categories": None if row is None else row["categories"],
+        "inverted": sorted(
+            name for name, sign in dict(snapshot.get("signs") or {}).items() if sign < 0  # type: ignore[arg-type]
+        ),
+    }
 
 
 # ------------------------------------------------------------------ evaluation

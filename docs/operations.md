@@ -279,6 +279,14 @@ python scripts/build_premarket_brief.py --capital 100000
 输出 `outputs/premarket/<信号日>/brief.json` 和 `brief.html`。文件只写一次；同内容重跑
 是空操作，内容不同则报错，不会覆盖。
 
+目标股和差一点名单旁边另列“v2 research”研究评分（横截面分位与类别分解），只作对照，
+不改变目标、权重或股数，也不计入证据。它读取 `outputs/research/scoring_v2/latest_scores.json`，
+快照日期必须等于信号日，否则简报只注明快照过期。生成简报前先刷新（约 30 秒）：
+
+```bash
+python scripts/run_scoring_v2.py --offline
+```
+
 **09:25 集合竞价检查（可选）。** 用简报打印的 `quote_symbols=` 列表抓竞价价格，再对照简报：
 
 ```bash

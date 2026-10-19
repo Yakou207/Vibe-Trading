@@ -196,7 +196,7 @@ docs/            operations guide, research notes, design specs
 - [x] Hash-chained paper-evidence V2 with deterministic audit
 - [x] Research desk, stock picker, shadow pool, event NLP and Jev judgment
 - [x] Cross-sectional factor lab: 27 neutralized factors, IC/quintile metrics, locked hold-out
-- [x] Scoring v2 research score: rank composite with ICIR category weights, shown in the picker
+- [x] Scoring v2 research score: rank composite with ICIR category weights, shown in the picker and pre-market brief
 - [ ] Costed backtest of scoring v2 before it can be proposed for a future evidence epoch
 - [ ] Accumulate 40 counted paper sessions over 56 calendar days
 - [ ] LLM-assisted extraction from full announcement and report text

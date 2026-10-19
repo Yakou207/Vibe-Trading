@@ -12,9 +12,11 @@ from datetime import date
 from pathlib import Path
 
 from fintech_quant.reports.premarket_brief import (
+    build_brief,
     evaluate_auction,
     limit_prices,
     price_limit_rate,
+    render_brief_html,
     suggested_lot_quantity,
 )
 
@@ -273,6 +275,59 @@ class EvidenceUntouchedTest(unittest.TestCase):
             text = path.read_text(encoding="utf-8")
             self.assertNotIn("human_ledger", text, msg=str(path))
             self.assertNotIn("premarket_brief", text, msg=str(path))
+
+
+class ScoringV2DisplayTest(unittest.TestCase):
+    def test_v2_is_shown_next_to_the_counted_score_without_changing_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            build_fixture(root / "cycles", root / "data" / "paper")
+            cycle = root / "cycles" / "2026-07-21"
+            snapshot = root / "latest_scores.json"
+            category = {"value": {"z": 1.0, "percentile": 80.0, "weight": 0.2}}
+            _write_json(
+                snapshot,
+                {
+                    "as_of": "2026-07-21",
+                    "label": "研究评分 v2（横截面排名合成），不驱动计数策略",
+                    "weights": {"value": 1.0},
+                    "signs": {"ep": 1, "roe": -1},
+                    "scores": {
+                        # the counted near miss ranks top on v2; it must stay a near miss
+                        "600003.SH": {"score": 99.0, "coverage": 1.0, "categories": category},
+                        "600001.SH": {"score": 12.5, "coverage": 0.7778, "categories": category},
+                    },
+                },
+            )
+            stale = root / "stale.json"
+            _write_json(stale, {**json.loads(snapshot.read_text("utf-8")), "as_of": "2026-07-20"})
+
+            plain = build_brief(cycle, 100_000.0)
+            shown = build_brief(cycle, 100_000.0, scoring_v2_path=snapshot)
+            old = build_brief(cycle, 100_000.0, scoring_v2_path=stale)
+            html_text = render_brief_html(shown)
+
+        def picks(brief: dict) -> list:
+            return [
+                (i["symbol"], i["category"], i["score"], i.get("suggested"))
+                for i in (*brief["targets"], *brief["near_miss"], *brief["paper_exits"])
+            ]
+
+        self.assertEqual(picks(shown), picks(plain))
+        self.assertEqual(picks(old), picks(plain))
+        self.assertEqual(plain["scoring_v2"]["status"], "missing")
+        self.assertEqual(shown["scoring_v2"]["status"], "ok")
+        self.assertFalse(shown["scoring_v2"]["counted"])
+        targets = {i["symbol"]: i for i in shown["targets"]}
+        self.assertEqual(targets["600001.SH"]["scoring_v2"]["score"], 12.5)
+        self.assertIsNone(targets["600002.SH"]["scoring_v2"]["score"])
+        self.assertEqual(shown["near_miss"][0]["scoring_v2"]["score"], 99.0)
+        self.assertEqual(old["scoring_v2"]["status"], "stale_snapshot")
+        self.assertIsNone(old["targets"][0]["scoring_v2"])
+        self.assertIn("v2 research", html_text)
+        self.assertIn("<b>99.0</b> pct", html_text)
+        self.assertIn("not scored", html_text)
+        self.assertIn("inverted (lower ranks higher): roe.", html_text)
 
 
 def build_fixture(cycle_root: Path, paper_root: Path) -> None:

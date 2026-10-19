@@ -35,6 +35,11 @@ def main() -> int:
     parser.add_argument("--near-miss-floor", type=float, default=65.0)
     parser.add_argument("--output-root", default="outputs/premarket")
     parser.add_argument(
+        "--scoring-v2",
+        default="outputs/research/scoring_v2/latest_scores.json",
+        help="Research v2 snapshot shown next to the counted score (display only).",
+    )
+    parser.add_argument(
         "--protect",
         action="append",
         default=None,
@@ -60,7 +65,9 @@ def main() -> int:
     ensure_outside(output_dir, protected)
 
     if not args.auction:
-        brief = build_brief(cycle_dir, args.capital, args.near_miss_floor)
+        brief = build_brief(
+            cycle_dir, args.capital, args.near_miss_floor, Path(args.scoring_v2)
+        )
         write_once(output_dir / "brief.json", dumps(brief))
         write_once(output_dir / "brief.html", render_brief_html(brief))
         print(f"signal_date={signal_date}")

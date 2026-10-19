@@ -3,7 +3,9 @@
 The brief only reads a completed V2 post-close cycle. It never writes into the
 cycle directory, the paper account, or the pipeline state, and it introduces no
 strategy logic of its own: targets, scores, risk warnings and thresholds all come
-from the cycle's recorded artifacts and policy.
+from the cycle's recorded artifacts and policy. An optional scoring-v2 research
+snapshot is shown next to the counted score for comparison; it never selects or
+sizes a target.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from pathlib import Path
 
 from fintech_quant.backtesting.constraints import AShareTradingConstraints
 from fintech_quant.backtesting.costs import AShareCostModel
+from fintech_quant.research.scoring_v2 import snapshot_view
 
 BRIEF_SCHEMA_VERSION = 1
 CYCLE_FILES = ("cycle_manifest.json", "targets.csv", "paper_report.json", "decision_report.json")
@@ -103,6 +106,7 @@ def build_brief(
     cycle_dir: Path,
     capital: float,
     near_miss_floor: float = 65.0,
+    scoring_v2_path: Path | None = None,
 ) -> dict[str, object]:
     manifest = _load_json(cycle_dir / "cycle_manifest.json")
     if manifest.get("schema_version") != 2 or manifest.get("kind") != "paper_trading_cycle":
@@ -152,6 +156,8 @@ def build_brief(
     for warning in decision.get("risk_warnings", []):
         warnings_by_symbol.setdefault(str(warning["symbol"]), []).append(warning)
 
+    v2_snapshot, v2_status = _scoring_v2_snapshot(scoring_v2_path, as_of)
+
     cost_model = AShareCostModel(
         commission_rate=float(policy["commission_rate"]),
         minimum_commission=float(policy["minimum_commission"]),
@@ -175,6 +181,11 @@ def build_brief(
             "name": name,
             "category": category,
             "score": _score_breakdown(score),
+            "scoring_v2": (
+                snapshot_view(v2_snapshot, symbol, as_of.isoformat())
+                if v2_snapshot is not None and category in {"target", "near_miss"}
+                else None
+            ),
             "risk_flags": flags,
             "paper_position_shares": int(positions.get(symbol, {}).get("shares", 0)),
             "previous_close": close,
@@ -224,11 +235,31 @@ def build_brief(
             "current_universe": _reference(universe_path),
             "execution_prices": manifest["inputs"]["execution_prices"],
         },
+        "scoring_v2": v2_status,
         "systemic_risk": decision.get("risk_summary", {}),
         "targets": [entry(symbol, "target") for symbol in sorted(targets)],
         "near_miss": [entry(symbol, "near_miss") for symbol in near_miss],
         "paper_exits": [entry(symbol, "paper_exit") for symbol in exits],
     }
+
+
+def _scoring_v2_snapshot(
+    path: Path | None, as_of: date
+) -> tuple[Mapping[str, object] | None, dict[str, object]]:
+    """The research snapshot when it is for the signal date; otherwise only its status."""
+    if path is None or not path.is_file():
+        return None, {"status": "missing", "counted": False}
+    snapshot = _load_json(path)
+    status: dict[str, object] = {
+        "status": "ok" if snapshot.get("as_of") == as_of.isoformat() else "stale_snapshot",
+        "as_of": snapshot.get("as_of"),
+        "label": snapshot.get("label"),
+        "weights": snapshot.get("weights"),
+        "signs": snapshot.get("signs"),
+        "counted": False,
+        "source": _reference(path),
+    }
+    return (snapshot if status["status"] == "ok" else None), status
 
 
 def evaluate_auction(
@@ -321,7 +352,8 @@ def render_brief_html(
         sections.append(
             f"<h2>{_e(title)} ({len(items)})</h2>"
             + (
-                "<div class='scroll'><table><tr><th>Symbol</th><th>Score</th><th>Prev close</th>"
+                "<div class='scroll'><table><tr><th>Symbol</th><th>Score</th>"
+                "<th>v2 research</th><th>Prev close</th>"
                 "<th>Limit down / up</th><th>Suggested shares</th><th>Auction</th>"
                 "<th>Risk flags</th><th>Overnight announcements</th></tr>"
                 f"{rows}</table></div>"
@@ -341,6 +373,7 @@ def render_brief_html(
         f"min confidence {brief['policy']['minimum_score_confidence']}. "
         f"Systemic warnings: {_e(json.dumps(systemic.get('by_rule', {}), ensure_ascii=False))}. "
         "This brief and the human ledger never count toward V2 paper evidence.</p>"
+        + f"<p class='note'>{_e(_v2_note(brief.get('scoring_v2') or {}))}</p>"
         + (
             f"<p class='note'>Auction check applied (near limit {auction['near_limit_pct']:.0%}, "
             f"large gap {auction['large_gap_pct']:.0%}).</p>"
@@ -375,10 +408,60 @@ def _html_row(item: Mapping[str, object], check: Mapping[str, object] | None) ->
         f"<tr><td><b>{_e(item['symbol'])}</b><br>{_e(item['name'])}</td>"
         f"<td><b>{score.get('total', '')}</b> conf {score.get('confidence', '')}<br>"
         f"<small>{parts}</small></td>"
+        f"<td>{_v2_cell(item.get('scoring_v2'), item['category'])}</td>"
         f"<td>{item.get('previous_close')}</td>"
         f"<td>{item.get('limit_down')} / {item.get('limit_up')}</td>"
         f"<td>{_e(str(shares))}</td><td class='flag'>{_e(auction_cell)}</td>"
         f"<td><small>{flags}</small></td><td>☐ not checked</td></tr>"
+    )
+
+
+V2_CATEGORY_LABELS = {
+    "value": "value",
+    "quality_growth": "quality/growth",
+    "low_risk": "low risk",
+    "liquidity": "low turnover",
+    "reversal": "reversal",
+    "momentum": "momentum 12-1",
+}
+
+
+def _v2_note(status: Mapping[str, object]) -> str:
+    state = status.get("status")
+    if state == "ok":
+        return (
+            "v2 research = cross-sectional percentile (0-100) of the scoring-v2 rank composite "
+            f"for {status['as_of']}, with category percentiles and training ICIR weights. "
+            "Factor signs follow the training ICIR; inverted (lower ranks higher): "
+            + (", ".join(sorted(n for n, v in dict(status.get("signs") or {}).items() if v < 0))
+               or "none")
+            + ". Display only: it does not select or size any target and does not count toward "
+            "paper evidence."
+        )
+    if state == "stale_snapshot":
+        return (
+            f"v2 research score not shown: its snapshot is for {status.get('as_of')}, not the "
+            "signal date. Rerun scripts/run_scoring_v2.py after the post-close cycle."
+        )
+    return "v2 research score not shown: no snapshot (scripts/run_scoring_v2.py)."
+
+
+def _v2_cell(view: Mapping[str, object] | None, category: str) -> str:
+    if category == "paper_exit":
+        return ""
+    if not view:
+        return "—"
+    if view.get("score") is None:
+        return "not scored"
+    categories = view.get("categories") or {}
+    parts = "<br>".join(
+        f"{_e(label)} {categories[key]['percentile']:.0f} "
+        f"(w {categories[key]['weight'] * 100:.0f}%)"
+        for key, label in V2_CATEGORY_LABELS.items()
+        if key in categories
+    )
+    return (
+        f"<b>{view['score']:.1f}</b> pct · cov {view['coverage']:.0%}<br><small>{parts}</small>"
     )
 
 
