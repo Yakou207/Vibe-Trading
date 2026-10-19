@@ -22,6 +22,7 @@ from fintech_quant.data.manifest_chain import load_verified_manifest
 from fintech_quant.execution.paper_evidence import approved_paper_policy, verify_file_reference
 from fintech_quant.information.event_nlp import analyze_items, financial_trend, research_consensus
 from fintech_quant.information.stock_intel import collect_stock_intel
+from fintech_quant.reports.live_stock import LiveContext, analyze_live, resolve_any
 from fintech_quant.research.jev import (
     JevDecisionClient,
     LlmClient,
@@ -128,8 +129,27 @@ def load_series(features: Path) -> dict[str, SymbolSeries]:
     return {s: SymbolSeries(s, sorted(b, key=lambda bar: bar.trade_date)) for s, b in rows.items()}
 
 
-def universe_payload(data: PickerData) -> list[dict[str, str]]:
-    return [{"symbol": s, "name": data.names.get(s, "")} for s in sorted(data.members)]
+def universe_payload(data: PickerData, live: LiveContext | None = None) -> list[dict[str, object]]:
+    if live is not None:
+        try:
+            shares = live.all_shares()
+        except Exception:  # the full list is optional; fall back to CSI 300 members
+            shares = {}
+        if shares:
+            return [
+                {"symbol": s, "name": name, "csi300": s in data.members}
+                for s, name in sorted(shares.items())
+            ]
+    return [
+        {"symbol": s, "name": data.names.get(s, ""), "csi300": True} for s in sorted(data.members)
+    ]
+
+
+def _resolve(data: PickerData, query: str, live: LiveContext | None) -> str | None:
+    symbol = resolve_symbol(data, query)
+    if symbol is None and live is not None:
+        symbol = resolve_any(live, query)
+    return symbol
 
 
 def resolve_symbol(data: PickerData, query: str) -> str | None:
@@ -145,10 +165,17 @@ def resolve_symbol(data: PickerData, query: str) -> str | None:
     return matches[0] if matches else None
 
 
-def stock_payload(data: PickerData, query: str) -> dict[str, object]:
+def stock_payload(
+    data: PickerData, query: str, live: LiveContext | None = None
+) -> dict[str, object]:
     symbol = resolve_symbol(data, query)
+    if symbol is None and live is not None:
+        symbol = resolve_any(live, query)
+        if symbol is not None:
+            return live_stock_payload(data, live, symbol)
     if symbol is None:
-        return {"error": f"未在当前 CSI 300 成分中找到：{query}"}
+        scope = "A 股" if live is not None else "当前 CSI 300 成分"
+        return {"error": f"未在{scope}中找到：{query}"}
     item = data.series.get(symbol)
     base = {"symbol": symbol, "name": data.names.get(symbol, ""), "as_of": data.as_of}
     if item is None:
@@ -170,6 +197,40 @@ def stock_payload(data: PickerData, query: str) -> dict[str, object]:
         "verdict": _verdict(
             analysis, data.scores.get(symbol), data.market_warnings.get(symbol, [])
         ),
+        "mode": "csi300",
+    }
+
+
+def live_stock_payload(data: PickerData, live: LiveContext, symbol: str) -> dict[str, object]:
+    """Any A-share outside the CSI 300 panel: fetched now, analysed with the same rules."""
+    name = live.all_shares().get(symbol, "")
+    base = {"symbol": symbol, "name": name, "mode": "live"}
+    try:
+        result = analyze_live(live, symbol, data.momentum)
+    except Exception as exc:
+        return {**base, "error": f"实时抓取失败：{type(exc).__name__}: {str(exc)[:160]}"}
+    analysis = result["analysis"]
+    score = result["score"]
+    verdict = _verdict(analysis, score, [])
+    verdict["notes"] = [
+        "非沪深 300 成分：实时抓取的前复权数据，动量分位参照沪深 300 截面，未做时点验证",
+        *verdict["notes"],
+    ]
+    return {
+        **base,
+        "as_of": result["as_of"],
+        "price_scale": "qfq",
+        "price_source": result["source"],
+        "rank": None,
+        "rank_of": None,
+        "reference": f"沪深300 截面（截至 {data.as_of}）",
+        "analysis": analysis,
+        "chart": _chart(result["item"], str(result["as_of"]), analysis, 1.0),
+        "baseline": _baseline(score),
+        "baseline_label": "实时参考分（不进入计数策略）",
+        "fundamentals": result["fundamentals"],
+        "market_warnings": [],
+        "verdict": verdict,
     }
 
 
@@ -400,17 +461,18 @@ def research_payload(
     jev_record_dir: Path | None,
     today: date | None = None,
     fetchers: Mapping[str, object] | None = None,
+    live: LiveContext | None = None,
 ) -> dict[str, object]:
     """Multi-source information, event NLP, research consensus and financial trend for one stock."""
-    symbol = resolve_symbol(data, query)
+    symbol = _resolve(data, query, live)
     if symbol is None:
-        return {"error": f"未在当前 CSI 300 成分中找到：{query}"}
+        return {"error": f"未找到：{query}"}
     day = today or date.today()
     intel = collect_stock_intel(symbol, today=day, cache_dir=cache_dir, fetchers=fetchers)  # type: ignore[arg-type]
     nlp = analyze_items(intel["items"], today=day)  # type: ignore[arg-type]
     research = {
         "symbol": symbol,
-        "name": data.names.get(symbol, ""),
+        "name": data.names.get(symbol) or (live.all_shares().get(symbol, "") if live else ""),
         "fetched_at": intel["fetched_at"],
         "sources": intel["sources"],
         "nlp": {key: value for key, value in nlp.items() if key != "items"},
@@ -421,7 +483,7 @@ def research_payload(
         "comment_scores": intel["comment_scores"],
         "jev": config_status(),
     }
-    packet = jev_packet(stock_payload(data, symbol), research)
+    packet = jev_packet(stock_payload(data, symbol, live), research)
     research["jev_packet_sha256"] = hashlib.sha256(
         json.dumps(packet, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
             "utf-8"
@@ -460,6 +522,7 @@ def jev_payload(
     client: LlmClient | JevDecisionClient | None = None,
     today: date | None = None,
     fetchers: Mapping[str, object] | None = None,
+    live: LiveContext | None = None,
 ) -> dict[str, object]:
     research = research_payload(
         data,
@@ -468,6 +531,7 @@ def jev_payload(
         jev_record_dir=jev_record_dir,
         today=today,
         fetchers=fetchers,
+        live=live,
     )
     if "error" in research:
         return research
@@ -478,7 +542,7 @@ def jev_payload(
         return {
             "error": "Jev 未配置：在 .env 设置 JEV_MODEL=Jev 1.14 + OPENROUTER_API_KEY（或 DEEPSEEK_API_KEY）后重启看板"
         }
-    packet = jev_packet(stock_payload(data, str(research["symbol"])), research)
+    packet = jev_packet(stock_payload(data, str(research["symbol"]), live), research)
     record = ask_jev(packet, client=active, record_dir=jev_record_dir)
     if jev_record_dir is not None:
         record["jev_spend"] = jev_spend(jev_record_dir, today=today or date.today())

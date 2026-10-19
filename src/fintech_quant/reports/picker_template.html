@@ -130,7 +130,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
   </header>
 
   <form class="panel search" id="search-form" autocomplete="off">
-    <input id="query" list="universe" placeholder="输入股票代码或名称，例如 601398 或 工商银行" aria-label="股票代码或名称">
+    <input id="query" list="universe" placeholder="搜索任意 A 股代码或名称，例如 601398、工商银行、300624" aria-label="股票代码或名称">
     <datalist id="universe"></datalist>
     <button type="submit">分析</button>
     <span class="muted mono" style="font-size:11px">Martin Luk 四步：强势股 → 整理平台 → 平台内强度 → 支撑共振急跌收复</span>
@@ -234,7 +234,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     const zone = a.zone ? `共振区 ${num(a.zone.bottom)}–${num(a.zone.top)}` : "无共振区";
     $("stock").innerHTML = `
       <div class="stock-head"><span class="name">${esc(s.name)}</span><span class="mono muted">${esc(s.symbol)}</span>
-        <span class="px">${num(a.close)}</span><span class="muted mono">截至 ${esc(s.as_of)} · 筛选排名 ${s.rank ?? "—"}/${s.rank_of}</span></div>
+        <span class="px">${num(a.close)}</span><span class="muted mono">截至 ${esc(s.as_of)} · ${s.mode === "live" ? `<span class="badge">全市场 · 实时抓取（前复权，${esc(s.price_source)}）</span> 动量参照${esc(s.reference)}` : `<span class="badge">沪深300 · 时点数据</span> 筛选排名 ${s.rank ?? "—"}/${s.rank_of}`}</span></div>
       <div class="verdict ${esc(v.level)}"><div class="head">${esc(v.headline)}</div>
         <ul>${[...(a.state === "trigger" ? [`参考止损 ${num(a.stop)}（${pct(a.stop_pct)}），至前高约 ${num(a.reward_r, 1)}R`] : []), `${zone}`, ...v.notes].map((n) => `<li>${esc(n)}</li>`).join("")}</ul>
         <div class="note">${esc(v.disclaimer)}</div></div>
@@ -242,7 +242,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div class="legend"><span style="--c:var(--s4)">9 EMA</span><span style="--c:var(--s1)">21 EMA</span><span style="--c:var(--s7)">50 EMA</span><span style="--c:var(--s3)">AVWAP·低点</span><span style="--c:var(--s2)">AVWAP·高点</span><span style="--c:var(--accent)">止损 / 共振区</span></div>
       <div class="section-head" style="margin-top:14px"><h2>Luk 四步检查</h2><span class="right">动量 1M ${pct(m.r21)} · 3M ${pct(m.r63)} · 6M ${pct(m.r126)}</span></div>
       <div class="checks">${checks}</div>
-      <div class="section-head" style="margin-top:14px"><h2>多因子基线评分</h2><span class="right">${s.baseline ? `${num(s.baseline.total, 1)} 分 · 置信 ${num(s.baseline.confidence)}` : ""}</span></div>
+      <div class="section-head" style="margin-top:14px"><h2>${s.mode === "live" ? "多因子实时参考分" : "多因子基线评分"}</h2><span class="right">${s.baseline ? `${num(s.baseline.total, 1)} 分 · 置信 ${num(s.baseline.confidence)}` : ""}</span></div>
       <div class="bars">${comps}</div>`;
     drawChart(s);
   }
@@ -390,7 +390,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
   (async () => {
     try {
       const [universe, picks] = await Promise.all([getJSON("/api/universe"), getJSON("/api/picks")]);
-      $("universe").innerHTML = universe.map((u) => `<option value="${esc(u.symbol)} ${esc(u.name)}"></option>`).join("");
+      $("universe").innerHTML = universe.map((u) => `<option value="${esc(u.symbol)} ${esc(u.name)}${u.csi300 ? " · 沪深300" : ""}"></option>`).join("");
       renderPicks(picks);
       const initial = decodeURIComponent(location.hash.slice(1)) || (picks.pool && picks.pool.pool[0] && picks.pool.pool[0].symbol) || (picks.candidates[0] && picks.candidates[0].symbol);
       if (initial) load(initial);

@@ -24,6 +24,7 @@ from fintech_quant.reports.desk import (  # noqa: E402
     render_desk_html,
     watched_symbols,
 )
+from fintech_quant.reports.live_stock import LiveContext  # noqa: E402
 from fintech_quant.reports.picker import (  # noqa: E402
     PickerData,
     jev_payload,
@@ -53,6 +54,8 @@ class DeskState:
         self.quotes_fetched_at = 0.0
         self.fingerprint: tuple[object, ...] | None = None
         self.snapshot: dict[str, object] = {}
+        self.live = LiveContext(cache_dir=args.intel_cache / "live")
+        threading.Thread(target=self._warm_universe, daemon=True).start()
         self.picker_lock = threading.Lock()
         self.picker_data: PickerData | None = None
         self.picker_mtime = 0
@@ -99,6 +102,12 @@ class DeskState:
         except Exception as exc:  # provider outages must not kill the read-only view
             self.quotes_status = f"quote fetch failed: {exc}"
         return True
+
+    def _warm_universe(self) -> None:
+        try:
+            self.live.all_shares()
+        except Exception as exc:  # search falls back to CSI 300 members only
+            print(f"all-A-share list unavailable: {exc}", file=sys.stderr, flush=True)
 
     def picker(self) -> PickerData:
         """Stock-picker data, reloaded whenever the pipeline state file changes."""
@@ -151,11 +160,11 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                 )
                 self._send(body.encode("utf-8"), "text/html; charset=utf-8")
             elif path == "/api/universe":
-                self._json(universe_payload(state.picker()))
+                self._json(universe_payload(state.picker(), state.live))
             elif path == "/api/picks":
                 self._json(picks_payload(state.picker(), state.pool_state(), state.pool_v2_state()))
             elif path == "/api/stock":
-                self._json(stock_payload(state.picker(), self._query()))
+                self._json(stock_payload(state.picker(), self._query(), state.live))
             elif path == "/api/research":
                 self._json(
                     research_payload(
@@ -163,6 +172,7 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                         self._query(),
                         cache_dir=state.args.intel_cache,
                         jev_record_dir=state.args.jev_records,
+                        live=state.live,
                     )
                 )
             else:
@@ -178,6 +188,7 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                     self._query(),
                     cache_dir=state.args.intel_cache,
                     jev_record_dir=state.args.jev_records,
+                    live=state.live,
                 )
             except Exception as exc:  # LLM/network failures are reported, not fatal
                 payload = {"error": f"Jev 调用失败：{type(exc).__name__}: {str(exc)[:200]}"}
