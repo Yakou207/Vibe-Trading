@@ -90,12 +90,27 @@ def _load_hist_rows(
     api_adjust = "" if adjust == "none" else adjust
     if backend == "sina":
         exchange = symbol.split(".")[1].lower()
-        frame = ak.stock_zh_a_daily(
-            symbol=f"{exchange}{code}",
-            start_date=start.strftime("%Y%m%d"),
-            end_date=end.strftime("%Y%m%d"),
-            adjust=api_adjust,
-        )
+        try:
+            frame = ak.stock_zh_a_daily(
+                symbol=f"{exchange}{code}",
+                start_date=start.strftime("%Y%m%d"),
+                end_date=end.strftime("%Y%m%d"),
+                adjust=api_adjust,
+            )
+        except Exception:
+            # Sina raises instead of returning nothing when a range has no trades (e.g. a long
+            # suspension). Treat the range as empty only if Tencent independently confirms it has
+            # no trades; otherwise keep the failure. Tencent prices are never substituted.
+            confirmation = ak.stock_zh_a_hist_tx(
+                symbol=f"{exchange}{code}",
+                start_date=start.strftime("%Y%m%d"),
+                end_date=end.strftime("%Y%m%d"),
+                adjust=api_adjust,
+                timeout=30,
+            )
+            if len(confirmation) == 0:
+                return []
+            raise
     elif backend == "tencent":
         exchange = symbol.split(".")[1].lower()
         frame = ak.stock_zh_a_hist_tx(

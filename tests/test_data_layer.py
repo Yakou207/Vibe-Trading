@@ -426,6 +426,51 @@ class DataLayerTest(unittest.TestCase):
         self.assertEqual(rows[0]["source"], "akshare-sina-hfq")
 
 
+    def test_sina_failure_counts_as_empty_only_when_tencent_confirms_no_trades(self) -> None:
+        from fintech_quant.data.akshare_provider import AkShareProvider
+
+        akshare = Mock()
+        akshare.stock_zh_a_daily.side_effect = ValueError("No value to decode")
+        empty = Mock()
+        empty.__len__ = Mock(return_value=0)
+        akshare.stock_zh_a_hist_tx.return_value = empty
+
+        with patch(
+            "fintech_quant.data.akshare_provider.importlib.import_module",
+            return_value=akshare,
+        ):
+            rows = AkShareProvider(backend="sina", adjust="hfq").history(
+                "601059.SH", date(2026, 10, 17), date(2026, 10, 19)
+            )
+
+        self.assertEqual(rows, [])
+        akshare.stock_zh_a_hist_tx.assert_called_once_with(
+            symbol="sh601059",
+            start_date="20261017",
+            end_date="20261019",
+            adjust="hfq",
+            timeout=30,
+        )
+
+    def test_sina_failure_still_fails_when_tencent_has_trades_or_errors(self) -> None:
+        from fintech_quant.data.akshare_provider import AkShareProvider
+        from fintech_quant.data.errors import ProviderFetchError
+
+        with_rows = Mock()
+        with_rows.__len__ = Mock(return_value=2)
+        for tencent in (Mock(return_value=with_rows), Mock(side_effect=ConnectionError("down"))):
+            akshare = Mock()
+            akshare.stock_zh_a_daily.side_effect = ValueError("No value to decode")
+            akshare.stock_zh_a_hist_tx = tencent
+            with patch(
+                "fintech_quant.data.akshare_provider.importlib.import_module",
+                return_value=akshare,
+            ):
+                with self.assertRaises(ProviderFetchError):
+                    AkShareProvider(backend="sina", adjust="hfq").history(
+                        "600000.SH", date(2026, 10, 17), date(2026, 10, 19)
+                    )
+
     def test_akshare_provider_maps_tencent_lots_and_marks_estimated_turnover(self) -> None:
         from fintech_quant.data.akshare_provider import AkShareProvider
 
