@@ -1,6 +1,6 @@
 # Vibe-Trading CSI 300 handoff
 
-Last reviewed: 2026-10-17 Asia/Shanghai
+Last reviewed: 2026-10-19 Asia/Shanghai
 Repository: `/Users/yakou/Desktop/Vibe-Trading`
 Remote: `https://github.com/Yakou207/Vibe-Trading.git`
 Implementation branch: `main` (V2 repair merged; fresh epoch bridged on 2026-10-17)
@@ -36,7 +36,8 @@ This is not deployable-profit proof. At the time of this handoff:
   bridge record;
 - the canonical account and pipeline state are dated `2026-10-16`; cash is `100000.0`, actual and
   shadow positions are empty, nothing is queued, and the drawdown regime is `normal`;
-- the new epoch audit is `NO_EVIDENCE` with zero sessions; `601059.SH` is a confirmed suspended
+- the 2026-10-19 cycle is the first counted session of epoch 2 (audit `COLLECTING`, `valid_sessions=1`,
+  cycle-local report sha256 `60ffe505fd2595f8350dcf992a58ac248b7b5b45f32fab130411d0196b9b5862`); the next run is 2026-10-20; `601059.SH` is a confirmed suspended
   member (no price after 2026-09-14 in both sources) and is listed but not scored;
 - complete schema-version-2 cycles exist for `2026-07-15`, `2026-07-16`, and `2026-07-21`; all
   remain preserved failed evidence under the original anchor;

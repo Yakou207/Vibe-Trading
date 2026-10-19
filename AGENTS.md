@@ -63,6 +63,19 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-10-19 first counted session of the new epoch
+
+- The 2026-10-19 post-close cycle completed and the audit returned `COLLECTING` with
+  `valid_sessions=1`: the first accepted date of epoch 2 (cycle manifest `27ce354d25d0f61e44f49e87a0a9ed15646833483ef7e50019b3f1f84515e1a7`).
+- Two operational failures preceded it and both failed closed with the account unchanged. Sina raises
+  instead of returning nothing for a no-trade range, so the suspended `601059.SH` failed the
+  signal-price stage. A Sina failure now counts as empty only when Tencent independently confirms no
+  trades in the same range. The second failure was a transient proxy 503 on one dividend scope,
+  which a plain resume fixed.
+- The account stayed all cash (no targets were queued at the anchor): NAV 100,000 against CSI 300
+  +0.09%. Five targets at 8% each (601877, 600938, 601088, 300832, 601018) execute at the
+  2026-10-20 open.
+
 ### 2026-10-17 fresh validation epoch via all-cash bridge
 
 - The canonical account stopped at 2026-07-21 (CNY 100,000 cash, no positions or tax lots,
