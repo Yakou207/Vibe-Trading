@@ -40,7 +40,9 @@ passes fixed gates.
 - **Evidence chain.** Each post-close cycle writes a schema-v2 manifest hash-linked to its parent; a
   deterministic auditor checks account continuity, costs, NAV, drawdown and benchmark excess.
 - **Live research desk.** A zero-dependency HTTP + SSE dashboard with agent cards, a pixel-office
-  view, a stock picker with search, a shadow top-5 pool and per-call model cost tracking.
+  view, a stock picker that searches any of 5,500+ A-shares on demand (CSI 300 members use the
+  point-in-time panel; others are fetched live and labelled as such), shadow pools and per-call model
+  cost tracking.
 
 ## Results
 
