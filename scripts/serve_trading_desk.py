@@ -126,6 +126,10 @@ class DeskState:
         path = self.args.pool_v2_root / "state.json"
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
+    def scoring_v2_state(self) -> dict[str, object] | None:
+        path = self.args.scoring_v2
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
     def subscribe(self) -> queue.Queue[str]:
         subscriber: queue.Queue[str] = queue.Queue()
         with self.lock:
@@ -164,7 +168,11 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
             elif path == "/api/picks":
                 self._json(picks_payload(state.picker(), state.pool_state(), state.pool_v2_state()))
             elif path == "/api/stock":
-                self._json(stock_payload(state.picker(), self._query(), state.live))
+                self._json(
+                    stock_payload(
+                        state.picker(), self._query(), state.live, state.scoring_v2_state()
+                    )
+                )
             elif path == "/api/research":
                 self._json(
                     research_payload(
@@ -285,6 +293,12 @@ def main() -> int:
     )
     parser.add_argument("--pool-root", type=Path, default=Path("outputs/momentum_pool"))
     parser.add_argument("--pool-v2-root", type=Path, default=Path("outputs/momentum_pool_v2"))
+    parser.add_argument(
+        "--scoring-v2",
+        type=Path,
+        default=Path("outputs/research/scoring_v2/latest_scores.json"),
+        help="Research v2 score snapshot shown in the picker (not used by the counted strategy).",
+    )
     parser.add_argument("--intel-cache", type=Path, default=Path("outputs/research_cache"))
     parser.add_argument("--jev-records", type=Path, default=Path("outputs/jev"))
     parser.add_argument("--quotes", type=Path, default=None, help="Realtime quote CSV to watch.")

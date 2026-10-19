@@ -196,6 +196,8 @@ docs/            operations guide, research notes, design specs
 - [x] Hash-chained paper-evidence V2 with deterministic audit
 - [x] Research desk, stock picker, shadow pool, event NLP and Jev judgment
 - [x] Cross-sectional factor lab: 27 neutralized factors, IC/quintile metrics, locked hold-out
+- [x] Scoring v2 research score: rank composite with ICIR category weights, shown in the picker
+- [ ] Costed backtest of scoring v2 before it can be proposed for a future evidence epoch
 - [ ] Accumulate 40 counted paper sessions over 56 calendar days
 - [ ] LLM-assisted extraction from full announcement and report text
 - [ ] Independent replay audit of tax lots and corporate actions
@@ -206,6 +208,7 @@ docs/            operations guide, research notes, design specs
 - [Operations guide](docs/operations.md): every command and pipeline stage
 - [Martin Luk setup on A-shares](docs/research/2026-10-17-martin-luk-momentum-setup.md): method, replay and limits
 - [Factor lab](docs/research/2026-10-19-factor-lab.md): IC, quintiles and combined signals with a locked hold-out
+- [Scoring v2](docs/research/2026-10-20-scoring-v2.md): predeclared rank composite against the counted score
 - [AI trading desk teardown](docs/research/2026-10-17-ai-trading-desk-teardown.md): design references and roadmap
 - [Project contract](AGENTS.md) and [handoff](handoff.md): research rules and current operational state
 

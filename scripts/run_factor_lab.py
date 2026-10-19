@@ -65,7 +65,34 @@ def main() -> int:
                         default=str(ROOT / f"docs/research/{date.today():%Y-%m-%d}-factor-lab.md"))
     args = parser.parse_args()
 
-    state_path = Path(args.pipeline_state)
+    inputs = load_panel(Path(args.pipeline_state), Path(args.industry_cache), args.offline)
+    panel, universe, industry, log_mcap = (inputs[k] for k in ("panel", "universe", "industry",
+                                                                "log_mcap"))
+
+    study = run_study(panel, universe, industry, log_mcap, args.train_end, args.holdout_start,
+                      primary_horizon=args.primary_horizon, ridge_penalty=args.ridge_penalty,
+                      stress_window=tuple(args.stress_window))
+    study["inputs"] = input_refs(inputs, Path(args.pipeline_state), Path(args.industry_cache))
+    study["settings"] = {
+        "winsorize": "median +/- 3 x 1.4826 x MAD",
+        "neutralize": "OLS residual on Shenwan level-1 dummies + z-scored log total market cap",
+        "forward_return": "hfq open[T+1+h] / open[T+1] - 1 for the T-close signal",
+        "ridge_penalty": args.ridge_penalty,
+    }
+
+    out = Path(args.output_json)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(study, ensure_ascii=False, indent=2, default=_json_default) + "\n",
+                   encoding="utf-8")
+    report = Path(args.report)
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(render_report(study, out), encoding="utf-8")
+    print(f"wrote {out}\nwrote {report}")
+    return 0
+
+
+def load_panel(state_path: Path, industry_cache: Path, offline: bool) -> dict[str, object]:
+    """Wide panels, membership, industry and log market cap from the pipeline state."""
     state = json.loads(state_path.read_text(encoding="utf-8"))
     signal_manifest = Path(state["manifests"]["signal_price"]["processed_manifest"])
     factor_manifest = Path(state["manifests"]["factor"]["processed_manifest"])
@@ -93,43 +120,37 @@ def main() -> int:
 
     universe = membership_frame(membership_path, calendar, symbols)
     member_symbols = sorted(symbols[universe.any().to_numpy()])
-    industries = load_industries(member_symbols, Path(args.industry_cache), args.offline)
-    industry = industry_frame(industries, calendar, symbols)
+    industries = load_industries(member_symbols, industry_cache, offline)
+    return {
+        "panel": panel,
+        "universe": universe,
+        "industry": industry_frame(industries, calendar, symbols),
+        "log_mcap": log_mcap,
+        "member_symbols": member_symbols,
+        "signal_manifest": signal_manifest,
+        "factor_manifest": factor_manifest,
+        "membership_path": membership_path,
+        "raw_runs": raw_runs,
+    }
 
-    study = run_study(panel, universe, industry, log_mcap, args.train_end, args.holdout_start,
-                      primary_horizon=args.primary_horizon, ridge_penalty=args.ridge_penalty,
-                      stress_window=tuple(args.stress_window))
-    member = universe.to_numpy()
-    study["inputs"] = {
+
+def input_refs(inputs: dict[str, object], state_path: Path, industry_cache: Path) -> dict[str, object]:
+    member = inputs["universe"].to_numpy()
+    log_mcap, industry = inputs["log_mcap"], inputs["industry"]
+    return {
         "pipeline_state": _file_ref(state_path),
-        "signal_price_manifest": _file_ref(signal_manifest),
-        "factor_manifest": _file_ref(factor_manifest),
-        "membership": _file_ref(membership_path),
-        "industry_cache": _file_ref(Path(args.industry_cache)),
-        "market_cap_raw_runs": raw_runs,
+        "signal_price_manifest": _file_ref(inputs["signal_manifest"]),
+        "factor_manifest": _file_ref(inputs["factor_manifest"]),
+        "membership": _file_ref(inputs["membership_path"]),
+        "industry_cache": _file_ref(industry_cache),
+        "market_cap_raw_runs": inputs["raw_runs"],
         "git_sha": _git_sha(),
         "member_cells": int(member.sum()),
         "member_cells_missing_market_cap": int((member & ~np.isfinite(log_mcap.to_numpy())).sum()),
         "member_cells_unclassified_industry": int((member & industry.isna().to_numpy()).sum()),
         "symbols_without_market_cap": sorted(
-            s for s in member_symbols if not np.isfinite(log_mcap[s]).any()),
+            s for s in inputs["member_symbols"] if not np.isfinite(log_mcap[s]).any()),
     }
-    study["settings"] = {
-        "winsorize": "median +/- 3 x 1.4826 x MAD",
-        "neutralize": "OLS residual on Shenwan level-1 dummies + z-scored log total market cap",
-        "forward_return": "hfq open[T+1+h] / open[T+1] - 1 for the T-close signal",
-        "ridge_penalty": args.ridge_penalty,
-    }
-
-    out = Path(args.output_json)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(study, ensure_ascii=False, indent=2, default=_json_default) + "\n",
-                   encoding="utf-8")
-    report = Path(args.report)
-    report.parent.mkdir(parents=True, exist_ok=True)
-    report.write_text(render_report(study, out), encoding="utf-8")
-    print(f"wrote {out}\nwrote {report}")
-    return 0
 
 
 def _require_hfq(manifest: Path) -> None:

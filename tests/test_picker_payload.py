@@ -126,3 +126,30 @@ def test_pool_output_refuses_evidence_directories(path: str) -> None:
 
 def test_pool_output_accepts_dedicated_directory(tmp_path: Path) -> None:
     _require_safe_output(tmp_path / "outputs" / "momentum_pool")
+
+
+def test_stock_payload_shows_research_v2_score_next_to_baseline() -> None:
+    snapshot = {
+        "as_of": "2020-01-01",
+        "label": "研究评分 v2（横截面排名合成），不驱动计数策略",
+        "signs": {"ep": 1, "roe": -1, "vol_60d": -1},
+        "scores": {
+            "600001.SH": {
+                "score": 87.5,
+                "coverage": 0.8889,
+                "categories": {"value": {"z": 1.2, "percentile": 90.0, "weight": 0.2}},
+            }
+        },
+    }
+    data = _data()
+
+    payload = stock_payload(data, "600001", scoring_v2=snapshot)
+    missing = stock_payload(data, "600002", scoring_v2=snapshot)
+
+    v2 = payload["scoring_v2"]
+    assert v2["score"] == 87.5 and v2["coverage"] == 0.8889
+    assert v2["counted"] is False and v2["stale"] is True
+    assert v2["inverted"] == ["roe", "vol_60d"]
+    assert payload["baseline"]["total"] == 75.0
+    assert missing["scoring_v2"]["score"] is None
+    assert stock_payload(data, "600001")["scoring_v2"] is None

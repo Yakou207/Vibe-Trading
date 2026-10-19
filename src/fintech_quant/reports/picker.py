@@ -166,7 +166,10 @@ def resolve_symbol(data: PickerData, query: str) -> str | None:
 
 
 def stock_payload(
-    data: PickerData, query: str, live: LiveContext | None = None
+    data: PickerData,
+    query: str,
+    live: LiveContext | None = None,
+    scoring_v2: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     symbol = resolve_symbol(data, query)
     if symbol is None and live is not None:
@@ -193,6 +196,7 @@ def stock_payload(
         "analysis": _scaled_analysis(analysis, ratio),
         "chart": _chart(item, data.as_of, analysis, ratio),
         "baseline": _baseline(data.scores.get(symbol)),
+        "scoring_v2": scoring_v2_view(scoring_v2, symbol, data.as_of),
         "market_warnings": data.market_warnings.get(symbol, []),
         "verdict": _verdict(
             analysis, data.scores.get(symbol), data.market_warnings.get(symbol, [])
@@ -362,6 +366,27 @@ def _verdict(
         "failed_checks": reasons,
         "notes": notes,
         "disclaimer": "研究用途，不构成投资建议；系统不下单。",
+    }
+
+
+def scoring_v2_view(
+    snapshot: Mapping[str, object] | None, symbol: str, as_of: str
+) -> dict[str, object] | None:
+    """The research v2 percentile score for one member; it never drives the counted strategy."""
+    if not snapshot:
+        return None
+    row = dict(snapshot.get("scores") or {}).get(symbol)  # type: ignore[arg-type]
+    return {
+        "label": snapshot.get("label"),
+        "as_of": snapshot.get("as_of"),
+        "stale": snapshot.get("as_of") != as_of,
+        "counted": False,
+        "score": None if row is None else row["score"],
+        "coverage": None if row is None else row["coverage"],
+        "categories": None if row is None else row["categories"],
+        "inverted": sorted(
+            name for name, sign in dict(snapshot.get("signs") or {}).items() if sign < 0  # type: ignore[arg-type]
+        ),
     }
 
 

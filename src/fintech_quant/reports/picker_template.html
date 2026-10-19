@@ -231,6 +231,15 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       const x = s.baseline.components[k] || { score: 0, max_score: 1 };
       return `<div class="bar-row"><span>${l}</span><div class="track"><i style="width:${(x.score / x.max_score) * 100}%;background:var(${c})"></i></div><span style="text-align:right">${num(x.score, 1)}/${num(x.max_score, 0)}</span></div>`;
     }).join("") : '<div class="muted">今日无多因子评分（可能停牌）。</div>';
+    const v2 = s.scoring_v2;
+    const v2Bars = v2 && v2.categories ? [["value", "价值", "--s1"], ["quality_growth", "质量/成长", "--s2"], ["low_risk", "低风险", "--s3"], ["liquidity", "低换手", "--s4"], ["reversal", "短期反转", "--s7"], ["momentum", "动量 12-1", "--s1"]].map(([k, l, c]) => {
+      const x = v2.categories[k];
+      return `<div class="bar-row"><span>${l} <span class="muted">${num(x.weight * 100, 0)}%</span></span><div class="track"><i style="width:${x.percentile}%;background:var(${c})"></i></div><span style="text-align:right">${num(x.percentile, 0)}</span></div>`;
+    }).join("") : '<div class="muted">今日无 v2 研究评分（缺少行业/市值或全部因子）。</div>';
+    const v2Section = v2 ? `
+      <div class="section-head" style="margin-top:14px"><h2>研究评分 v2（排名合成）</h2><span class="right">${v2.score == null ? "" : `${num(v2.score, 1)} 分位 · 覆盖 ${pct(v2.coverage, 0)}`}</span></div>
+      <div class="bars">${v2Bars}</div>
+      <div class="note">${esc(v2.label)}${v2.stale ? `；快照日期 ${esc(v2.as_of)}，不是今日` : ""}。分位为沪深 300 截面排名（0–100），类别条为各类别的截面分位，类别名旁为训练期 ICIR 权重；缺失因子按中性 0 处理并降低覆盖率。方向按训练期 ICIR 对齐${v2.inverted && v2.inverted.length ? `，以下因子取负（数值越低排名越高）：${esc(v2.inverted.join("、"))}` : ""}。</div>` : "";
     const zone = a.zone ? `共振区 ${num(a.zone.bottom)}–${num(a.zone.top)}` : "无共振区";
     $("stock").innerHTML = `
       <div class="stock-head"><span class="name">${esc(s.name)}</span><span class="mono muted">${esc(s.symbol)}</span>
@@ -243,7 +252,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div class="section-head" style="margin-top:14px"><h2>Luk 四步检查</h2><span class="right">动量 1M ${pct(m.r21)} · 3M ${pct(m.r63)} · 6M ${pct(m.r126)}</span></div>
       <div class="checks">${checks}</div>
       <div class="section-head" style="margin-top:14px"><h2>${s.mode === "live" ? "多因子实时参考分" : "多因子基线评分"}</h2><span class="right">${s.baseline ? `${num(s.baseline.total, 1)} 分 · 置信 ${num(s.baseline.confidence)}` : ""}</span></div>
-      <div class="bars">${comps}</div>`;
+      <div class="bars">${comps}</div>${v2Section}`;
     drawChart(s);
   }
 
