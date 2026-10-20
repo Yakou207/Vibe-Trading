@@ -24,7 +24,7 @@ from fintech_quant.reports.desk import (  # noqa: E402
     render_desk_html,
     watched_symbols,
 )
-from fintech_quant.reports.live_stock import LiveContext  # noqa: E402
+from fintech_quant.reports.live_stock import LiveContext, intraday_payload  # noqa: E402
 from fintech_quant.reports.picker import (  # noqa: E402
     PickerData,
     jev_payload,
@@ -173,6 +173,8 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                         state.picker(), self._query(), state.live, state.scoring_v2_state()
                     )
                 )
+            elif path == "/api/intraday":
+                self._json(intraday_payload(state.live, self._query()))
             elif path == "/api/research":
                 self._json(
                     research_payload(
