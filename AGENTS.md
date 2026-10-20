@@ -70,7 +70,7 @@ system for fintech graduate-school portfolio work.
 - The five queued targets filled at the open (CNY 25 modeled cost). NAV 99,904.47 (-0.10%) against
   CSI 300 -0.44%. Seven targets at 8% each are queued for the 2026-10-21 open.
 - Daily runs were still manual because the Codex automation is `PAUSED` and the launchd wrapper was
-  not installed. The wrapper is now merged on `main`; installing it is a separate user step.
+  not installed. The wrapper is now merged on `main` and was installed the same evening (kickstart test: `up_to_date`).
 
 ### 2026-10-19 first counted session of the new epoch
 

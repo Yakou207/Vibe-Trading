@@ -49,7 +49,8 @@ This is not deployable-profit proof. At the time of this handoff:
 - `live_trading_authorized=false` and DQN paper exposure is disabled;
 - the Codex weekday 17:30 automation is `PAUSED`; the launchd wrapper
   `scripts/run_scheduled_csi300_post_close.py` is merged on `main` (see "Scheduled automation
-  (launchd)" below and `docs/operations.md`) but not installed;
+  (launchd)" below and `docs/operations.md`) and was installed on 2026-10-20; a kickstart test
+  returned `up_to_date` for state 2026-10-20 (Desktop files readable, calendar fetched via proxy);
 - the 2026-07-15 cycle passed data-health, approved-policy, execution-integrity, drawdown, DQN-off,
   and live-off gates, but failed the anchor-to-cycle trading-session continuity gate;
 - the 2026-07-14 factor/benchmark mismatch was caused by incomplete processed-stage reuse
@@ -172,8 +173,8 @@ independent audit (writing the root `validation_report.json`). It:
 The 2026-10-17 all-cash bridge resolved that gap, so the job can run daily from the 2026-10-19
 parent onward.
 
-Install and uninstall commands are in `docs/operations.md` ("定时自动运行（launchd）"). The job is not
-installed by default. Pause the Codex automation before installing so only one scheduler runs the
+Install and uninstall commands are in `docs/operations.md` ("定时自动运行（launchd）"). Installed on
+2026-10-20. Pause the Codex automation before installing so only one scheduler runs the
 entrypoint.
 
 ## 2026-07-14 operational evidence
