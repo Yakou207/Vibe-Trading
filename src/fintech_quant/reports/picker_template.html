@@ -57,6 +57,10 @@ h2 { font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: upperc
 .verdict.avoid .head::before { content: "✕ "; color: var(--critical); }
 .verdict ul { margin: 6px 0 0; padding-left: 18px; color: var(--text-secondary); font-size: 12px; }
 #chart { height: 360px; position: relative; }
+.chart-tabs { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.chart-tabs button { font: 600 11px var(--mono); color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: 5px 11px; cursor: pointer; }
+.chart-tabs button[aria-pressed="true"] { color: var(--text-primary); border-color: var(--accent); }
+.chart-tabs .right { margin-left: auto; font: 11px var(--mono); color: var(--text-muted); }
 .legend { display: flex; gap: 12px; flex-wrap: wrap; font: 11px var(--mono); color: var(--text-secondary); margin-top: 6px; }
 .legend span::before { content: ""; display: inline-block; width: 14px; height: 2px; margin-right: 5px; vertical-align: middle; background: var(--c); }
 .checks { display: grid; gap: 6px; }
@@ -168,7 +172,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
   const num = (v, d = 2) => (v == null ? "—" : Number(v).toFixed(d));
   const STATE = { trigger: "触发", setup: "观察", leader_weak_base: "强势·弱平台", leader_no_base: "强势·无平台", avoid: "回避" };
   const SUPPORT = { ema9: "9 EMA", ema21: "21 EMA", ema50: "50 EMA", avwap_swing_low: "AVWAP·低点", avwap_swing_high: "AVWAP·高点", prior_pivot: "前高", gap: "缺口" };
-  let chart = null;
+  let chart = null, intraday = null, current = null, view = "daily", intradayTimer = null;
 
   async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(`${r.status}`); return r.json(); }
 
@@ -247,19 +251,99 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div class="verdict ${esc(v.level)}"><div class="head">${esc(v.headline)}</div>
         <ul>${[...(a.state === "trigger" ? [`参考止损 ${num(a.stop)}（${pct(a.stop_pct)}），至前高约 ${num(a.reward_r, 1)}R`] : []), `${zone}`, ...v.notes].map((n) => `<li>${esc(n)}</li>`).join("")}</ul>
         <div class="note">${esc(v.disclaimer)}</div></div>
+      <div class="chart-tabs"><button type="button" data-view="daily">日K</button><button type="button" data-view="intraday">分时</button><span class="right" id="chart-note"></span></div>
       <div id="chart"></div>
-      <div class="legend"><span style="--c:var(--s4)">9 EMA</span><span style="--c:var(--s1)">21 EMA</span><span style="--c:var(--s7)">50 EMA</span><span style="--c:var(--s3)">AVWAP·低点</span><span style="--c:var(--s2)">AVWAP·高点</span><span style="--c:var(--accent)">止损 / 共振区</span></div>
+      <div class="legend" id="legend-intraday" hidden><span style="--c:var(--s1)">价格</span><span style="--c:var(--s4)">均价</span><span style="--c:var(--text-muted)">昨收</span><span style="--c:var(--up)">成交量（股）</span></div>
+      <div class="legend" id="legend-daily"><span style="--c:var(--s4)">9 EMA</span><span style="--c:var(--s1)">21 EMA</span><span style="--c:var(--s7)">50 EMA</span><span style="--c:var(--s3)">AVWAP·低点</span><span style="--c:var(--s2)">AVWAP·高点</span><span style="--c:var(--accent)">止损 / 共振区</span></div>
       <div class="section-head" style="margin-top:14px"><h2>Luk 四步检查</h2><span class="right">动量 1M ${pct(m.r21)} · 3M ${pct(m.r63)} · 6M ${pct(m.r126)}</span></div>
       <div class="checks">${checks}</div>
       <div class="section-head" style="margin-top:14px"><h2>${s.mode === "live" ? "多因子实时参考分" : "多因子基线评分"}</h2><span class="right">${s.baseline ? `${num(s.baseline.total, 1)} 分 · 置信 ${num(s.baseline.confidence)}` : ""}</span></div>
       <div class="bars">${comps}</div>${v2Section}`;
-    drawChart(s);
+    current = s;
+    document.querySelectorAll(".chart-tabs button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+    setView(view);
+  }
+
+  function setView(v) {
+    view = v;
+    clearTimeout(intradayTimer);
+    document.querySelectorAll(".chart-tabs button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
+    $("legend-daily").hidden = v !== "daily";
+    $("legend-intraday").hidden = v !== "intraday";
+    if (v === "daily") { $("chart-note").textContent = ""; drawChart(current); }
+    else {
+      if (chart) { chart.remove(); chart = null; intraday = null; }
+      $("chart").innerHTML = '<div class="empty">正在抓取分时…</div>';
+      $("chart-note").textContent = "实时抓取 · 不保存 · 仅展示";
+      loadIntraday(current.symbol, false);
+    }
+  }
+
+  function marketOpen() {
+    const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Shanghai", weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).map((x) => [x.type, x.value]));
+    if (p.weekday === "Sat" || p.weekday === "Sun") return false;
+    const m = Number(p.hour) * 60 + Number(p.minute);
+    return (m >= 570 && m <= 690) || (m >= 780 && m <= 900);
+  }
+
+  // 分时 is display only: fetched live on each request, never stored, never scored.
+  async function loadIntraday(symbol, refresh) {
+    clearTimeout(intradayTimer);
+    let d;
+    try { d = await getJSON(`/api/intraday?q=${encodeURIComponent(symbol)}`); }
+    catch (e) { d = { error: `请求失败：${e.message}` }; }
+    if (view !== "intraday" || !current || current.symbol !== symbol) return;
+    const open = marketOpen();
+    if (d.error) {
+      if (!refresh || !intraday) {
+        if (chart) { chart.remove(); chart = null; intraday = null; }
+        $("chart").innerHTML = `<div class="empty">${esc(d.error)}</div>`;
+      }
+    } else {
+      drawIntraday(d, refresh);
+      const src = { minute_em: "东方财富", minute_sina: "新浪" }[d.source] || d.source;
+      $("chart-note").textContent = `实时抓取 · 不保存 · 仅展示 · ${src} · ${d.date}${open ? " · 交易中，每 30 秒刷新" : ""}`;
+    }
+    if (open) intradayTimer = setTimeout(() => loadIntraday(symbol, true), 30000);
+  }
+
+  function drawIntraday(d, refresh) {
+    const el = $("chart");
+    if (!window.LightweightCharts) { el.innerHTML = '<div class="empty">图表组件不可用</div>'; return; }
+    if (!refresh || !intraday) {
+      if (chart) { chart.remove(); chart = null; }
+      el.innerHTML = "";
+      chart = LightweightCharts.createChart(el, {
+        autoSize: true,
+        layout: { background: { color: "transparent" }, textColor: css("--text-muted"), fontFamily: "monospace" },
+        grid: { vertLines: { visible: false }, horzLines: { color: css("--grid") } },
+        rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.28 } },
+        timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+        crosshair: { mode: 0 },
+      });
+      intraday = {
+        price: chart.addLineSeries({ color: css("--s1"), lineWidth: 2, priceLineVisible: false }),
+        avg: chart.addLineSeries({ color: css("--s4"), lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }),
+        volume: chart.addHistogramSeries({ priceScaleId: "volume", priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false }),
+        prevLine: null,
+      };
+      chart.priceScale("volume").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+    }
+    // Minute stamps are Shanghai wall-clock times; encoding them as UTC keeps the axis on that clock.
+    const t = (s) => Date.parse(`${s.replace(" ", "T")}:00Z`) / 1000;
+    intraday.price.setData(d.points.map((p) => ({ time: t(p.time), value: p.price })));
+    intraday.avg.setData(d.points.map((p) => ({ time: t(p.time), value: p.avg })));
+    intraday.volume.setData(d.points.map((p, i) => ({ time: t(p.time), value: p.volume, color: css(p.price >= (i ? d.points[i - 1].price : d.prev_close ?? p.price) ? "--up" : "--down") })));
+    if (intraday.prevLine) intraday.price.removePriceLine(intraday.prevLine);
+    intraday.prevLine = d.prev_close == null ? null : intraday.price.createPriceLine({ price: d.prev_close, color: css("--text-muted"), lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: "昨收" });
+    if (!refresh) chart.timeScale().fitContent();
   }
 
   function drawChart(s) {
     const el = $("chart");
     if (!window.LightweightCharts) { el.innerHTML = '<div class="empty">图表组件不可用</div>'; return; }
-    if (chart) { chart.remove(); chart = null; }
+    if (chart) { chart.remove(); chart = null; intraday = null; }
+    el.innerHTML = "";
     const c = s.chart;
     chart = LightweightCharts.createChart(el, {
       autoSize: true,
@@ -382,6 +466,8 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
 
   async function load(query) {
     if (!query) return;
+    clearTimeout(intradayTimer);
+    current = null;
     $("query").value = query;
     history.replaceState(null, "", `#${encodeURIComponent(query)}`);
     $("stock").innerHTML = '<div class="empty">分析中…</div>';

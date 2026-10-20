@@ -11,6 +11,9 @@ The same Luk four-step check and multi-factor scoring function then run on that 
 percentiles are measured against the local CSI 300 cross-section, since a full-market snapshot
 is not reliably reachable, and Luk's absolute 30% hurdle is shown alongside. None of this is
 point-in-time validated, and none of it enters the counted strategy or the shadow pools.
+
+The 分时 (1-minute) view is separate: `live_intraday` fetches it on every request (Eastmoney,
+falling back to Sina) and never writes it anywhere.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from fintech_quant.information.stock_intel import parse_financial_abstract
 from fintech_quant.research.momentum_setup import Bar, SetupConfig, SymbolSeries, analyze_at
 
 HISTORY_DAYS = 430
+INTRADAY_TIMEOUT = 12.0
 Fetcher = Callable[..., object]
 
 
@@ -244,6 +248,106 @@ def analyze_live(
     }
 
 
+def live_intraday(
+    context: LiveContext, symbol: str, timeout: float = INTRADAY_TIMEOUT
+) -> dict[str, object]:
+    """1-minute bars for the latest session the source returns (today once trading starts).
+
+    Fetched on every call and never written to disk. Display only: nothing here feeds scoring, the
+    shadow pools, the counted strategy or the evidence chain.
+    """
+    exchange, code = symbol.split(".")[1].lower(), symbol.split(".")[0]
+    errors = []
+    for source, kwargs in (
+        ("minute_em", {"symbol": code}),
+        ("minute_sina", {"symbol": f"{exchange}{code}"}),
+    ):
+        try:
+            result = _with_timeout(lambda s=source, k=kwargs: context._call(s, **k), timeout)
+            rows = [_minute_row(r, source) for r in _records(result)]
+        except Exception as exc:  # fall through to the next provider
+            errors.append(f"{source}: {type(exc).__name__}")
+            continue
+        if not rows:
+            errors.append(f"{source}: empty")
+            continue
+        rows.sort(key=lambda r: r["time"])
+        session = rows[-1]["time"][:10]
+        earlier = [r for r in rows if r["time"][:10] < session]
+        today = [r for r in rows if r["time"][:10] == session]
+        if source == "minute_sina":  # Sina has no 均价: cumulative amount over cumulative volume
+            amount = volume = 0.0
+            for r in today:
+                amount += r.pop("amount")
+                volume += r["volume"]
+                r["avg"] = amount / volume if volume else r["price"]
+        return {
+            "symbol": symbol,
+            "date": session,
+            "source": source,
+            "prev_close": earlier[-1]["price"] if earlier else None,
+            "points": today,  # [{time, price, volume (shares), avg}]
+        }
+    raise ValueError(f"no intraday data for {symbol} ({'; '.join(errors)})")
+
+
+def intraday_payload(context: LiveContext, query: str) -> dict[str, object]:
+    try:
+        try:
+            shares = context.all_shares()
+        except Exception:  # the list is flaky behind the proxy; a plain code still resolves
+            shares = {}
+            try:
+                symbol: str | None = normalize_a_share_symbol(query)
+            except ValueError:
+                symbol = None
+        else:
+            symbol = resolve_any(context, query)
+        if symbol is None:
+            return {"error": f"未找到 A 股：{query}"}
+        payload = live_intraday(context, symbol)
+        payload["name"] = shares.get(symbol, "")
+        return payload
+    except Exception as exc:  # provider outages are reported, not raised
+        return {"error": f"分时数据获取失败：{type(exc).__name__}: {str(exc)[:200]}"}
+
+
+def _minute_row(row: Mapping[str, object], source: str) -> dict[str, object]:
+    if source == "minute_em":  # Eastmoney reports volume in lots
+        return {
+            "time": str(row["时间"])[:16],
+            "price": float(row["收盘"]),  # type: ignore[arg-type]
+            "volume": float(row["成交量"]) * 100.0,  # type: ignore[arg-type]
+            "avg": float(row["均价"]),  # type: ignore[arg-type]
+        }
+    return {
+        "time": str(row["day"])[:16],
+        "price": float(row["close"]),  # type: ignore[arg-type]
+        "volume": float(row["volume"]),  # type: ignore[arg-type]
+        "amount": float(row["amount"]),  # type: ignore[arg-type]
+    }
+
+
+def _with_timeout(fn: Callable[[], object], seconds: float) -> object:
+    """Run fn in a daemon thread so a hung provider cannot block the request past `seconds`."""
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            result["value"] = fn()
+        except BaseException as exc:  # re-raised in the caller's thread
+            result["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no response within {seconds:g}s")
+    if "error" in result:
+        raise result["error"]  # type: ignore[misc]
+    return result.get("value")
+
+
 def _cached(context: LiveContext, kind: str, key: str, fetch: Callable[[], object]):
     path = None
     if context.cache_dir is not None:
@@ -267,6 +371,8 @@ def _default_fetcher(name: str) -> Fetcher:
         "tencent": lambda **kw: ak().stock_zh_a_hist_tx(adjust="qfq", timeout=30, **kw),
         "value": lambda **kw: ak().stock_value_em(**kw),
         "financials": lambda **kw: ak().stock_financial_abstract_ths(indicator="按报告期", **kw),
+        "minute_em": lambda **kw: ak().stock_zh_a_hist_min_em(period="1", adjust="", **kw),
+        "minute_sina": lambda **kw: ak().stock_zh_a_minute(period="1", adjust="", **kw),
     }[name]
 
 

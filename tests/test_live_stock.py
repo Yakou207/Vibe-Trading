@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import threading
 from datetime import date
 from pathlib import Path
 
 import pytest
 
-from fintech_quant.reports.live_stock import LiveContext, live_bars, reference_momentum, resolve_any
+from fintech_quant.reports.live_stock import (
+    LiveContext,
+    intraday_payload,
+    live_bars,
+    live_intraday,
+    reference_momentum,
+    resolve_any,
+)
 from fintech_quant.reports.picker import stock_payload, universe_payload
 from fintech_quant.research.momentum_setup import SymbolSeries
 from test_momentum_setup import _leader_with_flush
@@ -151,3 +159,118 @@ def test_members_keep_point_in_time_path_and_unknown_names_error(tmp_path: Path)
     universe = universe_payload(data, live)
     assert {"symbol": "600001.SH", "name": "领涨股份", "csi300": True} in universe
     assert len(universe) == 3
+
+
+def _em_minutes(**kwargs):
+    return [  # two sessions, as Eastmoney returns several days; volume in lots
+        {"时间": "2026-10-19 15:00:00", "收盘": 9.9, "成交量": 50, "均价": 9.85},
+        {"时间": "2026-10-20 09:31:00", "收盘": 10.0, "成交量": 10, "均价": 10.0},
+        {"时间": "2026-10-20 09:32:00", "收盘": 10.2, "成交量": 30, "均价": 10.12},
+    ]
+
+
+def _sina_minutes(**kwargs):
+    return [  # strings, volume in shares, no 均价
+        {"day": "2026-10-19 15:00:00", "close": "9.90", "volume": "5000", "amount": "49500"},
+        {"day": "2026-10-20 09:31:00", "close": "10.00", "volume": "1000", "amount": "10000"},
+        {"day": "2026-10-20 09:32:00", "close": "10.20", "volume": "3000", "amount": "30600"},
+    ]
+
+
+def _down(**kwargs):
+    raise ConnectionError("proxy closed the connection")
+
+
+def test_intraday_uses_eastmoney_latest_session_without_writing_anything(tmp_path: Path) -> None:
+    seen = {}
+
+    def em(**kwargs):
+        seen.update(kwargs)
+        return _em_minutes()
+
+    sina = Counting(_sina_minutes)
+    live = LiveContext(
+        cache_dir=tmp_path, fetchers=_fetchers(minute_em=em, minute_sina=sina), today=TODAY
+    )
+
+    payload = intraday_payload(live, "万兴科技")
+
+    assert seen == {"symbol": "300624"}
+    assert sina.calls == 0
+    assert payload["symbol"] == "300624.SZ" and payload["name"] == "万兴科技"
+    assert payload["source"] == "minute_em" and payload["date"] == "2026-10-20"
+    assert payload["prev_close"] == pytest.approx(9.9)
+    assert payload["points"] == [
+        {"time": "2026-10-20 09:31", "price": 10.0, "volume": 1000.0, "avg": 10.0},
+        {"time": "2026-10-20 09:32", "price": 10.2, "volume": 3000.0, "avg": 10.12},
+    ]
+    assert sorted(p.name for p in tmp_path.rglob("*.json")) == ["all_shares.json"]
+
+
+def test_intraday_falls_back_to_sina_and_derives_the_average_price(tmp_path: Path) -> None:
+    seen = {}
+
+    def sina(**kwargs):
+        seen.update(kwargs)
+        return _sina_minutes()
+
+    live = LiveContext(
+        cache_dir=tmp_path, fetchers=_fetchers(minute_em=_down, minute_sina=sina), today=TODAY
+    )
+
+    payload = live_intraday(live, "600001.SH")
+
+    assert seen == {"symbol": "sh600001"}
+    assert payload["source"] == "minute_sina" and payload["date"] == "2026-10-20"
+    assert payload["prev_close"] == pytest.approx(9.9)
+    assert [p["avg"] for p in payload["points"]] == pytest.approx([10.0, 40600 / 4000])
+    assert [p["volume"] for p in payload["points"]] == [1000.0, 3000.0]
+
+
+def test_intraday_times_out_a_hung_primary_and_falls_back(tmp_path: Path) -> None:
+    release = threading.Event()
+
+    def hung(**kwargs):
+        release.wait(5)
+        return _em_minutes()
+
+    live = LiveContext(
+        cache_dir=tmp_path,
+        fetchers=_fetchers(minute_em=hung, minute_sina=_sina_minutes),
+        today=TODAY,
+    )
+    try:
+        payload = live_intraday(live, "600001.SH", timeout=0.05)
+    finally:
+        release.set()
+
+    assert payload["source"] == "minute_sina"
+
+
+def test_intraday_reports_an_error_when_both_sources_fail(tmp_path: Path) -> None:
+    live = LiveContext(
+        cache_dir=tmp_path,
+        fetchers=_fetchers(minute_em=_down, minute_sina=lambda **kw: []),
+        today=TODAY,
+    )
+
+    with pytest.raises(ValueError, match="no intraday data"):
+        live_intraday(live, "600001.SH")
+    payload = intraday_payload(live, "600001")
+    assert payload == {"error": payload["error"]}
+    assert "minute_em: ConnectionError" in payload["error"]
+    assert "minute_sina: empty" in payload["error"]
+    assert "未找到" in intraday_payload(live, "不存在")["error"]
+
+
+def test_intraday_still_resolves_a_full_code_when_the_share_list_is_down(tmp_path: Path) -> None:
+    live = LiveContext(
+        cache_dir=None,
+        fetchers=_fetchers(code_name=_down, minute_em=_em_minutes),
+        today=TODAY,
+    )
+
+    payload = intraday_payload(live, "600001.SH")
+
+    assert payload["symbol"] == "600001.SH" and payload["name"] == ""
+    assert "error" in intraday_payload(live, "领涨股份")
