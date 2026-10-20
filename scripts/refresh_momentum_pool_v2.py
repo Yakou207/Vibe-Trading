@@ -6,6 +6,8 @@ counted paper account, the pipeline state or evidence files. Rules: ``momentum_p
 
     python scripts/refresh_momentum_pool_v2.py
     python scripts/refresh_momentum_pool_v2.py --replay-start 2024-01-02   # v1 vs v2 replay
+    python scripts/refresh_momentum_pool_v2.py --replay-start 2024-01-02 --exit-fill next_open \
+        --pool-root <scratch dir>   # exit-lag sensitivity: close-decided exits at the next open
 """
 
 from __future__ import annotations
@@ -72,7 +74,9 @@ def refresh(state_path: Path, pool_root: Path) -> dict[str, object]:
     return {"status": "refreshed", "as_of": data.as_of, "snapshot": str(snapshot), **_summary(updated)}
 
 
-def replay(state_path: Path, pool_root: Path, start: str) -> dict[str, object]:
+def replay(
+    state_path: Path, pool_root: Path, start: str, exit_fill: str = "same_close"
+) -> dict[str, object]:
     """Replay v1 and v2 on the same daily screens over point-in-time CSI 300 membership."""
     _require_safe_output(pool_root)
     state = json.loads(state_path.read_text(encoding="utf-8"))
@@ -90,15 +94,18 @@ def replay(state_path: Path, pool_root: Path, start: str) -> dict[str, object]:
     for session in sessions:
         members = set(active_symbols(intervals, date.fromisoformat(session)))
         results = screen(series, session, members=members)
+        options = {"previous_session": previous, "exit_fill": exit_fill}
         pool_v1 = v1.step_pool(
-            pool_v1, as_of=session, series=series, screen_results=results, previous_session=previous
+            pool_v1, as_of=session, series=series, screen_results=results, **options
         )
         pool_v2 = v2.step_pool(
-            pool_v2, as_of=session, series=series, screen_results=results, previous_session=previous
+            pool_v2, as_of=session, series=series, screen_results=results, **options
         )
         previous = session
     comparison = compare(pool_v1, pool_v2, benchmark, sessions)
     comparison.update({"start": start, "end": end, "sources": {"signal_price_manifest": str(signal.path)}})
+    if exit_fill != "same_close":
+        comparison["exit_fill"] = exit_fill
     output = pool_root / f"replay-{start}-{end}"
     _write_json_atomic(output / "v1_pool_state.json", pool_v1)
     _write_json_atomic(output / "v2_pool_state.json", pool_v2)
@@ -161,9 +168,17 @@ def main() -> int:
     parser.add_argument("--state", default="data/paper/csi300_baseline/pipeline_state.json")
     parser.add_argument("--pool-root", default="outputs/momentum_pool_v2")
     parser.add_argument("--replay-start", default=None, help="Replay v1 and v2 from this date.")
+    parser.add_argument(
+        "--exit-fill",
+        choices=v1.EXIT_FILLS,
+        default="same_close",
+        help="Replay only: fill close-decided exits at the same close or the next open.",
+    )
     args = parser.parse_args()
+    if args.exit_fill != "same_close" and not args.replay_start:
+        parser.error("--exit-fill is a replay-only sensitivity option")
     if args.replay_start:
-        result = replay(Path(args.state), Path(args.pool_root), args.replay_start)
+        result = replay(Path(args.state), Path(args.pool_root), args.replay_start, args.exit_fill)
     else:
         result = refresh(Path(args.state), Path(args.pool_root))
     for key, value in result.items():

@@ -43,6 +43,10 @@ Predeclared rules (written before any replay; do not tune them after seeing resu
 Each refresh for ``as_of`` runs, for the actual book and the unrestricted shadow book: exits,
 then queued entries at the open, then the close mark. It then updates the brake from both
 closes and finally the watchlist and the queue for the next open.
+
+``exit_fill="next_open"`` is a sensitivity option for replays, not a rule change: exits 3b-3e are
+decided on the close but queued and sold at the next unsuspended open (same slippage). Hard-stop
+exits (3a) are intraday stop orders and are unchanged. The default is unchanged.
 """
 
 from __future__ import annotations
@@ -61,6 +65,7 @@ from fintech_quant.backtesting.drawdown_control import (
 )
 from fintech_quant.research.momentum_pool import (
     COMMISSION_RATE,
+    EXIT_FILLS,
     INITIAL_EQUITY,
     MINIMUM_COMMISSION,
     MINIMUM_SLOT_CASH,
@@ -98,6 +103,7 @@ EXIT_REASONS = (
     "time_stop",
     "invalidated",
 )
+INTRADAY_EXITS = ("gap_below_stop", "stop")
 
 
 def initial_pool_state() -> dict[str, object]:
@@ -157,9 +163,12 @@ def step_pool(
     series: Mapping[str, SymbolSeries],
     screen_results: Sequence[Mapping[str, object]],
     previous_session: str | None,
+    exit_fill: str = "same_close",
 ) -> dict[str, object]:
     """``screen_results`` is the full ranked screen for ``as_of``; ``previous_session`` is the
     CSI 300 session before ``as_of``."""
+    if exit_fill not in EXIT_FILLS:
+        raise ValueError(f"exit_fill must be one of {EXIT_FILLS}: {exit_fill}")
     previous = state.get("as_of")
     if previous is not None and str(previous) >= as_of:
         raise ValueError(f"pool refresh {as_of} must follow {previous}")
@@ -167,10 +176,22 @@ def step_pool(
     brake = drawdown_control_state_from_json(state["brake"])  # type: ignore[arg-type]
     multiplier = drawdown_exposure_multiplier(brake)
     book = _step_book(
-        state["book"], as_of, series, states, previous_session, multiplier  # type: ignore[arg-type]
+        state["book"],  # type: ignore[arg-type]
+        as_of,
+        series,
+        states,
+        previous_session,
+        multiplier,
+        exit_fill,
     )
     shadow = _step_book(
-        state["shadow_book"], as_of, series, states, previous_session, 1.0  # type: ignore[arg-type]
+        state["shadow_book"],  # type: ignore[arg-type]
+        as_of,
+        series,
+        states,
+        previous_session,
+        1.0,
+        exit_fill,
     )
     decision = update_drawdown_control(
         brake,
@@ -218,6 +239,7 @@ def _step_book(
     states: Mapping[str, Mapping[str, object]],
     previous_session: str | None,
     multiplier: float,
+    exit_fill: str = "same_close",
 ) -> dict[str, object]:
     cash = float(book["cash"])  # type: ignore[arg-type]
     positions = {s: dict(p) for s, p in dict(book["positions"]).items()}  # type: ignore[arg-type]
@@ -233,20 +255,28 @@ def _step_book(
             continue
         item = series[symbol]
         bar = item.bars[bar_index]
-        position["peak_close"] = max(float(position["peak_close"]), bar.close)
+        queued = position.get("exit_pending")
+        if queued is None:
+            position["peak_close"] = max(float(position["peak_close"]), bar.close)
         if position["entry_date"] >= as_of:
             continue
         position["sessions_held"] = int(position["sessions_held"]) + 1
-        exit_rule = exit_decision(
-            position,
-            bar_open=bar.open,
-            bar_low=bar.low,
-            bar_close=bar.close,
-            ema9=item.ema9[bar_index],
-            ema21=item.ema21[bar_index],
-            screen_state=str((states.get(symbol) or {}).get("state", "")),
-        )
+        if queued is not None:
+            exit_rule = (bar.open, str(queued["reason"]))
+        else:
+            exit_rule = exit_decision(
+                position,
+                bar_open=bar.open,
+                bar_low=bar.low,
+                bar_close=bar.close,
+                ema9=item.ema9[bar_index],
+                ema21=item.ema21[bar_index],
+                screen_state=str((states.get(symbol) or {}).get("state", "")),
+            )
         if exit_rule is None:
+            continue
+        if queued is None and exit_fill == "next_open" and exit_rule[1] not in INTRADAY_EXITS:
+            position["exit_pending"] = {"reason": exit_rule[1], "decided_on": as_of}
             continue
         price, reason = exit_rule
         fill = price * (1 - SLIPPAGE_RATE)
@@ -269,6 +299,8 @@ def _step_book(
                 "return": round((notional - fees) / float(position["cost"]) - 1.0, 6),
             }
         )
+        if queued is not None:
+            closed[-1]["decided_on"] = queued["decided_on"]
         del positions[symbol]
 
     for pending in book["pending"]:  # type: ignore[union-attr]

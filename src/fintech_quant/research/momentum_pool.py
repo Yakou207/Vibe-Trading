@@ -16,6 +16,10 @@ Each refresh for ``as_of``:
 Prices are hfq-adjusted so returns include dividends. Because hfq price levels are not tradable
 prices, positions are return-equivalent fractional units (no board-lot rounding). Costs use the
 counted policy rates (0.03% commission, CNY 5 minimum, 0.05% sell stamp duty, 0.05% slippage).
+
+``exit_fill="next_open"`` is a sensitivity option for replays, not a rule change: a close-decided
+exit is queued and sells at the next unsuspended open (same slippage) instead of the deciding
+close. Stop and gap exits are intraday stop orders and are unchanged. The default is unchanged.
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ MINIMUM_COMMISSION = 5.0
 STAMP_DUTY_RATE = 0.0005
 SLIPPAGE_RATE = 0.0005
 MINIMUM_SLOT_CASH = 1000.0
+EXIT_FILLS = ("same_close", "next_open")
 
 
 def initial_pool_state() -> dict[str, object]:
@@ -67,8 +72,11 @@ def step_pool(
     series: Mapping[str, SymbolSeries],
     screen_results: Sequence[Mapping[str, object]],
     previous_session: str | None,
+    exit_fill: str = "same_close",
 ) -> dict[str, object]:
     """``previous_session`` is the CSI 300 session before ``as_of``; older queued entries expire."""
+    if exit_fill not in EXIT_FILLS:
+        raise ValueError(f"exit_fill must be one of {EXIT_FILLS}: {exit_fill}")
     previous = state.get("as_of")
     if previous is not None and str(previous) >= as_of:
         raise ValueError(f"pool refresh {as_of} must follow {previous}")
@@ -85,11 +93,17 @@ def step_pool(
         item = series[symbol]
         bar = item.bars[bar_index]
         stop = float(position["stop"])
-        if bar.open <= stop:
+        queued = position.get("exit_pending")
+        if queued is not None:
+            price, reason = bar.open, str(queued["reason"])
+        elif bar.open <= stop:
             price, reason = bar.open, "gap_below_stop"
         elif bar.low <= stop:
             price, reason = stop, "stop"
         elif bar.close < item.ema9[bar_index]:
+            if exit_fill == "next_open":
+                position["exit_pending"] = {"reason": "close_below_ema9", "decided_on": as_of}
+                continue
             price, reason = bar.close, "close_below_ema9"
         else:
             continue
@@ -108,6 +122,8 @@ def step_pool(
                 "return": round((notional - fees) / float(position["cost"]) - 1.0, 6),
             }
         )
+        if queued is not None:
+            closed[-1]["decided_on"] = queued["decided_on"]
         del positions[symbol]
 
     equity_before = cash + _positions_value(positions, series, as_of)
