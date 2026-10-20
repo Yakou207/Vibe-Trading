@@ -63,6 +63,15 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-10-20 second counted session
+
+- The 2026-10-20 cycle was accepted (`COLLECTING`, `valid_sessions=2`). The first attempt failed closed
+  on one transient Sina failure (`603993.SH`) with the account unchanged; a plain resume completed it.
+- The five queued targets filled at the open (CNY 25 modeled cost). NAV 99,904.47 (-0.10%) against
+  CSI 300 -0.44%. Seven targets at 8% each are queued for the 2026-10-21 open.
+- Daily runs were still manual because the Codex automation is `PAUSED` and the launchd wrapper was
+  not installed. The wrapper is now merged on `main`; installing it is a separate user step.
+
 ### 2026-10-19 first counted session of the new epoch
 
 - The 2026-10-19 post-close cycle completed and the audit returned `COLLECTING` with
