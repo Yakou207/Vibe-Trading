@@ -274,7 +274,6 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     else {
       if (chart) { chart.remove(); chart = null; intraday = null; }
       $("chart").innerHTML = '<div class="empty">正在抓取分时…</div>';
-      $("chart-note").textContent = "实时抓取 · 不保存 · 仅展示";
       loadIntraday(current.symbol, false);
     }
   }
@@ -302,7 +301,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     } else {
       drawIntraday(d, refresh);
       const src = { minute_em: "东方财富", minute_sina: "新浪" }[d.source] || d.source;
-      $("chart-note").textContent = `实时抓取 · 不保存 · 仅展示 · ${src} · ${d.date}${open ? " · 交易中，每 30 秒刷新" : ""}`;
+      $("chart-note").textContent = `数据源：${src} · ${d.date}${open ? " · 交易中，每 30 秒刷新" : ""}`;
     }
     if (open) intradayTimer = setTimeout(() => loadIntraday(symbol, true), 30000);
   }
