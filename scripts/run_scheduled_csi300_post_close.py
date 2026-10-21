@@ -1,7 +1,7 @@
 """Scheduled wrapper for the fixed CSI 300 post-close paper cycle.
 
-Intended to be started by launchd on weekdays after the A-share close. It only
-ever invokes ``scripts/run_csi300_post_close.py`` with the fixed canonical
+Intended to be started by launchd every hour; it picks the due session from the
+Shanghai clock, so the Mac's own time zone does not matter. It only ever invokes ``scripts/run_csi300_post_close.py`` with the fixed canonical
 arguments and then ``scripts/audit_csi300_paper_validation.py``. It never edits
 the account, pipeline state or any manifest itself.
 """
@@ -308,6 +308,8 @@ def main() -> int:
             _log(log, f"wrapper error: {error!r}")
             _notify(f"scheduled post-close wrapper error: {error}")
             result = {"status": "error", "message": repr(error)}
+        if result["status"] == "up_to_date":  # hourly no-op fires keep only the runs.jsonl line
+            log_path.unlink(missing_ok=True)
         result = {"started_at": now.isoformat(), "log": str(log_path), **result}
         with (config.log_dir / "runs.jsonl").open("a") as runs:
             runs.write(json.dumps(result, ensure_ascii=False) + "\n")

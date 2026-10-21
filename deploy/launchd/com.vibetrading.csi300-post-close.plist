@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  CSI 300 post-close paper cycle. Fires on weekdays at 17:30 and 21:30 local time
-  (this Mac is set to Asia/Shanghai). The wrapper decides whether a trading session
-  is due, so extra or late fires (for example after sleep) are harmless.
-  Install/uninstall: see docs/operations.md "定时自动运行（launchd）".
+  CSI 300 post-close paper cycle. Fires at minute 30 of every hour; the wrapper picks the due
+  session from the Asia/Shanghai clock, so a changed Mac time zone, sleep or a missed fire are
+  harmless and extra fires exit as up_to_date.
+  launchd itself must not open anything under ~/Desktop (macOS privacy protection makes a job
+  loaded at login fail with EX_CONFIG), so there is no WorkingDirectory and launchd's own output
+  goes to ~/Library/Logs/VibeTrading. The wrapper still logs under outputs/automation/.
   launchd does not inherit the login shell, so the proxy used by manual runs is set here.
+  Install/uninstall: see docs/operations.md "定时自动运行（launchd）".
 -->
 <plist version="1.0">
 <dict>
@@ -25,26 +28,13 @@
     <key>NO_PROXY</key>
     <string>localhost,127.0.0.1,::1,.local</string>
   </dict>
-  <key>WorkingDirectory</key>
-  <string>/Users/yakou/Desktop/Vibe-Trading</string>
   <key>StartCalendarInterval</key>
-  <array>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
-    <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>21</integer><key>Minute</key><integer>30</integer></dict>
-  </array>
+  <dict><key>Minute</key><integer>30</integer></dict>
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>
-  <string>/Users/yakou/Desktop/Vibe-Trading/outputs/automation/csi300_post_close/launchd.out.log</string>
+  <string>/Users/yakou/Library/Logs/VibeTrading/launchd.out.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/yakou/Desktop/Vibe-Trading/outputs/automation/csi300_post_close/launchd.err.log</string>
+  <string>/Users/yakou/Library/Logs/VibeTrading/launchd.err.log</string>
 </dict>
 </plist>

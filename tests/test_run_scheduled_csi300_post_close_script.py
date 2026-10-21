@@ -210,7 +210,7 @@ class RunScheduledTest(unittest.TestCase):
 
 
 class LaunchdPlistTest(unittest.TestCase):
-    def test_plist_runs_wrapper_on_weekday_evenings(self) -> None:
+    def test_plist_runs_wrapper_hourly_without_launchd_touching_desktop(self) -> None:
         plist_path = (
             Path(__file__).resolve().parents[1]
             / "deploy/launchd/com.vibetrading.csi300-post-close.plist"
@@ -222,9 +222,10 @@ class LaunchdPlistTest(unittest.TestCase):
             payload["ProgramArguments"][1].endswith("scripts/run_scheduled_csi300_post_close.py")
         )
         self.assertFalse(payload["RunAtLoad"])
-        fires = {(item["Weekday"], item["Hour"], item["Minute"]) for item in payload["StartCalendarInterval"]}
-        self.assertEqual({weekday for weekday, _, _ in fires}, {1, 2, 3, 4, 5})
-        self.assertIn((1, 17, 30), fires)
+        self.assertEqual(payload["StartCalendarInterval"], {"Minute": 30})
+        self.assertNotIn("WorkingDirectory", payload)
+        for key in ("StandardOutPath", "StandardErrorPath"):
+            self.assertNotIn("/Desktop/", payload[key])
 
 
 class FakeRunner:

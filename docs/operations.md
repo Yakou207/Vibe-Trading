@@ -193,8 +193,8 @@ CSI 300 正超额收益和不高于 10% 的回撤门禁全部通过前，禁止�
 ### 定时自动运行（launchd）
 
 `scripts/run_scheduled_csi300_post_close.py` 是上面固定入口的调度包装，由
-`deploy/launchd/com.vibetrading.csi300-post-close.plist` 在工作日 17:30 和 21:30（本机为
-Asia/Shanghai）触发。包装器只调用 `run_csi300_post_close.py`（固定参数）和
+`deploy/launchd/com.vibetrading.csi300-post-close.plist` 每小时第 30 分钟触发；是否该跑由包装器按
+Asia/Shanghai 时间决定，Mac 切换时区（例如出差到伦敦）不影响。包装器只调用 `run_csi300_post_close.py`（固定参数）和
 `audit_csi300_paper_validation.py`，不改阈值、不启用 DQN、不连接券商，也不直接写账户、
 state 或 manifest。每次运行：
 
@@ -207,14 +207,19 @@ state 或 manifest。每次运行：
 5. 成功后运行独立审计并写入根目录 `validation_report.json`；审计出错或状态为 `FAILED` 时通知。
 
 日志：`outputs/automation/csi300_post_close/<时间戳>.log`（含子进程输出）和
-`runs.jsonl`（每次运行一行摘要）；launchd 自身输出在同目录 `launchd.*.log`。失败通知使用
+`runs.jsonl`（每次运行一行摘要）；launchd 自身输出在 `~/Library/Logs/VibeTrading/launchd.*.log`。无事可做的整点触发只在 `runs.jsonl`
+记一行 `up_to_date`，不留单独日志。
+
+launchd 本身不能打开 `~/Desktop` 下的任何路径：重启后登录时加载的任务会被 macOS 隐私保护拦下，退出码
+78（EX_CONFIG）。因此 plist 不设 WorkingDirectory，launchd 日志放在 `~/Library/Logs`。第一次自动运行时
+macOS 可能弹窗询问 python3.14 访问“桌面”文件夹，需点允许。失败通知使用
 macOS 本地通知（`osascript`）。launchd 不继承登录 shell 的环境变量，plist 中显式设置了与手动运行相同的
 `HTTP_PROXY`/`HTTPS_PROXY`（`127.0.0.1:1082`）；代理端口变化时需同步修改 plist 并重新安装。
 
 安装（由用户手动执行；plist 中路径固定为 `/Users/yakou/Desktop/Vibe-Trading`）：
 
 ```bash
-mkdir -p outputs/automation/csi300_post_close && cp deploy/launchd/com.vibetrading.csi300-post-close.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.vibetrading.csi300-post-close.plist
+mkdir -p outputs/automation/csi300_post_close ~/Library/Logs/VibeTrading && cp deploy/launchd/com.vibetrading.csi300-post-close.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.vibetrading.csi300-post-close.plist
 ```
 
 立即手动触发一次（检查日志与通知）：
@@ -229,7 +234,7 @@ launchctl kickstart gui/$(id -u)/com.vibetrading.csi300-post-close
 launchctl bootout gui/$(id -u)/com.vibetrading.csi300-post-close && rm ~/Library/LaunchAgents/com.vibetrading.csi300-post-close.plist
 ```
 
-Mac 在 17:30 睡眠时，launchd 会在唤醒后补触发；关机则不会。启用前请暂停其他会运行同一入口的
+Mac 睡眠时错过的整点触发会在唤醒后补一次；关机则不会，开机后的下一个整点会补跑当天。启用前请暂停其他会运行同一入口的
 自动化（如 `/Users/yakou/.codex/automations/csi300/automation.toml`）。
 
 ## 交易桌实时看板
