@@ -275,34 +275,33 @@ def load_env_file(path: Path) -> list[str]:
     return loaded
 
 
-def main() -> int:
-    loaded = load_env_file(ROOT / ".env")
-    if loaded:
-        print(f"loaded .env keys: {', '.join(sorted(loaded))}", flush=True)
+def build_parser() -> argparse.ArgumentParser:
+    """Defaults are anchored at the project root, so the desk finds the canonical artifacts
+    whatever directory it is started from."""
     parser = argparse.ArgumentParser(
         description="Serve the read-only CSI 300 trading-desk dashboard."
     )
     parser.add_argument(
-        "--cycle-root", type=Path, default=Path("outputs/paper_trading/csi300_baseline/cycles")
+        "--cycle-root", type=Path, default=ROOT / "outputs/paper_trading/csi300_baseline/cycles"
     )
     parser.add_argument(
         "--pnl-curve",
         type=Path,
-        default=Path("outputs/csi300_research/hfq-formal-20260713/pnl_curve.json"),
+        default=ROOT / "outputs/csi300_research/hfq-formal-20260713/pnl_curve.json",
     )
     parser.add_argument(
-        "--state", type=Path, default=Path("data/paper/csi300_baseline/pipeline_state.json")
+        "--state", type=Path, default=ROOT / "data/paper/csi300_baseline/pipeline_state.json"
     )
-    parser.add_argument("--pool-root", type=Path, default=Path("outputs/momentum_pool"))
-    parser.add_argument("--pool-v2-root", type=Path, default=Path("outputs/momentum_pool_v2"))
+    parser.add_argument("--pool-root", type=Path, default=ROOT / "outputs/momentum_pool")
+    parser.add_argument("--pool-v2-root", type=Path, default=ROOT / "outputs/momentum_pool_v2")
     parser.add_argument(
         "--scoring-v2",
         type=Path,
-        default=Path("outputs/research/scoring_v2/latest_scores.json"),
+        default=ROOT / "outputs/research/scoring_v2/latest_scores.json",
         help="Research v2 score snapshot shown in the picker (not used by the counted strategy).",
     )
-    parser.add_argument("--intel-cache", type=Path, default=Path("outputs/research_cache"))
-    parser.add_argument("--jev-records", type=Path, default=Path("outputs/jev"))
+    parser.add_argument("--intel-cache", type=Path, default=ROOT / "outputs/research_cache")
+    parser.add_argument("--jev-records", type=Path, default=ROOT / "outputs/jev")
     parser.add_argument("--quotes", type=Path, default=None, help="Realtime quote CSV to watch.")
     parser.add_argument("--live-quotes", action="store_true", help="Poll AkShare spot quotes.")
     parser.add_argument("--quote-interval", type=float, default=30.0)
@@ -312,7 +311,14 @@ def main() -> int:
     parser.add_argument(
         "--export", type=Path, default=None, help="Write a static HTML snapshot and exit."
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    loaded = load_env_file(ROOT / ".env")
+    if loaded:
+        print(f"loaded .env keys: {', '.join(sorted(loaded))}", flush=True)
+    args = build_parser().parse_args()
 
     if args.export:
         snapshot = build_desk_snapshot(

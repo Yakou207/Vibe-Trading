@@ -323,3 +323,18 @@ def _score(symbol: str, total: float, confidence: float) -> dict[str, object]:
 
 def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def test_desk_defaults_resolve_from_project_root_not_cwd(tmp_path, monkeypatch) -> None:
+    from scripts.serve_trading_desk import ROOT as SCRIPT_ROOT, build_parser
+
+    monkeypatch.chdir(tmp_path)
+    args = build_parser().parse_args([])
+
+    for name in (
+        "cycle_root", "pnl_curve", "state", "pool_root", "pool_v2_root",
+        "scoring_v2", "intel_cache", "jev_records",
+    ):
+        path = getattr(args, name)
+        assert path.is_absolute() and path.is_relative_to(SCRIPT_ROOT), name
+    assert args.scoring_v2 == SCRIPT_ROOT / "outputs/research/scoring_v2/latest_scores.json"
