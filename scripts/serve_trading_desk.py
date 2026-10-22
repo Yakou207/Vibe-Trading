@@ -27,6 +27,7 @@ from fintech_quant.reports.desk import (  # noqa: E402
 from fintech_quant.reports.live_stock import LiveContext, intraday_payload  # noqa: E402
 from fintech_quant.reports.picker import (  # noqa: E402
     PickerData,
+    events_llm_payload,
     jev_payload,
     load_picker_data,
     picks_payload,
@@ -189,7 +190,20 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
         def do_POST(self) -> None:  # noqa: N802
-            if self.path.split("?", 1)[0] != "/api/jev":
+            path = self.path.split("?", 1)[0]
+            if path == "/api/events_llm":
+                try:
+                    result = events_llm_payload(
+                        state.picker(),
+                        self._query(),
+                        cache_dir=state.args.intel_cache,
+                        live=state.live,
+                    )
+                except Exception as exc:  # LLM/network failures are reported, not fatal
+                    result = {"error": f"LLM 辅助判定失败：{type(exc).__name__}: {str(exc)[:200]}"}
+                self._json(result)
+                return
+            if path != "/api/jev":
                 self.send_error(HTTPStatus.NOT_FOUND)
                 return
             try:

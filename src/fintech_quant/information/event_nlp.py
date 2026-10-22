@@ -3,6 +3,9 @@
 Rules, not a model: every tag can be traced to the phrase that produced it, and the same text
 always gives the same result. Negations such as 不存在/未发生/无 before a
 negative phrase in the same clause (up to 12 characters back) cancel it. Item polarity is aggregated with a 14-day half-life.
+Market round-ups that merely list the stock (强势股追踪, 资金流向日报, …; the title does not name
+it) are shown but not scored. Items the rules leave untagged can be labelled by an LLM
+(``information/event_llm.py``); those labels are kept separate and marked as such.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ EVENT_RULES: tuple[tuple[str, float, tuple[str, ...]], ...] = (
     ("回购", 0.8, ("回购",)),
     ("业绩预增", 1.0, ("预增", "扭亏", "预盈", "业绩大增", "超预期")),
     ("中标/大单", 0.6, ("中标", "签订重大合同", "订单")),
-    ("分红", 0.4, ("分红", "派息", "派发现金")),
+    ("分红", 0.4, ("分红", "派息", "派发现金", "权益分派", "利润分配")),
     ("评级上调", 0.6, ("上调评级", "首次覆盖", "买入评级", "增持评级")),
     ("减持", -0.9, ("减持",)),
     ("质押/冻结", -0.7, ("质押", "冻结", "司法拍卖")),
@@ -31,8 +34,14 @@ EVENT_RULES: tuple[tuple[str, float, tuple[str, ...]], ...] = (
     ("业绩下滑", -1.0, ("预减", "预亏", "首亏", "亏损", "下修", "业绩下滑", "不及预期")),
     ("增发稀释", -0.3, ("定增", "向特定对象发行", "非公开发行")),
     ("退市/ST", -1.0, ("退市", "*ST", "风险警示")),
-    ("高管变动", -0.2, ("辞职", "离任")),
+    ("高管变动", -0.2, ("辞职", "辞任", "离任")),
 )
+# Reported operating figures with a number: 上网电量同比降9.9%, 销量同比增长12%.
+PATTERN_RULES: tuple[tuple[str, float, re.Pattern[str]], ...] = (
+    ("经营数据增长", 0.4, re.compile(r"同比(?:增长|上升|提升|增加|增)\s*\d")),
+    ("经营数据下降", -0.4, re.compile(r"同比(?:下降|下滑|减少|降)\s*\d")),
+)
+ROUNDUP_HINTS = ("强势股", "资金流向", "突破年线", "龙虎榜", "涨停", "跌停", "个股", "盘点", "一览", "日报")
 NEGATIONS = ("不存在", "未发生", "未出现", "无重大", "不涉及", "澄清", "否认")
 HALF_LIFE_DAYS = 14.0
 # Official filings carry full weight; investor questions are opinions, not company events.
@@ -47,7 +56,23 @@ def tag_text(text: str) -> list[dict[str, object]]:
         hit = next((phrase for phrase in phrases if _unnegated(text, phrase, weight)), None)
         if hit is not None:
             tags.append({"tag": tag, "weight": weight, "phrase": hit})
+    for tag, weight, pattern in PATTERN_RULES:
+        match = pattern.search(text)
+        if match is not None:
+            tags.append({"tag": tag, "weight": weight, "phrase": match.group(0)})
     return tags
+
+
+def is_roundup(item: Mapping[str, object], *, name: str = "", symbol: str = "") -> bool:
+    """Market round-up news that merely lists the stock: round-up wording, and the title names
+    neither the stock nor its code (company news often says 公司 instead of the name)."""
+    if item.get("kind") != "news" or not (name or symbol):
+        return False
+    title = str(item.get("title", ""))
+    code = symbol.split(".")[0]
+    if (name and name in title) or (code and code in title):
+        return False
+    return any(hint in title for hint in ROUNDUP_HINTS)
 
 
 def _unnegated(text: str, phrase: str, weight: float) -> bool:
@@ -60,33 +85,32 @@ def _unnegated(text: str, phrase: str, weight: float) -> bool:
     return False
 
 
-def analyze_items(items: Sequence[Mapping[str, object]], *, today: date) -> dict[str, object]:
+def analyze_items(
+    items: Sequence[Mapping[str, object]], *, today: date, name: str = "", symbol: str = ""
+) -> dict[str, object]:
     scored = []
-    weighted = total_weight = 0.0
     counts: Counter[str] = Counter()
     for item in items:
         if item.get("kind") == "research":
             continue  # ratings are summarised separately; titles are mostly promotional
+        age = _age_days(str(item.get("published_at", "")), today)
+        if is_roundup(item, name=name, symbol=symbol):
+            scored.append({**item, "tags": [], "polarity": 0.0, "age_days": age, "roundup": True})
+            continue
         tags = tag_text(f"{item.get('title', '')} {item.get('summary', '')}")
         polarity = max(-1.0, min(1.0, sum(float(t["weight"]) for t in tags))) if tags else 0.0
-        age = _age_days(str(item.get("published_at", "")), today)
-        decay = (0.5 ** (age / HALF_LIFE_DAYS) if age is not None else 0.0) * KIND_WEIGHTS.get(
-            str(item.get("kind")), 0.5
-        )
-        if tags:
-            weighted += polarity * decay
-            total_weight += decay
-            counts.update(str(t["tag"]) for t in tags)
+        counts.update(str(t["tag"]) for t in tags)
         scored.append(
             {**item, "tags": [t["tag"] for t in tags], "polarity": polarity, "age_days": age}
         )
-    score = weighted / total_weight if total_weight else 0.0
+    score = decayed_sentiment(scored)
     tagged = [s for s in scored if s["tags"]]
     return {
         "sentiment": round(score, 4),
-        "label": "偏多" if score > 0.2 else "偏空" if score < -0.2 else "中性",
+        "label": sentiment_label(score),
         "tagged_items": len(tagged),
         "total_items": len(scored),
+        "roundup_items": sum(1 for s in scored if s.get("roundup")),
         "event_counts": dict(counts.most_common()),
         "top_negative": sorted(
             (s for s in tagged if s["polarity"] < 0), key=lambda s: s["polarity"]
@@ -96,6 +120,25 @@ def analyze_items(items: Sequence[Mapping[str, object]], *, today: date) -> dict
         )[:5],
         "items": scored,
     }
+
+
+def decayed_sentiment(scored: Sequence[Mapping[str, object]]) -> float:
+    """Tagged items' polarity, weighted by source kind and a 14-day half-life."""
+    weighted = total_weight = 0.0
+    for item in scored:
+        if not item.get("tags"):
+            continue
+        age = item.get("age_days")
+        decay = (
+            0.5 ** (float(age) / HALF_LIFE_DAYS) if isinstance(age, (int, float)) else 0.0  # type: ignore[arg-type]
+        ) * KIND_WEIGHTS.get(str(item.get("kind")), 0.5)
+        weighted += float(item["polarity"]) * decay  # type: ignore[arg-type]
+        total_weight += decay
+    return weighted / total_weight if total_weight else 0.0
+
+
+def sentiment_label(score: float) -> str:
+    return "偏多" if score > 0.2 else "偏空" if score < -0.2 else "中性"
 
 
 def research_consensus(

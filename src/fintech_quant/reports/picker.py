@@ -20,6 +20,7 @@ from typing import Mapping
 from fintech_quant.data.historical_universe import active_symbols, load_membership_intervals
 from fintech_quant.data.manifest_chain import load_verified_manifest
 from fintech_quant.execution.paper_evidence import approved_paper_policy, verify_file_reference
+from fintech_quant.information import event_llm
 from fintech_quant.information.event_nlp import analyze_items, financial_trend, research_consensus
 from fintech_quant.information.stock_intel import collect_stock_intel
 from fintech_quant.reports.live_stock import LiveContext, analyze_live, resolve_any
@@ -474,10 +475,11 @@ def research_payload(
         return {"error": f"未找到：{query}"}
     day = today or date.today()
     intel = collect_stock_intel(symbol, today=day, cache_dir=cache_dir, fetchers=fetchers)  # type: ignore[arg-type]
-    nlp = analyze_items(intel["items"], today=day)  # type: ignore[arg-type]
+    name = data.names.get(symbol) or (live.all_shares().get(symbol, "") if live else "")
+    nlp = analyze_items(intel["items"], today=day, name=name.replace(" ", ""), symbol=symbol)  # type: ignore[arg-type]
     research = {
         "symbol": symbol,
-        "name": data.names.get(symbol) or (live.all_shares().get(symbol, "") if live else ""),
+        "name": name,
         "fetched_at": intel["fetched_at"],
         "sources": intel["sources"],
         "nlp": {key: value for key, value in nlp.items() if key != "items"},
@@ -487,7 +489,19 @@ def research_payload(
         "financial_trend": financial_trend(intel["financials"]),  # type: ignore[arg-type]
         "comment_scores": intel["comment_scores"],
         "jev": config_status(),
+        "events_llm": _events_llm_status(),
     }
+    if cache_dir is not None and research["events_llm"].get("configured"):  # type: ignore[union-attr]
+        saved = event_llm.cached_result(
+            nlp["items"],  # type: ignore[arg-type]
+            name=name.replace(" ", ""),
+            symbol=symbol,
+            model=str(research["events_llm"]["model"]),  # type: ignore[index]
+            record_dir=cache_dir / "event_llm",
+            today=day,
+        )
+        if saved is not None:
+            research["events_llm_result"] = saved
     packet = jev_packet(stock_payload(data, symbol, live), research)
     research["jev_packet_sha256"] = hashlib.sha256(
         json.dumps(packet, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
@@ -516,6 +530,48 @@ def research_payload(
             }
         research["jev_spend"] = jev_spend(jev_record_dir, today=day)
     return research
+
+
+def events_llm_payload(
+    data: PickerData,
+    query: str,
+    *,
+    cache_dir: Path | None,
+    client: LlmClient | None = None,
+    today: date | None = None,
+    fetchers: Mapping[str, object] | None = None,
+    live: LiveContext | None = None,
+) -> dict[str, object]:
+    """Label the items the keyword rules left untagged with a chat model (advisory, cached daily)."""
+    symbol = _resolve(data, query, live)
+    if symbol is None:
+        return {"error": f"未找到：{query}"}
+    day = today or date.today()
+    intel = collect_stock_intel(symbol, today=day, cache_dir=cache_dir, fetchers=fetchers)  # type: ignore[arg-type]
+    name = (data.names.get(symbol) or (live.all_shares().get(symbol, "") if live else "")).replace(
+        " ", ""
+    )
+    nlp = analyze_items(intel["items"], today=day, name=name, symbol=symbol)  # type: ignore[arg-type]
+    try:
+        active = client or event_llm.client_from_env()
+    except event_llm.EventLlmNotConfigured as exc:
+        return {"error": str(exc)}
+    return event_llm.classify_events(
+        nlp["items"],  # type: ignore[arg-type]
+        name=name,
+        symbol=symbol,
+        client=active,
+        record_dir=None if cache_dir is None else cache_dir / "event_llm",
+        today=day,
+    )
+
+
+def _events_llm_status() -> dict[str, object]:
+    try:
+        client = event_llm.client_from_env()
+    except event_llm.EventLlmNotConfigured as exc:
+        return {"configured": False, "reason": str(exc)}
+    return {"configured": True, "model": client.model}
 
 
 def jev_payload(

@@ -387,7 +387,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     const items = r.items.map((i) => {
       const pol = i.polarity > 0 ? '<span class="pol-pos">▲</span> ' : i.polarity < 0 ? '<span class="pol-neg">▼</span> ' : "";
       const title = i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>` : esc(i.title);
-      return `<div class="item">${pol}${title}<div class="meta">${esc(String(i.published_at).slice(0, 10))} · ${esc(KIND[i.kind] || i.kind)} · ${esc(i.source)}${i.tags && i.tags.length ? " · " + esc(i.tags.join("、")) : ""}${i.rating ? " · 评级 " + esc(i.rating) : ""}</div></div>`;
+      return `<div class="item">${pol}${title}<div class="meta">${esc(String(i.published_at).slice(0, 10))} · ${esc(KIND[i.kind] || i.kind)} · ${esc(i.source)}${i.tags && i.tags.length ? " · " + esc(i.tags.join("、")) : ""}${i.roundup ? " · 行情汇总，不计分" : ""}${i.rating ? " · 评级 " + esc(i.rating) : ""}</div></div>`;
     }).join("");
     const fin = r.financials.map((f) => `<tr><td>${esc(f.period)}</td><td class="num">${pct(f.revenue_yoy)}</td><td class="num">${pct(f.net_profit_yoy)}</td><td class="num">${pct(f.deducted_profit_yoy)}</td><td class="num">${pct(f.roe)}</td><td class="num">${pct(f.net_margin)}</td></tr>`).join("");
     const flags = r.financial_trend.flags.map((f) => `<li class="${f.polarity > 0 ? "p1" : f.polarity < 0 ? "n1" : "z0"}">${esc(f.text)}</li>`).join("");
@@ -398,8 +398,9 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div class="section-head"><h2>全平台信息 · NLP</h2><span class="right">抓取于 ${esc(String(r.fetched_at).slice(0, 16).replace("T", " "))} UTC · 按日缓存</span></div>
       <div class="chips">${chips}</div>
       <div class="hero-row"><div><div class="muted" style="font-size:11px">事件情绪（−1 ~ +1，14 天半衰期）</div><div class="big">${r.nlp.sentiment >= 0 ? "+" : ""}${num(r.nlp.sentiment, 2)} <span style="font-size:14px">${esc(r.nlp.label)}</span></div></div>
-        <div class="muted mono" style="font-size:11px">识别到事件的条目 ${r.nlp.tagged_items}/${r.nlp.total_items}</div></div>
+        <div class="muted mono" style="font-size:11px">规则识别到事件 ${r.nlp.tagged_items}/${r.nlp.total_items}${r.nlp.roundup_items ? ` · 行情汇总 ${r.nlp.roundup_items} 条不计分` : ""}</div></div>
       <div class="chips">${events}</div>
+      <div id="events-llm"></div>
       <div class="items">${items || '<div class="empty">没有信息条目</div>'}</div>
       <div class="sub-grid" style="margin-top:14px">
         <div><div class="section-head"><h2>财报趋势</h2><span class="right">${esc(r.financial_trend.latest_period || "")}</span></div>
@@ -411,6 +412,36 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div class="section-head" style="margin-top:16px"><h2>Jev 判断</h2><span class="right">固定问题 → 概率或 JSON 作答 → SOFT 阈值</span></div>
       <div id="jev"></div>`;
     renderJev(r.jev_record, r);
+    renderEventsLlm(r.events_llm_result, r);
+  }
+
+  function renderEventsLlm(result, r) {
+    const el = $("events-llm");
+    if (!result) {
+      const ok = r.events_llm && r.events_llm.configured;
+      el.innerHTML = `<button class="jev-btn" id="events-llm-run" ${ok ? "" : "disabled"}>LLM 辅助判定</button>
+        <div class="note">${ok ? `${esc(r.events_llm.model)} 只给关键词规则没覆盖的条目打标签；规则结果不变，两种情绪并排显示。同一批条目每天只调用一次，结果存档。` : esc(r.events_llm ? r.events_llm.reason : "")}</div>`;
+      const btn = $("events-llm-run");
+      if (btn && ok) btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "LLM 判定中…";
+        try {
+          const res = await fetch(`/api/events_llm?q=${encodeURIComponent(r.symbol)}`, { method: "POST" });
+          const data = await res.json();
+          if (data.error) { el.innerHTML = `<div class="empty">${esc(data.error)}</div>`; return; }
+          renderEventsLlm(data, r);
+        } catch (e) { el.innerHTML = `<div class="empty">LLM 辅助判定失败：${esc(e.message)}</div>`; }
+      });
+      return;
+    }
+    const rows = result.llm_items.map((i) => {
+      const pol = i.polarity > 0 ? '<span class="pol-pos">▲</span> ' : i.polarity < 0 ? '<span class="pol-neg">▼</span> ' : "";
+      return `<div class="item">${pol}${esc(i.title)}<div class="meta">${esc(String(i.published_at).slice(0, 10))} · ${esc(KIND[i.kind] || i.kind)} · LLM：${esc(i.label)}（${num(i.polarity, 1)}）· ${esc(i.reason)}</div></div>`;
+    }).join("") || '<div class="muted">LLM 在规则未覆盖的条目里也没找到事件。</div>';
+    el.innerHTML = `<div class="hero-row" style="margin-top:10px"><div><div class="muted" style="font-size:11px">规则 + LLM 事件情绪</div><div class="big">${result.sentiment >= 0 ? "+" : ""}${num(result.sentiment, 2)} <span style="font-size:14px">${esc(result.label)}</span></div></div>
+        <div class="muted mono" style="font-size:11px">送审 ${result.sent_items} 条 · LLM 标注 ${result.llm_tagged} 条</div></div>
+      <div class="items">${rows}</div>
+      <div class="note">LLM 标签只填补规则空白，仅供研究参考，不进入任何评分、交易或证据链。</div>
+      ${costBar(result, null)}`;
   }
 
   const usd = (v) => (v == null ? "—" : v >= 0.01 ? `$${Number(v).toFixed(4)}` : `$${Number(v).toPrecision(3)}`);
