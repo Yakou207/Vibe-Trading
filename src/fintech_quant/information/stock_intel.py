@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import json
 import re
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import date, datetime, timedelta, timezone
@@ -31,6 +32,30 @@ SOURCE_LABELS = {
 SOURCE_TIMEOUT_SECONDS = 20.0
 NOTICE_LOOKBACK_DAYS = 120
 
+
+CACHE_RETENTION_DAYS = 30
+
+
+def prune_daily_cache(
+    root: Path, *, today: date, keep_days: int = CACHE_RETENTION_DAYS
+) -> list[Path]:
+    """Delete day folders (YYYY-MM-DD) older than ``keep_days`` from the intel cache and its
+    ``live/`` quote cache. Model call records (``event_llm/``, and Jev records kept elsewhere)
+    are not touched: they are the audit trail behind the cost totals."""
+    cutoff = today - timedelta(days=keep_days)
+    removed = []
+    for folder in (root, root / "live"):
+        if not folder.is_dir():
+            continue
+        for child in folder.iterdir():
+            try:
+                day = date.fromisoformat(child.name)
+            except ValueError:
+                continue  # event_llm/, live/ and anything else that is not a day folder
+            if child.is_dir() and day < cutoff:
+                shutil.rmtree(child)
+                removed.append(child)
+    return sorted(removed)
 
 def collect_stock_intel(
     symbol: str,

@@ -7,6 +7,7 @@ import queue
 import sys
 import threading
 import time
+from datetime import date
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,6 +18,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.information.stock_intel import prune_daily_cache  # noqa: E402
 from fintech_quant.reports.desk import (  # noqa: E402
     build_desk_snapshot,
     cycle_fingerprint,
@@ -60,7 +62,9 @@ class DeskState:
         self.picker_lock = threading.Lock()
         self.picker_data: PickerData | None = None
         self.picker_mtime = 0
+        self.pruned_on: date | None = None
         self.refresh(force=True)
+        self.prune_cache()
 
     def refresh(self, *, force: bool = False) -> bool:
         extra = [self.args.quotes] if self.args.quotes else []
@@ -103,6 +107,16 @@ class DeskState:
         except Exception as exc:  # provider outages must not kill the read-only view
             self.quotes_status = f"quote fetch failed: {exc}"
         return True
+
+    def prune_cache(self) -> None:
+        """Once per calendar day: drop intel/quote cache day folders older than 30 days."""
+        today = date.today()
+        if self.pruned_on == today:
+            return
+        self.pruned_on = today
+        removed = prune_daily_cache(self.args.intel_cache, today=today)
+        if removed:
+            print(f"pruned {len(removed)} cache day folders older than 30 days", flush=True)
 
     def _warm_universe(self) -> None:
         try:
@@ -266,6 +280,7 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
 def watch(state: DeskState, interval: float, stop: threading.Event) -> None:
     while not stop.wait(interval):
         try:
+            state.prune_cache()
             if state.refresh():
                 print(f"desk snapshot updated as_of={state.snapshot.get('as_of')}", flush=True)
         except Exception as exc:  # a half-written cycle directory is retried on the next poll
