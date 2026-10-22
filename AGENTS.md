@@ -63,6 +63,19 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-10-22 paper execution bug fix (not a strategy change)
+
+- The 2026-10-21 cycle (third counted session, `valid_sessions=3`, run by the launchd job) sold only
+  2,100 of 2,200 `601018.SH` shares after the name left the targets: a floating-point floor
+  (`7876.0 // 3.58 == 2199.0`) plus lot rounding. The remainder was unsellable because sub-lot value
+  differences are skipped, and the formal backtest sells the whole position, so paper and backtest
+  disagreed.
+- Fixed before the 2026-10-22 run: zero-target names are sold in full (odd lot allowed with the whole
+  position) and partial sells use a tolerance. No target, score, threshold, risk rule or cost changed,
+  so the epoch-2 window continues; see `handoff.md` for details.
+- The 2026-10-21 cycle queued no targets (broad-market `reduce` on all 299 members), so the
+  2026-10-22 open liquidates all eight positions, including the 100-share remainder.
+
 ### 2026-10-20 second counted session
 
 - The 2026-10-20 cycle was accepted (`COLLECTING`, `valid_sessions=2`). The first attempt failed closed

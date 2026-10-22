@@ -39,7 +39,10 @@ This is not deployable-profit proof. At the time of this handoff:
 - the 2026-10-19 cycle is the first counted session of epoch 2 (audit `COLLECTING`, `valid_sessions=1`,
   cycle-local report sha256 `60ffe505fd2595f8350dcf992a58ac248b7b5b45f32fab130411d0196b9b5862`); the 2026-10-20 cycle is the second (`valid_sessions=2`, cycle manifest sha256
   `23810d39c170d35ef9d66337c466cb110563085fa7083c55dc89d225340ce48c`; one transient Sina failure on
-  `603993.SH` failed closed and a plain resume completed it); the next run is 2026-10-21; `601059.SH` is a confirmed suspended
+  `603993.SH` failed closed and a plain resume completed it); the 2026-10-21 cycle is the third (`valid_sessions=3`, cycle manifest sha256
+  `83bc21c72e64f6fbf3457a9ccac57d68457c82367dc38733a267d72a8012c9b5`, run by the launchd job); it
+  queued no targets because the broad-market rule emitted `reduce` for all 299 members, so the
+  2026-10-22 open liquidates the book; the next run is 2026-10-22; `601059.SH` is a confirmed suspended
   member (no price after 2026-09-14 in both sources) and is listed but not scored;
 - complete schema-version-2 cycles exist for `2026-07-15`, `2026-07-16`, and `2026-07-21`; all
   remain preserved failed evidence under the original anchor;
@@ -145,6 +148,23 @@ Independent audit command:
   --cycle-root outputs/paper_trading/csi300_baseline/cycles \
   --output outputs/paper_trading/csi300_baseline/validation_report.json
 ```
+
+## 2026-10-22 execution bug fix (not a strategy change)
+
+The 2026-10-21 cycle sold only 2,100 of 2,200 `601018.SH` shares although the name had left the
+targets. Root cause in `src/fintech_quant/execution/paper_account.py`: the sell size was
+`int(abs(value_diff) // execution_price)` and `7876.0 // 3.58 == 2199.0` in floating point, which
+lot rounding turned into 2,100. The 100-share remainder could never be sold, because value
+differences below one lot are skipped. The formal backtest sells `position.shares` outright, so paper
+and backtest disagreed; the auditor checks queued targets and weight limits but not that dropped
+names are fully exited, so it did not flag the cycle.
+
+Fix (merged before the 2026-10-22 run): a name whose target weight is zero is sold in full, an odd
+lot only together with the whole position (as A-share rules allow), and partial sells use a 1e-9
+tolerance instead of a raw floor. Targets, scores, thresholds, risk rules and costs are unchanged,
+so this is an execution-correctness repair, not strategy tuning, and the epoch-2 window continues.
+The 2026-10-21 cycle stays as recorded. Regression tests: `PaperFullExitTest` in
+`tests/test_paper_trading_loop.py`.
 
 ## Scheduled automation (launchd)
 
