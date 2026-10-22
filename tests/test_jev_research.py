@@ -504,7 +504,10 @@ def test_chat_calls_record_served_model_and_token_usage(tmp_path: Path) -> None:
     )
 
     assert record["served_model"] == "deepseek-flash-1017"
-    assert record["usage"] == {"input_tokens": 1200, "output_tokens": 300, "cost": None}
+    usage = record["usage"]
+    assert (usage["input_tokens"], usage["output_tokens"], usage["cost_estimated"]) == (1200, 300, True)
+    peak = (1200 * 0.3 + 300 * 1.2) / 1_000_000  # DeepSeek returns no price; tariff depends on time
+    assert usage["cost"] in (pytest.approx(peak), pytest.approx(peak / 2))
 
 
 def test_spend_sums_today_and_all_time_and_counts_unpriced(tmp_path: Path, monkeypatch) -> None:

@@ -154,6 +154,8 @@ def classify_events(
     record_dir: Path | None,
     today: date,
 ) -> dict[str, object]:
+    # One call per stock, item set, prompt and model per day: a repeated click or a desk restart
+    # reuses the saved labels and is never billed twice.
     saved = cached_result(
         scored, name=name, symbol=symbol, model=client.model, record_dir=record_dir, today=today
     )

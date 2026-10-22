@@ -130,3 +130,54 @@ def test_client_requires_deepseek_key_and_ignores_jev_model() -> None:
     client = event_llm.client_from_env({"DEEPSEEK_API_KEY": "k", "JEV_MODEL": "Jev 1.14"})
 
     assert client.model == "deepseek-flash"
+
+
+def test_deepseek_cost_uses_cache_split_and_time_of_day_tariff() -> None:
+    from datetime import datetime, timezone
+
+    from fintech_quant.research.jev import deepseek_cost
+
+    usage = {"prompt_tokens": 1000, "prompt_cache_hit_tokens": 200, "completion_tokens": 500}
+    peak = deepseek_cost("deepseek-flash", usage, datetime(2026, 10, 22, 2, 0, tzinfo=timezone.utc))
+    off_peak = deepseek_cost(
+        "deepseek-flash", usage, datetime(2026, 10, 24, 2, 0, tzinfo=timezone.utc)  # Saturday
+    )
+
+    assert peak == pytest.approx((200 * 0.006 + 800 * 0.3 + 500 * 1.2) / 1_000_000)
+    assert off_peak == pytest.approx(peak / 2)
+    assert deepseek_cost("claude-sonnet-5-5", usage, datetime.now(timezone.utc)) is None
+
+
+def test_deepseek_client_records_an_estimated_cost() -> None:
+    from fintech_quant.research.jev import LlmClient
+
+    def transport(url, headers, body, timeout):  # noqa: ANN001
+        return json.dumps({
+            "model": "deepseek-flash",
+            "usage": {"prompt_tokens": 1365, "completion_tokens": 331},
+            "choices": [{"message": {"content": "{}"}}],
+        }).encode("utf-8")
+
+    client = LlmClient(provider="openai", api_key="k", model="deepseek-flash", transport=transport)
+    client.complete("s", "u")
+
+    assert client.last_meta["usage"]["cost"] > 0
+    assert client.last_meta["usage"]["cost_estimated"] is True
+
+
+def test_spend_prices_older_deepseek_records_from_tokens(tmp_path: Path) -> None:
+    from fintech_quant.reports.picker import jev_spend
+
+    record = {
+        "model": "deepseek-flash",
+        "created_at": "2026-10-22T18:00:00+08:00",
+        "usage": {"input_tokens": 1365, "output_tokens": 331, "cost": None},
+    }
+    _path = tmp_path / "2026-10-22" / "x.json"
+    _path.parent.mkdir(parents=True)
+    _path.write_text(json.dumps(record), encoding="utf-8")
+
+    spend = jev_spend(tmp_path, today=TODAY)
+
+    assert spend["total_calls"] == 1 and spend["unpriced_calls"] == 0
+    assert spend["total_cost"] == pytest.approx((1365 * 0.3 + 331 * 1.2) / 1_000_000 / 2)

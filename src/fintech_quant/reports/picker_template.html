@@ -420,7 +420,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     if (!result) {
       const ok = r.events_llm && r.events_llm.configured;
       el.innerHTML = `<button class="jev-btn" id="events-llm-run" ${ok ? "" : "disabled"}>LLM 辅助判定</button>
-        <div class="note">${ok ? `${esc(r.events_llm.model)} 只给关键词规则没覆盖的条目打标签；规则结果不变，两种情绪并排显示。同一批条目每天只调用一次，结果存档。` : esc(r.events_llm ? r.events_llm.reason : "")}</div>`;
+        <div class="note">${ok ? `${esc(r.events_llm.model)} 只给关键词规则没覆盖的条目打标签；规则结果不变，两种情绪并排显示。` : esc(r.events_llm ? r.events_llm.reason : "")}</div>${costBar(null, r.events_llm_spend)}`;
       const btn = $("events-llm-run");
       if (btn && ok) btn.addEventListener("click", async () => {
         btn.disabled = true; btn.textContent = "LLM 判定中…";
@@ -441,7 +441,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
         <div class="muted mono" style="font-size:11px">送审 ${result.sent_items} 条 · LLM 标注 ${result.llm_tagged} 条</div></div>
       <div class="items">${rows}</div>
       <div class="note">LLM 标签只填补规则空白，仅供研究参考，不进入任何评分、交易或证据链。</div>
-      ${costBar(result, null)}`;
+      ${costBar(result, result.spend || r.events_llm_spend)}`;
   }
 
   const usd = (v) => (v == null ? "—" : v >= 0.01 ? `$${Number(v).toFixed(4)}` : `$${Number(v).toPrecision(3)}`);
@@ -455,7 +455,8 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       parts.push(record.cached
         ? `<span><span class="k">本次</span>存档结果，未重复计费（原调用 ${usd(u.cost)}${tokens}）</span>`
         : `<span><span class="k">本次</span><b>${usd(u.cost)}</b>${tokens}</span>`);
-      if (u.cost == null && !record.cached) parts.push('<span class="muted">该接口未返回费用，只显示 token</span>');
+      if (u.cost_estimated) parts.push('<span class="muted">DeepSeek 不返回费用，按官方分时价目由 token 计算</span>');
+      else if (u.cost == null && !record.cached) parts.push('<span class="muted">该接口未返回费用，只显示 token</span>');
     }
     if (spend) {
       parts.push(`<span><span class="k">今日</span>${spend.today_calls} 次 · <b>${usd(spend.today_cost)}</b></span>`);
@@ -469,7 +470,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     if (!record) {
       const ok = r.jev && r.jev.configured;
       el.innerHTML = `<button class="jev-btn" id="jev-run" ${ok ? "" : "disabled"}>请 Jev 判断</button>
-        <div class="note">${ok ? `${esc(r.jev.provider)} · ${esc(r.jev.model)} · 同一资料包只调用一次，结果存档` : `Jev 未配置：${esc(r.jev ? r.jev.reason : "")}。`}</div>${costBar(null, r.jev_spend)}`;
+        <div class="note">${ok ? `${esc(r.jev.provider)} · ${esc(r.jev.model)}` : `Jev 未配置：${esc(r.jev ? r.jev.reason : "")}。`}</div>${costBar(null, r.jev_spend)}`;
       const btn = $("jev-run");
       if (btn && ok) btn.addEventListener("click", async () => {
         btn.disabled = true; btn.textContent = "Jev 思考中…";

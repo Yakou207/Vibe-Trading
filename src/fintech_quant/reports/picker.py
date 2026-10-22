@@ -30,6 +30,7 @@ from fintech_quant.research.jev import (
     ask_jev,
     client_from_env,
     config_status,
+    deepseek_cost,
     questions_sha,
     record_name,
 )
@@ -502,6 +503,8 @@ def research_payload(
         )
         if saved is not None:
             research["events_llm_result"] = saved
+    if cache_dir is not None:
+        research["events_llm_spend"] = jev_spend(cache_dir / "event_llm", today=day)
     packet = jev_packet(stock_payload(data, symbol, live), research)
     research["jev_packet_sha256"] = hashlib.sha256(
         json.dumps(packet, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
@@ -556,14 +559,18 @@ def events_llm_payload(
         active = client or event_llm.client_from_env()
     except event_llm.EventLlmNotConfigured as exc:
         return {"error": str(exc)}
-    return event_llm.classify_events(
+    record_dir = None if cache_dir is None else cache_dir / "event_llm"
+    result = event_llm.classify_events(
         nlp["items"],  # type: ignore[arg-type]
         name=name,
         symbol=symbol,
         client=active,
-        record_dir=None if cache_dir is None else cache_dir / "event_llm",
+        record_dir=record_dir,
         today=day,
     )
+    if record_dir is not None:
+        result["spend"] = jev_spend(record_dir, today=day)
+    return result
 
 
 def _events_llm_status() -> dict[str, object]:
@@ -611,7 +618,9 @@ def jev_payload(
 
 
 def jev_spend(record_dir: Path, *, today: date) -> dict[str, object]:
-    """Sum recorded Jev call costs: today (local calendar date of the call) and all time."""
+    """Sum recorded model call costs: today (local calendar date of the call) and all time.
+    Used for both Jev records and LLM-assist records. DeepSeek calls saved before costs were
+    recorded are priced from their token counts, all input treated as a cache miss."""
     totals = {
         "today_calls": 0,
         "today_cost": 0.0,
@@ -624,7 +633,18 @@ def jev_spend(record_dir: Path, *, today: date) -> dict[str, object]:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        cost = (record.get("usage") or {}).get("cost")
+        usage = record.get("usage") or {}
+        cost = usage.get("cost")
+        if cost is None and usage.get("input_tokens") is not None:
+            moment = _timestamp(str(record.get("created_at", "")))
+            cost = moment and deepseek_cost(
+                str(record.get("model", "")),
+                {
+                    "prompt_tokens": usage.get("input_tokens"),
+                    "completion_tokens": usage.get("output_tokens"),
+                },
+                moment,
+            )
         is_today = _local_date(str(record.get("created_at", ""))) == today
         totals["total_calls"] += 1
         totals["today_calls"] += int(is_today)
@@ -700,7 +720,12 @@ def _signed_pct(value: object) -> str | None:
 
 
 def _local_date(timestamp: str) -> date | None:
+    moment = _timestamp(timestamp)
+    return moment.astimezone().date() if moment else None
+
+
+def _timestamp(text: str) -> datetime | None:
     try:
-        return datetime.fromisoformat(timestamp).astimezone().date()
+        return datetime.fromisoformat(text)
     except ValueError:
         return None

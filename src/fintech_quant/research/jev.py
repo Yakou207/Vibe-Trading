@@ -68,6 +68,14 @@ SYSTEM_PROMPT = (
 DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-flash"
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+# DeepSeek reports tokens but no price. Peak USD per 1M tokens (input cache hit, input cache miss,
+# output) from https://api-docs.deepseek.com/quick_start/pricing, read 2026-10-22. Off-peak is half;
+# peak is Mon-Fri 01:00-04:00 and 06:00-10:00 UTC (Chinese public holidays, which are off-peak, are
+# not modelled, so a holiday call is overstated).
+DEEPSEEK_PEAK_PRICES: dict[str, tuple[float, float, float]] = {
+    "deepseek-flash": (0.006, 0.3, 1.2),
+    "deepseek-v4-pro": (0.044, 1.32, 3.96),
+}
 
 
 class JevNotConfigured(RuntimeError):
@@ -173,7 +181,31 @@ class LlmClient:
         )
         payload = json.loads(raw)
         self.last_meta = _chat_meta(payload, "prompt_tokens", "completion_tokens")
+        usage = self.last_meta["usage"]
+        if usage["cost"] is None:  # type: ignore[index]
+            cost = deepseek_cost(
+                self.model, dict(payload.get("usage") or {}), datetime.now(timezone.utc)
+            )
+            if cost is not None:
+                usage.update({"cost": cost, "cost_estimated": True})  # type: ignore[union-attr]
         return str(payload["choices"][0]["message"]["content"])
+
+
+def deepseek_cost(model: str, usage: Mapping[str, object], moment: datetime) -> float | None:
+    """USD for one DeepSeek call from its token counts and the time-of-day tariff."""
+    prices = DEEPSEEK_PEAK_PRICES.get(model)
+    if prices is None:
+        return None
+    hit_price, miss_price, output_price = prices
+    prompt = int(usage.get("prompt_tokens") or 0)  # type: ignore[arg-type]
+    hit = int(usage.get("prompt_cache_hit_tokens") or 0)  # type: ignore[arg-type]
+    miss = usage.get("prompt_cache_miss_tokens")
+    miss = prompt - hit if miss is None else int(miss)  # type: ignore[arg-type]
+    output = int(usage.get("completion_tokens") or 0)  # type: ignore[arg-type]
+    utc = moment.astimezone(timezone.utc)
+    peak = utc.weekday() < 5 and (1 <= utc.hour < 4 or 6 <= utc.hour < 10)
+    total = (hit * hit_price + miss * miss_price + output * output_price) / 1_000_000
+    return round(total * (1.0 if peak else 0.5), 8)
 
 
 TYPESAFE_DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
@@ -371,6 +403,8 @@ def ask_jev(
             / str(packet.get("as_of", "undated"))
             / record_name(str(packet.get("symbol", "unknown")), packet_sha, client.model)
         )
+        # One call per packet: the same facts, questions and model reuse the saved judgment, so a
+        # repeated click or a desk restart is never billed twice.
         if record_path.exists():
             return {**json.loads(record_path.read_text(encoding="utf-8")), "cached": True}
     meta: dict[str, object] = {}
