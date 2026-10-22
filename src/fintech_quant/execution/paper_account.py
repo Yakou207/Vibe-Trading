@@ -134,7 +134,8 @@ def run_paper_trading_day(
         target_value = equity_before * target_weight
         current_value = current.shares * execution_price
         value_diff = target_value - current_value
-        if abs(value_diff) < execution_price * active_constraints.lot_size:
+        full_exit = target_weight == 0.0 and current.shares > 0
+        if not full_exit and abs(value_diff) < execution_price * active_constraints.lot_size:
             continue
         if value_diff > 0:
             order = _buy(
@@ -169,10 +170,13 @@ def run_paper_trading_day(
         order = _sell(
             symbol,
             execution_price,
-            min(
+            current.shares
+            if full_exit
+            else min(
                 current.shares,
                 _round_lot(
-                    int(abs(value_diff) // execution_price),
+                    # a tolerance, since e.g. 2200 * 3.58 // 3.58 == 2199.0 in floating point
+                    int(abs(value_diff) / execution_price + 1e-9),
                     active_constraints.lot_size,
                 ),
             ),
@@ -478,7 +482,8 @@ def _sell(
     blocked = _blocked_sell(symbol, position, bar, as_of, constraints)
     if blocked:
         return {"blocked": blocked}
-    shares = _round_lot(shares, constraints.lot_size)
+    if shares != position.shares:  # an odd lot may only be sold together with the whole position
+        shares = _round_lot(shares, constraints.lot_size)
     if shares <= 0:
         return {"blocked": {"symbol": symbol, "action": "sell", "reason": "below_lot_size"}}
     price = round(close * (1.0 - slippage_rate), 6)

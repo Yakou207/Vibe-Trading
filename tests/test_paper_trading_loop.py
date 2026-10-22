@@ -327,6 +327,64 @@ class PaperTradingLoopTest(unittest.TestCase):
         self.assertEqual(report["nav"]["equity"], 100000.0)
 
 
+class PaperFullExitTest(unittest.TestCase):
+    def test_name_dropped_from_targets_is_sold_completely(self) -> None:
+        """2026-10-21: 601018.SH held 2,200 shares, left the targets and opened at 3.58.
+        7876.0 // 3.58 == 2199.0 in floating point, so the lot-rounded sell was 2,100 shares."""
+        from fintech_quant.execution.paper_account import (
+            PaperAccount,
+            PaperPosition,
+            run_paper_trading_day,
+        )
+
+        account = PaperAccount(
+            cash=60000.0,
+            positions={
+                "601018.SH": PaperPosition(
+                    shares=2200, cost_basis=3.62181, last_buy_date=date(2026, 10, 20)
+                )
+            },
+        )
+
+        result = run_paper_trading_day(
+            account,
+            targets={},
+            bars={"601018.SH": _bar("601018.SH", 3.6, open=3.58)},
+            as_of=date(2026, 10, 21),
+            slippage_rate=0.0005,
+        )
+
+        self.assertEqual([t["shares"] for t in result.trades], [2200])
+        self.assertNotIn("601018.SH", result.account.positions)
+
+
+    def test_leftover_odd_lot_is_sold_with_the_whole_position(self) -> None:
+        from fintech_quant.execution.paper_account import (
+            PaperAccount,
+            PaperPosition,
+            run_paper_trading_day,
+        )
+
+        account = PaperAccount(
+            cash=60000.0,
+            positions={
+                "601018.SH": PaperPosition(
+                    shares=150, cost_basis=3.62181, last_buy_date=date(2026, 10, 20)
+                )
+            },
+        )
+
+        result = run_paper_trading_day(
+            account,
+            targets={},
+            bars={"601018.SH": _bar("601018.SH", 3.6, open=3.58)},
+            as_of=date(2026, 10, 22),
+        )
+
+        self.assertEqual([t["shares"] for t in result.trades], [150])
+        self.assertEqual(result.account.positions, {})
+
+
 def _bar(symbol: str, close: float, **overrides: object) -> dict[str, object]:
     row = {
         "symbol": symbol,
