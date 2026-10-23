@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
+from zoneinfo import ZoneInfo
 
 from fintech_quant.data.js_runtime import js_call
 from fintech_quant.data.price_volume_flow import materialize_price_volume_flow_proxy
@@ -37,6 +38,7 @@ from fintech_quant.features.technical_indicators import enrich_daily_bars
 from fintech_quant.information.stock_intel import parse_financial_abstract
 from fintech_quant.research.momentum_setup import Bar, SetupConfig, SymbolSeries, analyze_at
 
+SHANGHAI = ZoneInfo("Asia/Shanghai")  # A-share clock, whatever time zone the Mac is in
 HISTORY_DAYS = 430
 INTRADAY_TIMEOUT = 12.0
 Fetcher = Callable[..., object]
@@ -311,7 +313,7 @@ def analyze_live(
         "fundamentals": fundamentals,
         "source": source,
         "provisional": provisional,
-        "fetched_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "fetched_at": datetime.now(SHANGHAI).isoformat(timespec="seconds"),
     }
 
 

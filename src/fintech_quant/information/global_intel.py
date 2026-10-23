@@ -269,7 +269,9 @@ def _run_all(
         label = jobs[key][0]
         try:
             results[key] = future.result(timeout=max(0.1, deadline - time.monotonic()))
-            sources[key] = {"label": label, "status": "ok", "count": len(_rows(results[key]))}
+            is_news = key.startswith("news_")  # a quote history's length means nothing to show
+            count = len(_rows(results[key])) if is_news else None
+            sources[key] = {"label": label, "status": "ok", "count": count}
         except FutureTimeout:
             sources[key] = {"label": label, "status": "timeout", "count": 0}
         except Exception as exc:  # one source failing must not hide the others

@@ -248,7 +248,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     const zone = a.zone ? `共振区 ${num(a.zone.bottom)}–${num(a.zone.top)}` : "无共振区";
     $("stock").innerHTML = `
       <div class="stock-head"><span class="name">${esc(s.name)}</span><span class="mono muted">${esc(s.symbol)}</span>
-        <span class="px">${num(a.close)}</span><span class="muted mono">截至 ${esc(s.as_of)}${s.provisional ? "（盘中）" : ""} · ${s.mode === "live" ? `<span class="badge">实时分析 · 前复权 · ${esc(s.price_source)} · 抓取于 ${esc(String(s.fetched_at || "").slice(11, 16))}</span>` : `<span class="badge">交易池 · 时点数据（实时抓取失败）</span> 筛选排名 ${s.rank ?? "—"}/${s.rank_of}`}</span></div>
+        <span class="px">${num(a.close)}</span><span class="muted mono">截至 ${esc(s.as_of)}${s.provisional ? "（盘中）" : ""} · ${s.mode === "live" ? `<span class="badge">实时分析 · 前复权 · ${esc(s.price_source)} · 抓取于 ${esc(String(s.fetched_at || "").slice(11, 16))}（上海）</span>` : `<span class="badge">交易池 · 时点数据（实时抓取失败）</span> 筛选排名 ${s.rank ?? "—"}/${s.rank_of}`}</span></div>
       <div class="verdict ${esc(v.level)}"><div class="head">${esc(v.headline)}</div>
         <ul>${[...(a.state === "trigger" ? [`参考止损 ${num(a.stop)}（${pct(a.stop_pct)}），至前高约 ${num(a.reward_r, 1)}R`] : []), `${zone}`, ...v.notes].map((n) => `<li>${esc(n)}</li>`).join("")}</ul>
         <div class="note">${esc(v.disclaimer)}</div></div>
@@ -385,7 +385,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
   function renderResearch(r) {
     const el = $("research");
     if (r.error) { el.innerHTML = `<div class="empty">${esc(r.error)}</div>`; return; }
-    const chips = Object.values(r.sources).map((s) => `<span class="chip ${esc(s.status)}" title="${esc(s.error || "")}">${esc(s.label)} ${s.count}</span>`).join("");
+    const chips = Object.values(r.sources).map((s) => `<span class="chip ${esc(s.status)}" title="${esc(s.error || "")}">${esc(s.label)}${s.count == null ? "" : " " + s.count}</span>`).join("");
     const events = Object.entries(r.nlp.event_counts).map(([t, n]) => `<span class="chip">${esc(t)} ×${n}</span>`).join("") || '<span class="muted">未识别到事件</span>';
     const items = r.items.map((i) => {
       const pol = i.polarity > 0 ? '<span class="pol-pos">▲</span> ' : i.polarity < 0 ? '<span class="pol-neg">▼</span> ' : "";
