@@ -35,17 +35,53 @@ EVENT_RULES: tuple[tuple[str, float, tuple[str, ...]], ...] = (
     ("增发稀释", -0.3, ("定增", "向特定对象发行", "非公开发行")),
     ("退市/ST", -1.0, ("退市", "*ST", "风险警示")),
     ("高管变动", -0.2, ("辞职", "辞任", "离任")),
+    # Company operations
+    ("股权激励", 0.4, ("股权激励", "员工持股计划")),
+    ("战略合作", 0.3, ("战略合作", "战略投资", "签署合作协议")),
+    ("获批/认证", 0.5, ("获批", "获得批准", "获得注册", "通过认证", "FDA批准", "获准上市")),
+    ("涨价", 0.4, ("涨价", "提价", "上调价格", "价格上调", "价格上涨", "价格显著上涨", "价格大涨")),
+    ("降价", -0.3, ("降价", "下调价格", "价格下调", "价格战", "价格下跌", "价格大跌")),
+    ("投产/扩产", 0.3, ("投产", "扩产", "产能释放", "量产")),
+    ("停产/事故", -0.7, ("停产", "停工", "安全事故", "爆炸", "火灾", "泄漏")),
+    ("召回", -0.5, ("召回",)),
+    ("违约/逾期", -0.9, ("违约", "逾期", "无法兑付", "债务危机", "破产重整")),
+    ("摘帽", 0.6, ("撤销风险警示", "摘帽")),
+    # Macro, policy and global events (also used to pick relevant global news flashes)
+    ("降息/宽松", 0.5, ("降息", "降准", "宽松", "放水", "量化宽松")),
+    ("加息/收紧", -0.5, ("加息", "缩表", "紧缩")),
+    ("政策支持", 0.4, ("政策支持", "补贴", "刺激政策", "稳增长", "专项债")),
+    ("关税/贸易摩擦", -0.6, ("加征关税", "关税上调", "贸易战", "贸易摩擦", "反倾销", "反补贴")),
+    ("关税缓和", 0.5, ("关税豁免", "下调关税", "取消关税", "暂停加征", "贸易协议")),
+    ("制裁/出口管制", -0.8, ("制裁", "出口管制", "实体清单", "禁令", "断供")),
+    ("地缘冲突", -0.5, ("冲突升级", "开战", "空袭", "导弹袭击", "军事行动")),
+    ("地缘缓和", 0.3, ("停火", "停战", "和谈", "缓和局势", "达成和平")),
+    ("海外大涨", 0.5, ("美股大涨", "美股集体收涨", "纳指大涨", "纳指涨超", "费城半导体指数涨超")),
+    ("海外大跌", -0.5, ("美股大跌", "美股集体收跌", "纳指大跌", "纳指跌超", "费城半导体指数跌超", "暴跌", "闪崩")),
 )
+# Economy-wide events: they make a global flash relevant to any stock.
+MACRO_TAGS = frozenset(
+    {
+        "降息/宽松", "加息/收紧", "关税/贸易摩擦", "关税缓和",
+        "制裁/出口管制", "地缘冲突", "地缘缓和", "海外大涨", "海外大跌",
+    }
+)
+# A global flash is about other companies or the economy, so company events in it (another
+# firm's order, buyback, probe) are not this stock's events; only these tags count for it.
+GLOBAL_TAGS = MACRO_TAGS | {"涨价", "降价", "政策支持"}
+# Synthetic overseas-market items (global_intel) carry their tag directly.
+MOVE_WEIGHTS = {"海外大涨": 0.5, "海外大跌": -0.5}
 # Reported operating figures with a number: 上网电量同比降9.9%, 销量同比增长12%.
 PATTERN_RULES: tuple[tuple[str, float, re.Pattern[str]], ...] = (
     ("经营数据增长", 0.4, re.compile(r"同比(?:增长|上升|提升|增加|增)\s*\d")),
     ("经营数据下降", -0.4, re.compile(r"同比(?:下降|下滑|减少|降)\s*\d")),
 )
-ROUNDUP_HINTS = ("强势股", "资金流向", "突破年线", "龙虎榜", "涨停", "跌停", "个股", "盘点", "一览", "日报")
-NEGATIONS = ("不存在", "未发生", "未出现", "无重大", "不涉及", "澄清", "否认")
+ROUNDUP_COUNT = re.compile(r"\d+(?:只|家)?(?:个)?股")  # 主力资金连续5日净流入82股, 83股股价超百元
+ROUNDUP_HINTS = ("强势股", "资金流向", "突破年线", "龙虎榜", "涨停", "跌停", "个股", "盘点", "一览", "日报", "排行", "榜单", "名单", "概念股", "平均股价")
+NEGATIONS = ("不存在", "未发生", "未出现", "无重大", "不涉及", "澄清", "否认", "撤销", "解除")
 HALF_LIFE_DAYS = 14.0
-# Official filings carry full weight; investor questions are opinions, not company events.
-KIND_WEIGHTS = {"notice": 1.0, "news": 0.7, "qa": 0.3}
+# Official filings carry full weight; investor questions are opinions, not company events;
+# global flashes and overseas moves affect the stock only indirectly.
+KIND_WEIGHTS = {"notice": 1.0, "news": 0.7, "qa": 0.3, "global": 0.4}
 BULLISH_RATINGS = {"买入", "增持", "强烈推荐", "推荐", "优于大市", "跑赢行业"}
 BEARISH_RATINGS = {"减持", "卖出", "回避", "弱于大市"}
 
@@ -60,6 +96,8 @@ def tag_text(text: str) -> list[dict[str, object]]:
         match = pattern.search(text)
         if match is not None:
             tags.append({"tag": tag, "weight": weight, "phrase": match.group(0)})
+    if any(t["tag"] == "地缘缓和" for t in tags):  # 同意停火 after 空袭 reports is de-escalation
+        tags = [t for t in tags if t["tag"] != "地缘冲突"]
     return tags
 
 
@@ -72,7 +110,7 @@ def is_roundup(item: Mapping[str, object], *, name: str = "", symbol: str = "") 
     code = symbol.split(".")[0]
     if (name and name in title) or (code and code in title):
         return False
-    return any(hint in title for hint in ROUNDUP_HINTS)
+    return any(hint in title for hint in ROUNDUP_HINTS) or bool(ROUNDUP_COUNT.search(title))
 
 
 def _unnegated(text: str, phrase: str, weight: float) -> bool:
@@ -98,6 +136,11 @@ def analyze_items(
             scored.append({**item, "tags": [], "polarity": 0.0, "age_days": age, "roundup": True})
             continue
         tags = tag_text(f"{item.get('title', '')} {item.get('summary', '')}")
+        if item.get("kind") == "global":
+            tags = [t for t in tags if t["tag"] in GLOBAL_TAGS]
+        if item.get("move_tag") in MOVE_WEIGHTS:
+            tag = str(item["move_tag"])
+            tags = [{"tag": tag, "weight": MOVE_WEIGHTS[tag], "phrase": tag}]
         polarity = max(-1.0, min(1.0, sum(float(t["weight"]) for t in tags))) if tags else 0.0
         counts.update(str(t["tag"]) for t in tags)
         scored.append(

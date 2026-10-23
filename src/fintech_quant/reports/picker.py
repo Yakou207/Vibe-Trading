@@ -22,8 +22,14 @@ from fintech_quant.data.manifest_chain import load_verified_manifest
 from fintech_quant.execution.paper_evidence import approved_paper_policy, verify_file_reference
 from fintech_quant.information import event_llm
 from fintech_quant.information.event_nlp import analyze_items, financial_trend, research_consensus
+from fintech_quant.information.global_intel import collect_global_intel
 from fintech_quant.information.stock_intel import collect_stock_intel
-from fintech_quant.reports.live_stock import LiveContext, analyze_live, resolve_any
+from fintech_quant.reports.live_stock import (
+    LiveContext,
+    analyze_live,
+    resolve_any,
+    stock_industry,
+)
 from fintech_quant.research.jev import (
     JevDecisionClient,
     LlmClient,
@@ -513,22 +519,30 @@ def research_payload(
     today: date | None = None,
     fetchers: Mapping[str, object] | None = None,
     live: LiveContext | None = None,
+    global_fetchers: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Multi-source information, event NLP, research consensus and financial trend for one stock."""
     symbol = _resolve(data, query, live)
     if symbol is None:
         return {"error": f"未找到：{query}"}
     day = today or date.today()
-    intel = collect_stock_intel(symbol, today=day, cache_dir=cache_dir, fetchers=fetchers)  # type: ignore[arg-type]
-    name = data.names.get(symbol) or (live.all_shares().get(symbol, "") if live else "")
-    nlp = analyze_items(intel["items"], today=day, name=name.replace(" ", ""), symbol=symbol)  # type: ignore[arg-type]
+    intel, name, world, nlp = _gather(
+        data, symbol, day, cache_dir=cache_dir, fetchers=fetchers, live=live,
+        global_fetchers=global_fetchers,
+    )
     research = {
         "symbol": symbol,
         "name": name,
         "fetched_at": intel["fetched_at"],
-        "sources": intel["sources"],
+        "sources": {**intel["sources"], **(world["sources"] if world else {})},  # type: ignore[dict-item]
+        "global": None if world is None else {
+            "industry": world["industry"],
+            "industry_keywords": world["industry_keywords"],
+            "overseas": world["overseas"],
+        },
         "nlp": {key: value for key, value in nlp.items() if key != "items"},
-        "items": nlp["items"][:60],
+        # newest first across company and global sources, so global flashes are not cut off
+        "items": sorted(nlp["items"], key=lambda i: str(i.get("published_at", "")), reverse=True)[:80],
         "consensus": research_consensus(intel["items"], today=day),  # type: ignore[arg-type]
         "financials": intel["financials"],
         "financial_trend": financial_trend(intel["financials"]),  # type: ignore[arg-type]
@@ -588,17 +602,18 @@ def events_llm_payload(
     today: date | None = None,
     fetchers: Mapping[str, object] | None = None,
     live: LiveContext | None = None,
+    global_fetchers: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Label the items the keyword rules left untagged with a chat model (advisory, cached daily)."""
     symbol = _resolve(data, query, live)
     if symbol is None:
         return {"error": f"未找到：{query}"}
     day = today or date.today()
-    intel = collect_stock_intel(symbol, today=day, cache_dir=cache_dir, fetchers=fetchers)  # type: ignore[arg-type]
-    name = (data.names.get(symbol) or (live.all_shares().get(symbol, "") if live else "")).replace(
-        " ", ""
+    _, name, _, nlp = _gather(
+        data, symbol, day, cache_dir=cache_dir, fetchers=fetchers, live=live,
+        global_fetchers=global_fetchers,
     )
-    nlp = analyze_items(intel["items"], today=day, name=name, symbol=symbol)  # type: ignore[arg-type]
+    name = name.replace(" ", "")
     try:
         active = client or event_llm.client_from_env()
     except event_llm.EventLlmNotConfigured as exc:
@@ -615,6 +630,57 @@ def events_llm_payload(
     if record_dir is not None:
         result["spend"] = jev_spend(record_dir, today=day)
     return result
+
+
+def _gather(
+    data: PickerData,
+    symbol: str,
+    day: date,
+    *,
+    cache_dir: Path | None,
+    fetchers: Mapping[str, object] | None,
+    live: LiveContext | None,
+    global_fetchers: Mapping[str, object] | None,
+) -> tuple[dict[str, object], str, dict[str, object] | None, dict[str, object]]:
+    """Company sources plus, with a live context, global flashes and overseas moves; one NLP pass."""
+    intel = collect_stock_intel(symbol, today=day, cache_dir=cache_dir, fetchers=fetchers)  # type: ignore[arg-type]
+    name = data.names.get(symbol) or ""
+    if not name and live is not None:
+        try:
+            name = live.all_shares().get(symbol, "")
+        except Exception:  # the list is flaky behind the proxy
+            name = ""
+    world = None
+    if live is not None:
+        world = collect_global_intel(
+            name=name.replace(" ", ""),
+            symbol=symbol,
+            industry=stock_industry(live, symbol, _local_industries()),
+            fetchers=global_fetchers,  # type: ignore[arg-type]
+        )
+    items = [*intel["items"], *(world["items"] if world else [])]  # type: ignore[misc]
+    nlp = analyze_items(items, today=day, name=name.replace(" ", ""), symbol=symbol)
+    return intel, name, world, nlp
+
+
+INDUSTRY_TABLE = Path(__file__).resolve().parents[3] / "data/raw/industry/sw_industry_cninfo.csv"
+_INDUSTRIES: dict[str, str] | None = None
+
+
+def _local_industries() -> dict[str, str]:
+    """Latest Shenwan level-1 industry per CSI 300 member from the factor lab's table."""
+    global _INDUSTRIES
+    if _INDUSTRIES is None:
+        latest: dict[str, tuple[str, str]] = {}
+        if INDUSTRY_TABLE.exists():
+            with INDUSTRY_TABLE.open(encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    if row.get("sw_level1") and (
+                        row["symbol"] not in latest or row["change_date"] > latest[row["symbol"]][0]
+                    ):
+                        latest[row["symbol"]] = (row["change_date"], row["sw_level1"])
+        _INDUSTRIES = {symbol: industry for symbol, (_, industry) in latest.items()}
+    return _INDUSTRIES
 
 
 def _events_llm_status() -> dict[str, object]:

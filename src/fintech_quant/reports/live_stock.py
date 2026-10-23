@@ -29,6 +29,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
+from fintech_quant.data.js_runtime import js_call
 from fintech_quant.data.price_volume_flow import materialize_price_volume_flow_proxy
 from fintech_quant.data.symbols import normalize_a_share_symbol
 from fintech_quant.features.factors import ScoreInput, score_stock
@@ -160,6 +161,32 @@ def live_fundamentals(context: LiveContext, symbol: str) -> dict[str, object]:
 
     return _cached(context, "fundamentals", symbol, fetch)
 
+
+SHENWAN_STANDARD_CODE = "008003"
+
+
+def stock_industry(
+    context: LiveContext, symbol: str, known: Mapping[str, str] | None = None
+) -> str | None:
+    """Shenwan level-1 industry: the local table when it has the stock, else CNInfo (cached daily)."""
+    if known and known.get(symbol):
+        return known[symbol]
+
+    def fetch() -> dict[str, object]:
+        rows = _records(
+            context._call(
+                "industry", symbol=symbol.split(".")[0], start_date="20000101",
+                end_date=context.day().strftime("%Y%m%d"),
+            )
+        )
+        shenwan = [r for r in rows if str(r.get("分类标准编码")) == SHENWAN_STANDARD_CODE]
+        latest = max(shenwan, key=lambda r: str(r.get("变更日期")), default=None)
+        return {"industry": None if latest is None else str(latest.get("行业门类"))}
+
+    try:
+        return _cached(context, "industry", symbol, fetch).get("industry")  # type: ignore[union-attr]
+    except Exception:  # unknown industry only narrows the global-news filter to macro items
+        return None
 
 def reference_momentum(
     item: SymbolSeries,
@@ -414,12 +441,13 @@ def _default_fetcher(name: str) -> Fetcher:
 
     return {
         "code_name": lambda: ak().stock_info_a_code_name(),
-        "sina": lambda **kw: ak().stock_zh_a_daily(adjust="qfq", **kw),
+        "sina": lambda **kw: js_call(ak().stock_zh_a_daily, adjust="qfq", **kw),
         "tencent": lambda **kw: ak().stock_zh_a_hist_tx(adjust="qfq", timeout=30, **kw),
         "value": lambda **kw: ak().stock_value_em(**kw),
         "financials": lambda **kw: ak().stock_financial_abstract_ths(indicator="按报告期", **kw),
         "minute_em": lambda **kw: ak().stock_zh_a_hist_min_em(period="1", adjust="", **kw),
         "minute_sina": lambda **kw: ak().stock_zh_a_minute(period="1", adjust="", **kw),
+        "industry": lambda **kw: js_call(ak().stock_industry_change_cninfo, **kw),
     }[name]
 
 

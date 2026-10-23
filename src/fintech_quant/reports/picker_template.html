@@ -372,7 +372,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
   }
 
   const JEV_LABELS = { negative_event_risk: "负面事件风险", earnings_support: "财报支撑", catalyst_quality: "催化剂质量", crowding: "拥挤度", setup_consistency: "形态与基本面一致" };
-  const KIND = { news: "新闻", notice: "公告", research: "研报", qa: "互动易" };
+  const KIND = { news: "新闻", notice: "公告", research: "研报", qa: "互动易", global: "全球" };
 
   async function loadResearch(symbol) {
     const el = $("research");
@@ -390,7 +390,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     const items = r.items.map((i) => {
       const pol = i.polarity > 0 ? '<span class="pol-pos">▲</span> ' : i.polarity < 0 ? '<span class="pol-neg">▼</span> ' : "";
       const title = i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>` : esc(i.title);
-      return `<div class="item">${pol}${title}<div class="meta">${esc(String(i.published_at).slice(0, 10))} · ${esc(KIND[i.kind] || i.kind)} · ${esc(i.source)}${i.tags && i.tags.length ? " · " + esc(i.tags.join("、")) : ""}${i.roundup ? " · 行情汇总，不计分" : ""}${i.rating ? " · 评级 " + esc(i.rating) : ""}</div></div>`;
+      return `<div class="item">${pol}${title}<div class="meta">${esc(String(i.published_at).slice(0, 10))} · ${esc(KIND[i.kind] || i.kind)} · ${esc(i.source)}${i.tags && i.tags.length ? " · " + esc(i.tags.join("、")) : ""}${i.roundup ? " · 行情汇总，不计分" : ""}${i.relevance ? " · " + esc(i.relevance) : ""}${i.rating ? " · 评级 " + esc(i.rating) : ""}</div></div>`;
     }).join("");
     const fin = r.financials.map((f) => `<tr><td>${esc(f.period)}</td><td class="num">${pct(f.revenue_yoy)}</td><td class="num">${pct(f.net_profit_yoy)}</td><td class="num">${pct(f.deducted_profit_yoy)}</td><td class="num">${pct(f.roe)}</td><td class="num">${pct(f.net_margin)}</td></tr>`).join("");
     const flags = r.financial_trend.flags.map((f) => `<li class="${f.polarity > 0 ? "p1" : f.polarity < 0 ? "n1" : "z0"}">${esc(f.text)}</li>`).join("");
@@ -402,7 +402,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div class="chips">${chips}</div>
       <div class="hero-row"><div><div class="muted" style="font-size:11px">事件情绪（−1 ~ +1，14 天半衰期）</div><div class="big">${r.nlp.sentiment >= 0 ? "+" : ""}${num(r.nlp.sentiment, 2)} <span style="font-size:14px">${esc(r.nlp.label)}</span></div></div>
         <div class="muted mono" style="font-size:11px">规则识别到事件 ${r.nlp.tagged_items}/${r.nlp.total_items}${r.nlp.roundup_items ? ` · 行情汇总 ${r.nlp.roundup_items} 条不计分` : ""}</div></div>
-      <div class="chips">${events}</div>
+      <div class="chips">${events}</div>${overseas(r.global)}
       <div id="events-llm"></div>
       <div class="items">${items || '<div class="empty">没有信息条目</div>'}</div>
       <div class="sub-grid" style="margin-top:14px">
@@ -416,6 +416,14 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div id="jev"></div>`;
     renderJev(r.jev_record, r);
     renderEventsLlm(r.events_llm_result, r);
+  }
+
+  function overseas(g) {
+    if (!g) return "";
+    const rows = (g.overseas || []).map((o) => `<span class="chip"><b>${esc(o.label)}</b> <span class="${o.change > 0 ? "pol-pos" : o.change < 0 ? "pol-neg" : ""}">${o.change >= 0 ? "+" : ""}${pct(o.change)}</span> <span class="muted">${esc(o.date)}</span></span>`).join("") || '<span class="muted">海外行情暂不可用</span>';
+    return `<div class="section-head" style="margin-top:12px"><h2>海外市场（最近一个美股交易日）</h2><span class="right">行业：${esc(g.industry || "未知")}${g.industry_keywords && g.industry_keywords.length ? ` · 相关词：${esc(g.industry_keywords.slice(0, 6).join("、"))}` : ""}</span></div>
+      <div class="chips">${rows}</div>
+      <div class="note">全球快讯只保留点名公司、命中行业关键词或带宏观事件标签的条目；美股指数涨跌 ≥1.5%、海外同业 ≥3% 时记为事件（权重低于公司公告）。</div>`;
   }
 
   function renderEventsLlm(result, r) {
