@@ -24,7 +24,9 @@ from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 SHANGHAI = ZoneInfo("Asia/Shanghai")
-READY_TIME = time(17, 30)
+# A-shares close at 15:00; provider daily bars are normally complete by about 16:00. If they are
+# not, the price freshness gate fails closed and the 30-minute retries pick the data up later.
+READY_TIME = time(16, 30)
 POST_CLOSE_SCRIPT = "scripts/run_csi300_post_close.py"
 AUDIT_SCRIPT = "scripts/audit_csi300_paper_validation.py"
 

@@ -174,13 +174,13 @@ Added 2026-10-17. Missed post-close runs were the operational cause of the faile
 at `/Users/yakou/.codex/automations/csi300/automation.toml` is `PAUSED`.
 
 `scripts/run_scheduled_csi300_post_close.py` is a deterministic wrapper started by
-`deploy/launchd/com.vibetrading.csi300-post-close.plist` on weekdays at 17:30 and 21:30 local time
-(the Mac is set to Asia/Shanghai). It runs only the fixed daily command above and then the
+`deploy/launchd/com.vibetrading.csi300-post-close.plist` at minute 30 of every hour; the wrapper
+alone decides from the Asia/Shanghai clock, so the Mac's time zone does not matter. It runs only the fixed daily command above and then the
 independent audit (writing the root `validation_report.json`). It:
 
 - fails closed unless the main checkout is on `main` with no tracked changes;
-- picks the target session from the AkShare Sina trading calendar: today once 17:30 Shanghai has
-  passed, otherwise the latest earlier session, so a late fire after sleep is safe;
+- picks the target session from the AkShare Sina trading calendar: today once 16:30 Shanghai has
+  passed (changed from 17:30 on 2026-10-23), otherwise the latest earlier session, so a late fire after sleep is safe;
 - exits quietly when the state already holds the target session;
 - refuses to run, and notifies, when the state date is not the session immediately before the
   target. It never bridges an evidence gap automatically; the 2026-07-21 cycle shows that the

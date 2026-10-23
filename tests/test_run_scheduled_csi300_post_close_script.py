@@ -28,10 +28,10 @@ def _at(day: date, hour: int, minute: int = 0) -> datetime:
 
 class TargetSessionTest(unittest.TestCase):
     def test_trading_day_before_ready_time_targets_previous_session(self) -> None:
-        self.assertEqual(target_session(_at(date(2026, 10, 9), 17, 29), CALENDAR), date(2026, 10, 8))
+        self.assertEqual(target_session(_at(date(2026, 10, 9), 16, 29), CALENDAR), date(2026, 10, 8))
 
     def test_trading_day_after_ready_time_targets_today(self) -> None:
-        self.assertEqual(target_session(_at(date(2026, 10, 9), 17, 30), CALENDAR), date(2026, 10, 9))
+        self.assertEqual(target_session(_at(date(2026, 10, 9), 16, 30), CALENDAR), date(2026, 10, 9))
 
     def test_weekend_and_holiday_target_last_session(self) -> None:
         self.assertEqual(target_session(_at(date(2026, 10, 10), 17, 30), CALENDAR), date(2026, 10, 9))
