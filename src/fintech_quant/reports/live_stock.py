@@ -1,7 +1,9 @@
-"""On-demand analysis for any A-share outside the local CSI 300 point-in-time panel.
+"""Live analysis for the stock picker: every searched A-share, CSI 300 members included.
 
-When a searched stock is not a CSI 300 member, its data is fetched at search time and cached
-once per stock per day:
+Pressing 分析 fetches the stock's data now (the daily bars are refetched on every press; the rest
+is cached for the day). The point-in-time CSI 300 panel stays the source for the trading desk,
+the shadow pools and the counted strategy; the picker only shows it as yesterday's pool context.
+Sources:
 
 - the all-A-share code/name list (AkShare `stock_info_a_code_name`);
 - about 14 months of forward-adjusted (qfq) daily bars from Sina, falling back to Tencent;
@@ -23,7 +25,7 @@ import json
 import threading
 from bisect import bisect_left
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
@@ -92,7 +94,9 @@ def resolve_any(context: LiveContext, query: str) -> str | None:
     return partial[0] if partial else None
 
 
-def live_bars(context: LiveContext, symbol: str) -> tuple[list[Bar], str]:
+def live_bars(context: LiveContext, symbol: str, *, fresh: bool = False) -> tuple[list[Bar], str]:
+    """Forward-adjusted daily bars; ``fresh`` refetches instead of reusing today's cache."""
+
     def fetch() -> dict[str, object]:
         end = context.day()
         start = end - timedelta(days=HISTORY_DAYS)
@@ -115,7 +119,7 @@ def live_bars(context: LiveContext, symbol: str) -> tuple[list[Bar], str]:
                 return {"source": source, "rows": [_bar_row(row, source) for row in rows]}
         raise ValueError(f"no price history for {symbol} ({'; '.join(errors) or 'empty'})")
 
-    payload = _cached(context, "bars", symbol, fetch)
+    payload = _cached(context, "bars", symbol, fetch, fresh=fresh)
     bars = [
         Bar(r["trade_date"], r["open"], r["high"], r["low"], r["close"], r["volume"])
         for r in payload["rows"]
@@ -229,10 +233,44 @@ def live_score(
     }
 
 
+def with_session_bar(bars: list[Bar], intraday: Mapping[str, object]) -> tuple[list[Bar], bool]:
+    """Append today's still-forming bar built from 1-minute data when the daily source has none yet.
+
+    Forward-adjusted history ends at the current price scale, so unadjusted minutes line up with it.
+    """
+    points = list(intraday.get("points") or [])  # type: ignore[arg-type]
+    session = str(intraday.get("date", ""))
+    if not points or not bars or session <= bars[-1].trade_date:
+        return bars, False
+    prices = [float(p["price"]) for p in points]
+    bar = Bar(
+        session,
+        prices[0],
+        max(prices),
+        min(prices),
+        prices[-1],
+        sum(float(p["volume"]) for p in points),
+    )
+    return [*bars, bar], True
+
+
 def analyze_live(
-    context: LiveContext, symbol: str, reference: Mapping[str, Mapping[str, float]]
+    context: LiveContext,
+    symbol: str,
+    reference: Mapping[str, Mapping[str, float]],
+    *,
+    fresh: bool = False,
 ) -> dict[str, object]:
-    bars, source = live_bars(context, symbol)
+    """Analyse one stock on data fetched now. With ``fresh`` the daily bars are refetched and,
+    during or after a session the daily source has not published yet, today's minutes are merged
+    in as a provisional bar."""
+    bars, source = live_bars(context, symbol, fresh=fresh)
+    provisional = False
+    if fresh:
+        try:
+            bars, provisional = with_session_bar(bars, live_intraday(context, symbol))
+        except Exception:  # no minutes (pre-market, provider down): the last close is the latest
+            pass
     item = SymbolSeries(symbol, bars)
     momentum = reference_momentum(item, reference)
     as_of = bars[-1].trade_date
@@ -245,6 +283,8 @@ def analyze_live(
         "score": live_score(symbol, bars, fundamentals, momentum),
         "fundamentals": fundamentals,
         "source": source,
+        "provisional": provisional,
+        "fetched_at": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
 
 
@@ -348,11 +388,18 @@ def _with_timeout(fn: Callable[[], object], seconds: float) -> object:
     return result.get("value")
 
 
-def _cached(context: LiveContext, kind: str, key: str, fetch: Callable[[], object]):
+def _cached(
+    context: LiveContext,
+    kind: str,
+    key: str,
+    fetch: Callable[[], object],
+    *,
+    fresh: bool = False,
+):
     path = None
     if context.cache_dir is not None:
         path = context.cache_dir / context.day().isoformat() / kind / f"{key}.json"
-        if path.exists():
+        if path.exists() and not fresh:
             return json.loads(path.read_text(encoding="utf-8"))
     value = fetch()
     if path is not None:

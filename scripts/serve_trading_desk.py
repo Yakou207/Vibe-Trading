@@ -184,8 +184,12 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                 self._json(picks_payload(state.picker(), state.pool_state(), state.pool_v2_state()))
             elif path == "/api/stock":
                 self._json(
-                    stock_payload(
-                        state.picker(), self._query(), state.live, state.scoring_v2_state()
+                    stock_payload(  # each 分析 press refetches the stock's data
+                        state.picker(),
+                        self._query(),
+                        state.live,
+                        state.scoring_v2_state(),
+                        fresh=True,
                     )
                 )
             elif path == "/api/intraday":

@@ -173,15 +173,32 @@ def stock_payload(
     query: str,
     live: LiveContext | None = None,
     scoring_v2: Mapping[str, object] | None = None,
+    *,
+    fresh: bool = False,
 ) -> dict[str, object]:
-    symbol = resolve_symbol(data, query)
-    if symbol is None and live is not None:
-        symbol = resolve_any(live, query)
-        if symbol is not None:
-            return live_stock_payload(data, live, symbol)
+    """Live analysis of any A-share; for CSI 300 members, yesterday's point-in-time view is
+    attached as pool context. Without a live context (offline, tests) the point-in-time view is
+    returned on its own."""
+    symbol = _resolve(data, query, live)
     if symbol is None:
         scope = "A 股" if live is not None else "当前 CSI 300 成分"
         return {"error": f"未在{scope}中找到：{query}"}
+    pool = pit_stock_payload(data, symbol, scoring_v2) if symbol in data.members else None
+    if live is None:
+        return pool or {"error": f"未在当前 CSI 300 成分中找到：{query}"}
+    payload = live_stock_payload(data, live, symbol, fresh=fresh)
+    if pool is None:
+        return payload
+    if "error" in payload:  # live source down: fall back to yesterday's view, clearly labelled
+        pool["verdict"]["notes"].insert(0, f"实时抓取失败，显示交易池数据（截至 {data.as_of} 收盘）")  # type: ignore[index]
+        return {**pool, "live_error": payload["error"]}
+    return {**payload, "pool_context": _pool_context(pool)}
+
+
+def pit_stock_payload(
+    data: PickerData, symbol: str, scoring_v2: Mapping[str, object] | None = None
+) -> dict[str, object]:
+    """Yesterday's point-in-time view of a CSI 300 member (the trading pool's data)."""
     item = data.series.get(symbol)
     base = {"symbol": symbol, "name": data.names.get(symbol, ""), "as_of": data.as_of}
     if item is None:
@@ -208,24 +225,51 @@ def stock_payload(
     }
 
 
-def live_stock_payload(data: PickerData, live: LiveContext, symbol: str) -> dict[str, object]:
-    """Any A-share outside the CSI 300 panel: fetched now, analysed with the same rules."""
-    name = live.all_shares().get(symbol, "")
+def _pool_context(pool: Mapping[str, object]) -> dict[str, object]:
+    analysis = pool.get("analysis") or {}
+    return {
+        "as_of": pool.get("as_of"),
+        "rank": pool.get("rank"),
+        "rank_of": pool.get("rank_of"),
+        "state": analysis.get("state"),  # type: ignore[union-attr]
+        "headline": (pool.get("verdict") or {}).get("headline"),  # type: ignore[union-attr]
+        "baseline": pool.get("baseline"),
+        "baseline_pass": (pool.get("verdict") or {}).get("baseline_pass"),  # type: ignore[union-attr]
+        "scoring_v2": pool.get("scoring_v2"),
+        "market_warnings": pool.get("market_warnings"),
+    }
+
+
+def live_stock_payload(
+    data: PickerData, live: LiveContext, symbol: str, *, fresh: bool = False
+) -> dict[str, object]:
+    """Any A-share, fetched now and analysed with the same rules as the pool."""
+    try:
+        name = live.all_shares().get(symbol, "") or data.names.get(symbol, "")
+    except Exception:  # the list is flaky behind the proxy; members still have a name
+        name = data.names.get(symbol, "")
     base = {"symbol": symbol, "name": name, "mode": "live"}
     try:
-        result = analyze_live(live, symbol, data.momentum)
+        result = analyze_live(live, symbol, data.momentum, fresh=fresh)
     except Exception as exc:
         return {**base, "error": f"实时抓取失败：{type(exc).__name__}: {str(exc)[:160]}"}
     analysis = result["analysis"]
     score = result["score"]
     verdict = _verdict(analysis, score, [])
+    member = symbol in data.members
     verdict["notes"] = [
-        "非沪深 300 成分：实时抓取的前复权数据，动量分位参照沪深 300 截面，未做时点验证",
+        "实时数据（前复权）："
+        + ("沪深 300 成分，计数策略仍按交易池的时点数据执行" if member else "非沪深 300 成分")
+        + f"；动量分位参照沪深 300 截面（截至 {data.as_of}），未做时点验证",
+        *([f"含今日盘中临时 K 线（{result['as_of']}，收盘前会变化）"] if result["provisional"] else []),
         *verdict["notes"],
     ]
     return {
         **base,
         "as_of": result["as_of"],
+        "fetched_at": result["fetched_at"],
+        "provisional": result["provisional"],
+        "csi300": member,
         "price_scale": "qfq",
         "price_source": result["source"],
         "rank": None,

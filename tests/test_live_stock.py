@@ -145,20 +145,64 @@ def test_non_member_search_returns_labelled_live_analysis_and_caches(tmp_path: P
     }
     assert payload["baseline"]["total"] > 0
     assert payload["fundamentals"]["roe"] == pytest.approx(0.16)
-    assert payload["verdict"]["notes"][0].startswith("非沪深 300 成分")
+    assert "非沪深 300 成分" in payload["verdict"]["notes"][0]
+    assert "pool_context" not in payload
     assert again["analysis"] == payload["analysis"]
     assert sina.calls == 1
 
 
-def test_members_keep_point_in_time_path_and_unknown_names_error(tmp_path: Path) -> None:
+def test_members_are_analysed_live_with_yesterdays_pool_as_context(tmp_path: Path) -> None:
     data = _data()
     live = LiveContext(cache_dir=tmp_path, fetchers=_fetchers(), today=TODAY)
 
-    assert stock_payload(data, "600001", live)["mode"] == "csi300"
+    payload = stock_payload(data, "600001", live)
+
+    assert payload["mode"] == "live" and payload["csi300"] is True
+    assert payload["pool_context"]["as_of"] == data.as_of
+    assert payload["pool_context"]["rank"] == 1
+    assert payload["pool_context"]["baseline"]["total"] == 75.0
+    assert "沪深 300 成分" in payload["verdict"]["notes"][0]
     assert "A 股" in stock_payload(data, "不存在", live)["error"]
     universe = universe_payload(data, live)
     assert {"symbol": "600001.SH", "name": "领涨股份", "csi300": True} in universe
     assert len(universe) == 3
+
+
+def test_fresh_analysis_refetches_and_adds_todays_provisional_bar(tmp_path: Path) -> None:
+    sina = Counting(_sina_rows)
+    last = _leader_with_flush().bars[-1]
+    minutes = [
+        {"时间": "2026-10-21 09:31:00", "收盘": last.close * 1.01, "成交量": 10.0, "均价": 1.0},
+        {"时间": "2026-10-21 10:00:00", "收盘": last.close * 1.03, "成交量": 20.0, "均价": 1.0},
+    ]
+    live = LiveContext(
+        cache_dir=tmp_path,
+        fetchers=_fetchers(sina=sina, minute_em=lambda **kw: minutes),
+        today=TODAY,
+    )
+
+    first = stock_payload(_data(), "300624", live, fresh=True)
+    second = stock_payload(_data(), "300624", live, fresh=True)
+
+    assert sina.calls == 2
+    assert first["provisional"] is True and first["as_of"] == "2026-10-21"
+    assert first["chart"]["ohlc"][-1][3] == pytest.approx(round(last.close * 1.03, 3))
+    assert any("盘中临时 K 线" in note for note in first["verdict"]["notes"])
+    assert second["as_of"] == first["as_of"]
+
+
+def test_member_falls_back_to_pool_view_when_live_fetch_fails(tmp_path: Path) -> None:
+    def broken(**kwargs):
+        raise ConnectionError("down")
+
+    live = LiveContext(
+        cache_dir=tmp_path, fetchers=_fetchers(sina=broken, tencent=broken), today=TODAY
+    )
+
+    payload = stock_payload(_data(), "600001", live, fresh=True)
+
+    assert payload["mode"] == "csi300" and "live_error" in payload
+    assert payload["verdict"]["notes"][0].startswith("实时抓取失败")
 
 
 def _em_minutes(**kwargs):

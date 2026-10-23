@@ -235,7 +235,8 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       const x = s.baseline.components[k] || { score: 0, max_score: 1 };
       return `<div class="bar-row"><span>${l}</span><div class="track"><i style="width:${(x.score / x.max_score) * 100}%;background:var(${c})"></i></div><span style="text-align:right">${num(x.score, 1)}/${num(x.max_score, 0)}</span></div>`;
     }).join("") : '<div class="muted">今日无多因子评分（可能停牌）。</div>';
-    const v2 = s.scoring_v2;
+    const pc = s.pool_context;
+    const v2 = s.scoring_v2 || (pc && pc.scoring_v2);
     const v2Bars = v2 && v2.categories ? [["value", "价值", "--s1"], ["quality_growth", "质量/成长", "--s2"], ["low_risk", "低风险", "--s3"], ["liquidity", "低换手", "--s4"], ["reversal", "短期反转", "--s7"], ["momentum", "动量 12-1", "--s1"]].map(([k, l, c]) => {
       const x = v2.categories[k];
       return `<div class="bar-row"><span>${l} <span class="muted">${num(x.weight * 100, 0)}%</span></span><div class="track"><i style="width:${x.percentile}%;background:var(${c})"></i></div><span style="text-align:right">${num(x.percentile, 0)}</span></div>`;
@@ -247,7 +248,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     const zone = a.zone ? `共振区 ${num(a.zone.bottom)}–${num(a.zone.top)}` : "无共振区";
     $("stock").innerHTML = `
       <div class="stock-head"><span class="name">${esc(s.name)}</span><span class="mono muted">${esc(s.symbol)}</span>
-        <span class="px">${num(a.close)}</span><span class="muted mono">截至 ${esc(s.as_of)} · ${s.mode === "live" ? `<span class="badge">全市场 · 实时抓取（前复权，${esc(s.price_source)}）</span> 动量参照${esc(s.reference)}` : `<span class="badge">沪深300 · 时点数据</span> 筛选排名 ${s.rank ?? "—"}/${s.rank_of}`}</span></div>
+        <span class="px">${num(a.close)}</span><span class="muted mono">截至 ${esc(s.as_of)}${s.provisional ? "（盘中）" : ""} · ${s.mode === "live" ? `<span class="badge">实时分析 · 前复权 · ${esc(s.price_source)} · 抓取于 ${esc(String(s.fetched_at || "").slice(11, 16))}</span>` : `<span class="badge">交易池 · 时点数据（实时抓取失败）</span> 筛选排名 ${s.rank ?? "—"}/${s.rank_of}`}</span></div>
       <div class="verdict ${esc(v.level)}"><div class="head">${esc(v.headline)}</div>
         <ul>${[...(a.state === "trigger" ? [`参考止损 ${num(a.stop)}（${pct(a.stop_pct)}），至前高约 ${num(a.reward_r, 1)}R`] : []), `${zone}`, ...v.notes].map((n) => `<li>${esc(n)}</li>`).join("")}</ul>
         <div class="note">${esc(v.disclaimer)}</div></div>
@@ -258,7 +259,9 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       <div class="section-head" style="margin-top:14px"><h2>Luk 四步检查</h2><span class="right">动量 1M ${pct(m.r21)} · 3M ${pct(m.r63)} · 6M ${pct(m.r126)}</span></div>
       <div class="checks">${checks}</div>
       <div class="section-head" style="margin-top:14px"><h2>${s.mode === "live" ? "多因子实时参考分" : "多因子基线评分"}</h2><span class="right">${s.baseline ? `${num(s.baseline.total, 1)} 分 · 置信 ${num(s.baseline.confidence)}` : ""}</span></div>
-      <div class="bars">${comps}</div>${v2Section}`;
+      <div class="bars">${comps}</div>${pc ? `
+      <div class="section-head" style="margin-top:14px"><h2>交易池参考</h2><span class="right">截至 ${esc(pc.as_of)} 收盘 · 时点数据 · 计数策略按此执行</span></div>
+      <div class="mono" style="font-size:12px;line-height:1.9">筛选排名 ${pc.rank ?? "—"}/${pc.rank_of} · 形态：${esc(pc.headline || "")}<br>计数多因子分 ${pc.baseline ? `${num(pc.baseline.total, 1)} 分 · 置信 ${num(pc.baseline.confidence)} · ${pc.baseline_pass ? "通过 70/0.8 门槛" : "未过门槛"}` : "—"}${(pc.market_warnings || []).length ? `<br>风险提示：${esc(pc.market_warnings.join("；"))}` : ""}</div>` : ""}${v2Section}`;
     current = s;
     document.querySelectorAll(".chart-tabs button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
     setView(view);
