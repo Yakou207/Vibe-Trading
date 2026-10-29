@@ -1,8 +1,9 @@
 """Scheduled wrapper for the fixed CSI 300 post-close paper cycle.
 
 Intended to be started by launchd every hour; it picks the due session from the
-Shanghai clock, so the Mac's own time zone does not matter. It only ever invokes ``scripts/run_csi300_post_close.py`` with the fixed canonical
-arguments and then ``scripts/audit_csi300_paper_validation.py``. It never edits
+Shanghai clock, so the Mac's own time zone does not matter. It only ever invokes
+``scripts/run_csi300_post_close.py`` with the fixed canonical arguments and then ``scripts/audit_csi300_paper_validation.py``; after an accepted audit it
+refreshes the research-only shadow pools and v2 snapshot. It never edits
 the account, pipeline state or any manifest itself.
 """
 
@@ -29,6 +30,9 @@ SHANGHAI = ZoneInfo("Asia/Shanghai")
 READY_TIME = time(16, 30)
 POST_CLOSE_SCRIPT = "scripts/run_csi300_post_close.py"
 AUDIT_SCRIPT = "scripts/audit_csi300_paper_validation.py"
+POOL_V1_SCRIPT = "scripts/refresh_momentum_pool.py"
+POOL_V2_SCRIPT = "scripts/refresh_momentum_pool_v2.py"
+SCORING_V2_SCRIPT = "scripts/run_scoring_v2.py"
 
 Runner = Callable[[list[str], TextIO], int]
 Notifier = Callable[[str], None]
@@ -98,7 +102,12 @@ def run_scheduled(
     target = target_session(now, sessions)
     if target is None or target <= state_date:
         _log(log, f"up to date: state={state_date} target={target}")
-        return {"status": "up_to_date", "state_as_of": state_date.isoformat()}
+        result: dict[str, object] = {"status": "up_to_date", "state_as_of": state_date.isoformat()}
+        if _audit_accepted(config):  # catch up research refreshes a failed or missed run left behind
+            research = refresh_research(config, state_date, runner, notifier, log)
+            if any(value != "current" for value in research.values()):
+                result["research"] = research
+        return result
     expected_parent = previous_session(target, sessions)
     if expected_parent != state_date:
         return _fail(
@@ -186,10 +195,57 @@ def run_scheduled(
         "audit_status": audit_status,
         "valid_sessions": valid_sessions,
     }
-    _log(log, f"completed: {json.dumps(result)}")
     if audit_status == "FAILED":
         notifier(f"{target}: cycle committed but audit is FAILED (valid_sessions={valid_sessions})")
+    else:
+        result["research"] = refresh_research(config, target, runner, notifier, log)
+    _log(log, f"completed: {json.dumps(result)}")
     return result
+
+
+def research_steps(config: SchedulerConfig) -> tuple[tuple[str, list[str], Path], ...]:
+    """(name, command, file whose "as_of" shows how far it has been refreshed)."""
+    return (
+        ("shadow_pool_v1", [POOL_V1_SCRIPT], config.root / "outputs/momentum_pool/state.json"),
+        ("shadow_pool_v2", [POOL_V2_SCRIPT], config.root / "outputs/momentum_pool_v2/state.json"),
+        (
+            "scoring_v2",
+            [SCORING_V2_SCRIPT, "--offline", "--report", str(config.log_dir / "scoring_v2_report.md")],
+            config.root / "outputs/research/scoring_v2/latest_scores.json",
+        ),
+    )
+
+
+def refresh_research(
+    config: SchedulerConfig, session: date, runner: Runner, notifier: Notifier, log: TextIO
+) -> dict[str, str]:
+    """Research-only refreshes after an accepted cycle: the two shadow pools (which catch up day by
+    day) and the v2 research snapshot. Each runs only while its output is behind the session. A
+    failure is logged and notified; it never changes the cycle result or the counted evidence."""
+    outcome: dict[str, str] = {}
+    for name, script, marker in research_steps(config):
+        if _as_of(marker) == session.isoformat():
+            outcome[name] = "current"
+            continue
+        _log(log, f"research refresh {name}: {' '.join(script)}")
+        returncode = runner([str(config.python), *script], log)
+        outcome[name] = "refreshed" if returncode == 0 else f"failed (exit {returncode})"
+        if returncode != 0:
+            notifier(f"{session}: research refresh {name} failed; counted evidence is unaffected")
+    return outcome
+
+
+def _audit_accepted(config: SchedulerConfig) -> bool:
+    if not config.audit_output.exists():
+        return False
+    return str(_load_json(config.audit_output).get("status")) in {"COLLECTING", "ELIGIBLE_FOR_REVIEW"}
+
+
+def _as_of(path: Path) -> str | None:
+    try:
+        return str(_load_json(path).get("as_of"))
+    except (OSError, ValueError):
+        return None
 
 
 def _fail(

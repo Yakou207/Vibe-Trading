@@ -189,6 +189,11 @@ independent audit (writing the root `validation_report.json`). It:
   hashes are unchanged; a failure after either changed stops immediately and notifies;
 - logs to `outputs/automation/csi300_post_close/` (`<timestamp>.log`, `runs.jsonl`,
   `launchd.*.log`) and sends a macOS notification on every blocked, failed, or `FAILED`-audit run.
+- after an accepted audit (`COLLECTING`/`ELIGIBLE_FOR_REVIEW`) refreshes the research-only shadow pools
+  v1/v2 and the v2 research snapshot, each only while behind the state date; the pools catch up a
+  missed refresh session by session. A refresh failure is notified but never changes the cycle
+  result or the counted evidence, and the hourly fire retries it (added 2026-10-29, after the pools
+  had stayed at 2026-10-23 and were caught up through 2026-10-28).
 
 The 2026-10-17 all-cash bridge resolved that gap, so the job can run daily from the 2026-10-19
 parent onward.

@@ -40,6 +40,7 @@ from scripts.refresh_momentum_pool import (  # noqa: E402
     _require_safe_output,
     _write_json_atomic,
     _write_once,
+    missed_sessions,
 )
 
 
@@ -57,21 +58,24 @@ def refresh(state_path: Path, pool_root: Path) -> dict[str, object]:
     )
     if pool.get("as_of") == data.as_of:
         return {"status": "already_refreshed", "as_of": data.as_of, **_summary(pool)}
-    sessions = sorted(
-        {b.trade_date for item in data.series.values() for b in item.bars if b.trade_date < data.as_of}
-    )
-    updated = v2.step_pool(
-        pool,
-        as_of=data.as_of,
-        series=data.series,
-        screen_results=data.screen_results,
-        previous_session=sessions[-1] if sessions else None,
-    )
-    updated["sources"] = data.sources
-    snapshot = pool_root / data.as_of / "pool_state.json"
-    _write_once(snapshot, updated)
-    _write_json_atomic(state_file, updated)
-    return {"status": "refreshed", "as_of": data.as_of, "snapshot": str(snapshot), **_summary(updated)}
+    steps = missed_sessions(state_path, data, pool.get("as_of"))  # type: ignore[arg-type]
+    for session, results, previous in steps:
+        pool = v2.step_pool(
+            pool,
+            as_of=session,
+            series=data.series,
+            screen_results=results,
+            previous_session=previous,
+        )
+        pool["sources"] = data.sources
+        _write_once(pool_root / session / "pool_state.json", pool)
+    _write_json_atomic(state_file, pool)
+    return {
+        "status": "refreshed",
+        "as_of": data.as_of,
+        "caught_up": [session for session, _, _ in steps],
+        **_summary(pool),
+    }
 
 
 def replay(

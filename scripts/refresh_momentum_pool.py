@@ -1,6 +1,7 @@
 """Refresh the shadow top-5 momentum-setup pool once per closed CSI 300 session.
 
-Run after the counted post-close cycle (recommended 18:30 Asia/Shanghai on trading days). The pool
+Run after the counted post-close cycle; the scheduled wrapper does this once the audit passes,
+and catches up day by day if earlier refreshes were missed. The pool
 uses the same hash-verified data the cycle committed in the pipeline state and writes only under
 ``--pool-root``. It never touches the counted paper account, the pipeline state or evidence files.
 
@@ -29,7 +30,7 @@ from fintech_quant.data.historical_universe import (  # noqa: E402
     load_membership_intervals,
 )
 from fintech_quant.execution.paper_evidence import verify_file_reference  # noqa: E402
-from fintech_quant.reports.picker import load_picker_data, load_series  # noqa: E402
+from fintech_quant.reports.picker import PickerData, load_picker_data, load_series  # noqa: E402
 from fintech_quant.research.momentum_pool import (  # noqa: E402
     initial_pool_state,
     pool_metrics,
@@ -53,31 +54,48 @@ def refresh(state_path: Path, pool_root: Path) -> dict[str, object]:
     )
     if pool.get("as_of") == data.as_of:
         return {"status": "already_refreshed", "as_of": data.as_of, **pool_metrics(pool)}
-    sessions = sorted(
-        {
-            bar.trade_date
-            for item in data.series.values()
-            for bar in item.bars
-            if bar.trade_date < data.as_of
-        }
-    )
-    updated = step_pool(
-        pool,
-        as_of=data.as_of,
-        series=data.series,
-        screen_results=data.screen_results,
-        previous_session=sessions[-1] if sessions else None,
-    )
-    updated["sources"] = data.sources
-    snapshot = pool_root / data.as_of / "pool_state.json"
-    _write_once(snapshot, updated)
-    _write_json_atomic(state_file, updated)
+    steps = missed_sessions(state_path, data, pool.get("as_of"))  # type: ignore[arg-type]
+    for session, results, previous in steps:
+        pool = step_pool(
+            pool,
+            as_of=session,
+            series=data.series,
+            screen_results=results,
+            previous_session=previous,
+        )
+        pool["sources"] = data.sources
+        _write_once(pool_root / session / "pool_state.json", pool)
+    _write_json_atomic(state_file, pool)
     return {
         "status": "refreshed",
         "as_of": data.as_of,
-        "snapshot": str(snapshot),
-        **pool_metrics(updated),
+        "caught_up": [session for session, _, _ in steps],
+        **pool_metrics(pool),
     }
+
+
+def missed_sessions(
+    state_path: Path, data: PickerData, pool_as_of: str | None
+) -> list[tuple[str, list[dict[str, object]], str | None]]:
+    """Every session after the pool's last refresh up to the pipeline date, in order, each with
+    its own point-in-time screen, so a missed refresh is caught up day by day (stops and queued
+    entries evaluated on the right days) instead of jumping to the latest session."""
+    sessions = sorted(
+        {bar.trade_date for item in data.series.values() for bar in item.bars if bar.trade_date <= data.as_of}
+    )
+    todo = [data.as_of] if pool_as_of is None else [s for s in sessions if s > pool_as_of]
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    intervals = load_membership_intervals(verify_file_reference(state["membership"]))
+    steps = []
+    for session in todo:
+        index = sessions.index(session)
+        if session == data.as_of:
+            results = data.screen_results
+        else:
+            members = set(active_symbols(intervals, date.fromisoformat(session)))
+            results = screen(data.series, session, members=members)
+        steps.append((session, results, sessions[index - 1] if index else None))
+    return steps
 
 
 def replay(state_path: Path, pool_root: Path, start: str) -> dict[str, object]:

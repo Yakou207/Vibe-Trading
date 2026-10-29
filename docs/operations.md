@@ -205,6 +205,9 @@ state 或 manifest。每次运行：
 4. 运行固定入口；失败且账户/state 哈希未变时，每 30 分钟重试，最多 5 次；若失败时账户或
    state 已变化，则不重试并通知；
 5. 成功后运行独立审计并写入根目录 `validation_report.json`；审计出错或状态为 `FAILED` 时通知。
+6. 审计通过（`COLLECTING` 或 `ELIGIBLE_FOR_REVIEW`）后，依次刷新影子池 v1、影子池 v2 和 v2 研究分快照；
+   各自只在落后于账户日期时运行，影子池会按交易日逐日补齐漏掉的刷新。刷新失败只记日志并通知，
+   不改变当天的周期结果，也不碰计数证据；之后每小时的检查会发现落后并自动补跑。
 
 日志：`outputs/automation/csi300_post_close/<时间戳>.log`（含子进程输出）和
 `runs.jsonl`（每次运行一行摘要）；launchd 自身输出在 `~/Library/Logs/VibeTrading/launchd.*.log`。无事可做的整点触发只在 `runs.jsonl`
@@ -272,7 +275,8 @@ python scripts/serve_trading_desk.py --export outputs/trading_desk.html  # 静�
 10 分钟内复用，不写磁盘。akshare 部分接口（新浪日线、美股、巨潮行业）用内嵌 V8 解码，多线程同时初始化
 会让进程崩溃，交易台内这些调用统一经 `data/js_runtime.py` 串行执行。
 
-筛选排名前五进入影子交易池。池子每个交易日在收盘周期之后的固定时段（建议 18:30）刷新一次：
+筛选排名前五进入影子交易池。池子由定时任务在每个交易日的收盘周期和审计通过后刷新（漏掉的交易日
+会逐日补齐）：
 上一日触发的成员按今日开盘买入（停牌、开盘涨停、开盘低于止损则跳过），止损为信号日低点，
 收盘跌破 9 EMA 离场，T+1 当日不卖。池子是独立的影子账户，按 hfq 价格计收益，**不计入 V2
 证据、不改变计数账户**，只写 `outputs/momentum_pool/`：

@@ -97,7 +97,7 @@ class RunScheduledTest(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["audit_status"], "COLLECTING")
         self.assertEqual(
-            [command[1] for command in runner.calls],
+            [command[1] for command in runner.calls][:2],  # research refreshes follow the audit
             ["scripts/run_csi300_post_close.py", "scripts/audit_csi300_paper_validation.py"],
         )
         post_close = runner.calls[0]
@@ -208,6 +208,56 @@ class RunScheduledTest(unittest.TestCase):
         self.assertEqual(result["status"], "audit_error")
         self.assertEqual(len(self.notifications), 1)
 
+    def test_accepted_cycle_refreshes_pools_and_v2_after_the_audit(self) -> None:
+        runner = FakeRunner(self, post_close_codes=[0])
+
+        result = self._run(runner, _at(date(2026, 10, 9), 17, 30))
+
+        scripts = [call[1] for call in runner.calls]
+        self.assertEqual(scripts, [
+            "scripts/run_csi300_post_close.py",
+            "scripts/audit_csi300_paper_validation.py",
+            "scripts/refresh_momentum_pool.py",
+            "scripts/refresh_momentum_pool_v2.py",
+            "scripts/run_scoring_v2.py",
+        ])
+        self.assertEqual(set(result["research"].values()), {"refreshed"})
+        self.assertEqual(self.notifications, [])
+
+    def test_research_failure_is_notified_but_the_cycle_stays_completed(self) -> None:
+        runner = FakeRunner(self, post_close_codes=[0], research_code=1)
+
+        result = self._run(runner, _at(date(2026, 10, 9), 17, 30))
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["valid_sessions"], 4)
+        self.assertEqual(set(result["research"].values()), {"failed (exit 1)"})
+        self.assertEqual(len(self.notifications), 3)
+        self.assertIn("counted evidence is unaffected", self.notifications[0])
+
+    def test_failed_audit_skips_research_refreshes(self) -> None:
+        runner = FakeRunner(self, post_close_codes=[0], audit_status="FAILED")
+
+        result = self._run(runner, _at(date(2026, 10, 9), 17, 30))
+
+        self.assertNotIn("research", result)
+        self.assertNotIn("scripts/refresh_momentum_pool.py", [call[1] for call in runner.calls])
+
+    def test_up_to_date_run_catches_up_lagging_research_only_once(self) -> None:
+        self._write_state(date(2026, 10, 9))
+        FakeRunner(self, post_close_codes=[])(  # an accepted audit already exists
+            ["python", "scripts/audit_csi300_paper_validation.py"], self.log
+        )
+        runner = FakeRunner(self, post_close_codes=[])
+
+        first = self._run(runner, _at(date(2026, 10, 9), 18, 30))
+        again = self._run(runner, _at(date(2026, 10, 9), 19, 30))
+
+        self.assertEqual(first["status"], "up_to_date")
+        self.assertEqual(set(first["research"].values()), {"refreshed"})
+        self.assertNotIn("research", again)
+        self.assertEqual(len(runner.calls), 3)
+
 
 class LaunchdPlistTest(unittest.TestCase):
     def test_plist_runs_wrapper_hourly_without_launchd_touching_desktop(self) -> None:
@@ -228,6 +278,13 @@ class LaunchdPlistTest(unittest.TestCase):
             self.assertNotIn("/Desktop/", payload[key])
 
 
+RESEARCH_SCRIPTS = {
+    "scripts/refresh_momentum_pool.py": lambda root: root / "outputs/momentum_pool/state.json",
+    "scripts/refresh_momentum_pool_v2.py": lambda root: root / "outputs/momentum_pool_v2/state.json",
+    "scripts/run_scoring_v2.py": lambda root: root / "outputs/research/scoring_v2/latest_scores.json",
+}
+
+
 class FakeRunner:
     def __init__(
         self,
@@ -237,8 +294,10 @@ class FakeRunner:
         audit_status: str = "COLLECTING",
         audit_code: int = 0,
         mutate_on_failure: bool = False,
+        research_code: int = 0,
     ) -> None:
         self.test = test
+        self.research_code = research_code
         self.post_close_codes = list(post_close_codes)
         self.audit_status = audit_status
         self.audit_code = audit_code
@@ -256,6 +315,13 @@ class FakeRunner:
                     encoding="utf-8",
                 )
             return self.audit_code
+        if command[1] in RESEARCH_SCRIPTS:
+            if self.research_code == 0:
+                state = json.loads(config.state.read_text(encoding="utf-8"))
+                marker = RESEARCH_SCRIPTS[command[1]](config.root)
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(json.dumps({"as_of": state["last_successful_as_of"]}), encoding="utf-8")
+            return self.research_code
         code = self.post_close_codes.pop(0)
         if code == 0 or self.mutate_on_failure:
             as_of = date.fromisoformat(command[command.index("--as-of") + 1])
