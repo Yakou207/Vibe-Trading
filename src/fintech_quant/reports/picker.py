@@ -391,6 +391,45 @@ def pool_v2_view(data: PickerData, pool_state: Mapping[str, object]) -> dict[str
     }
 
 
+def intraday_monitor_view(
+    data: PickerData,
+    plan: Mapping[str, object] | None,
+    triggers: Mapping[str, object] | None,
+    comparison: Mapping[str, object] | None,
+) -> dict[str, object] | None:
+    """Latest intraday plan with its zones (unadjusted) and any triggers recorded so far."""
+    if plan is None:
+        return None
+    recorded = dict((triggers or {}).get("triggers") or {})  # type: ignore[arg-type]
+    names = [
+        {
+            **entry,
+            "name": data.names.get(str(entry["symbol"]), ""),
+            "trigger": recorded.get(str(entry["symbol"])),
+        }
+        for entry in plan["names"]  # type: ignore[union-attr]
+    ]
+    summary = None
+    if comparison is not None:
+        summary = {
+            key: comparison.get(key)
+            for key in (
+                "as_of", "plan_days", "intraday_entries", "daily_entries", "both_entered",
+                "mean_entry_gap", "intraday_closed", "daily_closed",
+            )
+        }
+    return {
+        "date": plan["date"],
+        "reference_session": plan["reference_session"],
+        "names": names,
+        "polls": (triggers or {}).get("polls", 0),
+        "last_poll_at": (triggers or {}).get("last_poll_at"),
+        "finalized": bool((triggers or {}).get("finalized")),
+        "errors": dict((triggers or {}).get("errors") or {}),  # type: ignore[arg-type]
+        "comparison": summary,
+    }
+
+
 def _verdict(
     analysis: Mapping[str, object],
     score: Mapping[str, object] | None,

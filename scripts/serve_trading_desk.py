@@ -30,6 +30,7 @@ from fintech_quant.reports.live_stock import LiveContext, intraday_payload  # no
 from fintech_quant.reports.picker import (  # noqa: E402
     PickerData,
     events_llm_payload,
+    intraday_monitor_view,
     jev_payload,
     load_picker_data,
     picks_payload,
@@ -141,6 +142,23 @@ class DeskState:
         path = self.args.pool_v2_root / "state.json"
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
+    def intraday_monitor(self) -> dict[str, object] | None:
+        """The latest intraday plan, its triggers and the comparison summary, if any."""
+        root = self.args.intraday_root
+        plans = sorted(root.glob("*/plan.json"))
+        if not plans:
+            return None
+
+        def read(path: Path) -> dict[str, object] | None:
+            return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+        return intraday_monitor_view(
+            self.picker(),
+            read(plans[-1]),
+            read(plans[-1].with_name("triggers.json")),
+            read(root / "comparison.json"),
+        )
+
     def scoring_v2_state(self) -> dict[str, object] | None:
         path = self.args.scoring_v2
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
@@ -192,6 +210,8 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                         fresh=True,
                     )
                 )
+            elif path == "/api/intraday-monitor":
+                self._json(state.intraday_monitor())
             elif path == "/api/intraday":
                 self._json(intraday_payload(state.live, self._query()))
             elif path == "/api/research":
@@ -327,6 +347,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--pool-root", type=Path, default=ROOT / "outputs/momentum_pool")
     parser.add_argument("--pool-v2-root", type=Path, default=ROOT / "outputs/momentum_pool_v2")
+    parser.add_argument(
+        "--intraday-root", type=Path, default=ROOT / "outputs/momentum_pool_intraday"
+    )
     parser.add_argument(
         "--scoring-v2",
         type=Path,

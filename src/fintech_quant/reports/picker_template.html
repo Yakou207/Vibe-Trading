@@ -155,6 +155,10 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
         <div id="pool-v2"></div>
       </section>
       <section class="panel section">
+        <div class="section-head"><h2>盘中触发监控 · v2 观察名单</h2><span class="right" id="intraday-monitor-meta"></span></div>
+        <div id="intraday-monitor"></div>
+      </section>
+      <section class="panel section">
         <div class="section-head"><h2>候选 · 触发与观察</h2><span class="right" id="cand-meta"></span></div>
         <div id="candidates"></div>
       </section>
@@ -225,6 +229,37 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       ${held ? `<table style="margin-top:8px"><thead><tr><th>持仓</th><th class="num">R 倍数</th><th>离场规则</th><th class="num">时间止损</th></tr></thead><tbody>${held}</tbody></table>` : ""}
       ${closed ? `<table style="margin-top:8px"><thead><tr><th>最近平仓</th><th>日期</th><th>原因</th><th class="num">R</th></tr></thead><tbody>${closed}</tbody></table>` : ""}
       <div class="note">v2 预先声明规则：每日前 5 进入观察名单（10 日未触发、转为回避或买入即移出，上限 20）；触发后次日开盘买入，单笔风险 0.75% 权益、单仓 ≤ 15%、止损距离 > 4% 不买，最多 8 仓；离场依次为止损、9 EMA（达 2R 后改 21 EMA）、回吐一半峰值利润、15 日未到 1R、转为回避；回撤 8% 风险减半、10% 暂停新开仓、按无刹车影子账户回到 8%/6% 恢复。不计入 V2 证据。</div>`;
+  }
+
+  const SKIP = { limit_up_fill: "涨停无法成交", fill_at_or_below_stop: "成交价跌破低点", session_ended: "收盘前未成交" };
+  let monitorTimer = null;
+
+  async function loadIntradayMonitor() {
+    clearTimeout(monitorTimer);
+    try { renderIntradayMonitor(await getJSON("/api/intraday-monitor")); }
+    catch (e) { $("intraday-monitor").innerHTML = `<div class="empty">请求失败：${esc(e.message)}</div>`; }
+    if (marketOpen()) monitorTimer = setTimeout(loadIntradayMonitor, 60000);
+  }
+
+  function renderIntradayMonitor(m) {
+    if (!m) { $("intraday-monitor").innerHTML = '<div class="empty">尚无盘前计划：开盘前运行 scripts/monitor_momentum_intraday.py plan</div>'; return; }
+    $("intraday-monitor-meta").textContent = `${m.date} · 轮询 ${m.polls} 次${m.finalized ? " · 已收盘" : ""}`;
+    const rows = m.names.map((r) => {
+      const t = r.trigger;
+      let status = r.armed ? '<span class="muted">监控中</span>' : `<span class="muted">未监控 · ${esc(STATE[r.watch_state] || r.reason)}</span>`;
+      if (t && t.status === "filled") status = `${badge("trigger")} ${esc(t.trigger_time.slice(11))} 收复<br><span class="muted">成交 ${num(t.fill_price)} @ ${esc(t.fill_time.slice(11))} · 止损 ${num(t.stop)}${t.stop_capped ? "（4% 封顶）" : ""}</span>`;
+      else if (t && t.status === "pending_fill") status = `${badge("trigger")} ${esc(t.trigger_time.slice(11))} 收复<br><span class="muted">等待下一分钟成交</span>`;
+      else if (t) status = `<span class="muted">${esc(t.trigger_time.slice(11))} 触发 · ${esc(SKIP[t.skip_reason] || t.skip_reason)}</span>`;
+      const zone = r.zone ? `${num(r.zone.bottom)}–${num(r.zone.top)}` : "—";
+      return `<tr class="click" data-symbol="${esc(r.symbol)}"><td>${esc(r.symbol)}<br><span class="muted">${esc(r.name || "")}</span></td><td class="num">${zone}<br><span class="muted">${(r.confluence_members || []).map((k) => esc(SUPPORT[k] || k)).join("、")}</span></td><td>${status}</td></tr>`;
+    }).join("");
+    const c = m.comparison;
+    const cmp = c ? `<div class="note">前向账本截至 ${esc(c.as_of)}：${c.plan_days} 个计划日 · 盘中入场 ${c.intraday_entries} · 次日开盘入场 ${c.daily_entries} · 同一信号两者都入场 ${c.both_entered}（盘中较开盘 ${pct(c.mean_entry_gap, 2)}）· 已平仓 盘中 ${c.intraday_closed.count} 笔均值 ${pct(c.intraday_closed.mean_return, 2)} / 开盘 ${c.daily_closed.count} 笔均值 ${pct(c.daily_closed.mean_return, 2)}</div>` : "";
+    const errors = Object.keys(m.errors).length ? `<div class="note">抓取失败：${Object.entries(m.errors).map(([s, e]) => `${esc(s)} ${esc(e)}`).join("；")}</div>` : "";
+    $("intraday-monitor").innerHTML = `${rows ? `<table><thead><tr><th>标的</th><th class="num">共振区（不复权）</th><th>盘中</th></tr></thead><tbody>${rows}</tbody></table>` : '<div class="empty">观察名单为空</div>'}
+      ${errors}${cmp}
+      <div class="note">研究用途，仅前向记录：盘前用 ${esc(m.reference_session)} 收盘的共振区；盘中 1 分钟价格先进入共振区、再站上区顶且未涨停即记为触发，按下一分钟价格加 0.05% 滑点模拟成交，止损为当日至触发时的最低分钟价（距成交价超过 4% 时上移至 4%）。A 股 T+1：当日不能止损，次日开盘起按 v1 日线规则离场。不改变 v1/v2 规则，不计入 V2 证据，系统不下单。</div>`;
+    document.querySelectorAll("#intraday-monitor tr.click").forEach((tr) => tr.addEventListener("click", () => load(tr.dataset.symbol)));
   }
 
   function renderStock(s) {
@@ -529,6 +564,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
       const [universe, picks] = await Promise.all([getJSON("/api/universe"), getJSON("/api/picks")]);
       $("universe").innerHTML = universe.map((u) => `<option value="${esc(u.symbol)} ${esc(u.name)}${u.csi300 ? " · 沪深300" : ""}"></option>`).join("");
       renderPicks(picks);
+      loadIntradayMonitor();
       const initial = decodeURIComponent(location.hash.slice(1)) || (picks.pool && picks.pool.pool[0] && picks.pool.pool[0].symbol) || (picks.candidates[0] && picks.candidates[0].symbol);
       if (initial) load(initial);
     } catch (e) {
