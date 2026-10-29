@@ -7,7 +7,7 @@
 Multi-factor stock selection · Martin Luk–style entry research · event NLP · Jev decision-model judgment · fail-closed paper-trading evidence
 
 ![Python](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-540%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-695%20passing-2ea44f)
 ![Market](https://img.shields.io/badge/market-CSI%20300%20A--shares-c0392b)
 ![Mode](https://img.shields.io/badge/mode-paper%20trading%20only-6c757d)
 ![Data](https://img.shields.io/badge/data-AkShare-1f6feb)
@@ -46,20 +46,30 @@ passes fixed gates.
 
 ## Results
 
-Formal point-in-time backtest, CSI 300, 2021-06-15 → 2026-07-13, CNY 100,000 start, all modeled
-costs and individual dividend tax included.
+The formal point-in-time backtest covers CSI 300 from 2021-06-15 to 2026-07-13. It starts with CNY
+100,000 and includes all modeled costs and individual dividend tax. Signals use the T close and
+fills happen at the T+1 open. Risk checks and position sizing see only data available at the
+signal close; the [fix](docs/research/2026-10-29-lag-fix-rerun.md) is in commit `5514a28`.
 
-| Strategy | Total return | Annualized | Max drawdown | Sharpe | Trades |
+| Series | Total return | Annualized | Max drawdown | Sharpe | Trades |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **Risk-controlled multi-factor baseline** | **+118.3%** | **17.3%** | **9.65%** | **1.71** | 4,336 |
-| Unrestricted multi-factor baseline | +115.3% | 17.0% | 12.21% | 1.72 | 4,481 |
-| CSI 300 index | −9.1% | — | 39.84% | — | — |
+| Risk-controlled multi-factor baseline | −17.0% | −3.8% | 17.3% | −1.09 | 1,460 |
+| Unrestricted multi-factor baseline | −34.4% | −8.3% | 39.5% | −0.78 | 4,244 |
+| CSI 300 total return (H00300) | +3.7% | 0.7% | 35.8% | 0.13 | — |
+| CSI 300 price index | −9.1% | −1.9% | 39.8% | −0.02 | — |
 
-Excess return over CSI 300 is positive in all four walk-forward segments
-(+27.7%, +19.0%, +26.6%, +20.7%). The 8% / 9% / 10% drawdown controller is what keeps the
-risk-controlled variant inside the 10% drawdown target.
+**The baseline has no demonstrated edge.** The project's own audit found that an earlier
+backtest let the broad-market risk rule read each day's close before trading at that day's open.
+That headline (+118%, Sharpe 1.71) is therefore withdrawn. The [attribution
+review](docs/research/2026-10-18-backtest-attribution.md) quantified the leak: a rule limited to
+the prior close cannot avoid 487 of 489 down days, yet the old backtest did (timing t = 11.7).
+It also restated the benchmark to total return. With the leak fixed and the strategy unchanged:
 
-**Restatement (2026-10-18):** an [attribution review](docs/research/2026-10-18-backtest-attribution.md) found that the backtest's broad-market risk rule uses each day's close to trade at that day's open, a same-day look-ahead. The figures above are therefore not evidence of skill: the dividend-inclusive CSI 300 returned +3.7%, not −9.1%, and on the strategy's own exposure path stock selection lagged the index.
+- Stock selection lost 15 points against the index on the same exposure path.
+- Costs were 10% of capital at 55.6× turnover.
+- The drawdown controller liquidated in 2023 and never re-entered.
+
+A same-close cross-check, which cannot see the future, gives the same picture.
 
 Shadow top-5 momentum pool (untuned replay on point-in-time membership, 2024-01-02 → 2026-10-16):
 +36.0% vs CSI 300 +23.2%, but 22.3% maximum drawdown, so it stays a shadow book and never drives the
@@ -135,6 +145,8 @@ flowchart TB
 - Coverage, variation and staleness are checked for every score component; a constant or stale
   component fails the run.
 - Suspended members are accepted only when two independent price sources agree, and are never scored.
+- Backtests are audited on their own exposure path. That audit caught a same-day look-ahead in the
+  risk layer; it is fixed with regression tests and the headline was withdrawn, not retuned.
 - RL (DQN) is diagnostic only: the Torch and linear backends disagree, so neither may raise exposure.
 - LLM output is advisory and recorded verbatim; it is never backtested (look-ahead bias) and never
   touches the counted strategy or the evidence chain.

@@ -63,6 +63,20 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-10-29 backtest look-ahead fix (research runner only)
+
+- The research runner (`backtesting/portfolio_research_runner.py`, commit `5514a28`) now reads risk
+  inputs, dynamic risk and sizing from the signal-date close book under delayed execution. Before
+  the fix, it read the execution day's close and then filled at that day's open.
+- The rerun `outputs/csi300_research/hfq-lagfix-20261029` used the same inputs. The risk-controlled
+  baseline returned -17.0% with a 17.3% max DD, and the unrestricted baseline -34.4% with a 39.5% max
+  DD. CSI 300 total return (H00300) was +3.7%. A same-close (`execution_delay_sessions=0`)
+  cross-check agrees.
+- The +118.3% result is withdrawn. See `docs/research/2026-10-29-lag-fix-rerun.md`.
+- No threshold, weight, risk, drawdown or cost parameter changed. The daily paper cycle never used
+  this runner, so the epoch-2 window continues unchanged. Do not retune on the 2021-2026 sample;
+  new strategy work needs pre-registered thresholds and a hold-out period.
+
 ### 2026-10-22 paper execution bug fix (not a strategy change)
 
 - The 2026-10-21 cycle (third counted session, `valid_sessions=3`, run by the launchd job) sold only
@@ -303,11 +317,10 @@ The system now has the engineering shape of a paper-trading research platform:
   command. A fixed fixture reproduces identical factor, score-analysis, and RL
   dataset hashes across two complete runs.
 
-Engineering completion must not be confused with deployable-profit proof. The
-latest historical CSI 300 baseline run beats its benchmark and stays inside the
-10% drawdown target after modeled costs, individual FIFO dividend tax, and the
-complete distribution/rights ledger. It has not passed eight weeks of continuous
-paper validation.
+Engineering completion must not be confused with deployable-profit proof. After
+the 2026-10-29 look-ahead fix, the historical CSI 300 baseline loses to its
+benchmark (-17.0% against +3.7% total return) and breaches the 10% drawdown
+target (17.3%). It has not passed eight weeks of continuous paper validation.
 
 ## Historical Diagnostic Findings
 

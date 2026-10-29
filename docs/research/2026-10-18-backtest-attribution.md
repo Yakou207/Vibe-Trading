@@ -1,5 +1,9 @@
 # Formal CSI 300 backtest: honest re-evaluation (2026-10-18)
 
+> **Update 2026-10-29:** the look-ahead described here is fixed (commit `5514a28`). The fixed rerun
+> returned −17.0% for the risk-controlled baseline against +3.7% for H00300; see
+> [the rerun note](2026-10-29-lag-fix-rerun.md).
+
 This is a read-only re-analysis of the formal point-in-time CSI 300 run
 `outputs/csi300_research/hfq-formal-20260713` (2021-06-15 → 2026-07-13, 1,230 daily returns). The
 headline result was +118.3% (17.3% a year), 9.65% maximum drawdown and a Sharpe ratio of 1.71,

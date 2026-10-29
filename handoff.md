@@ -293,7 +293,28 @@ evidence clock that can no longer pass under the current anchor.
 
 ## Historical research result
 
-The authoritative stable-HFQ formal comparison is
+**2026-10-29: the 2026-07-13 result below is withdrawn.** Its research runner read the execution
+day's close-time risk inputs, closes and equity, and then filled at that day's open. Commit
+`5514a28` fixed the runner. The rerun used the same inputs and is now the authoritative comparison:
+`outputs/csi300_research/hfq-lagfix-20261029/benchmark_comparison.json`.
+
+| Series | Total | Max DD | Sharpe | Trades |
+|---|---:|---:|---:|---:|
+| Risk-controlled baseline | -17.02% | 17.26% | -1.09 | 1,460 |
+| Unrestricted baseline | -34.40% | 39.52% | -0.78 | 4,244 |
+| CSI 300 price / total return (H00300) | -9.12% / +3.67% | 39.84% / 35.79% | | |
+
+The details are in `docs/research/2026-10-29-lag-fix-rerun.md`:
+
+- Selection effect: -15 points.
+- Trading costs: CNY 10,111.
+- The drawdown controller liquidated on 2023-05-23 and never re-entered.
+
+The daily paper cycle never used this runner, so the epoch-2 window, the account and all cycle
+manifests are unaffected. The old `hfq-formal-20260713/pnl_curve.json` stays unmodified because
+earlier cycle manifests hash-bind it.
+
+Withdrawn values (look-ahead), kept for traceability:
 `outputs/csi300_research/hfq-formal-20260713/benchmark_comparison.json`.
 
 - risk-controlled historical total return: approximately 118.30%;
