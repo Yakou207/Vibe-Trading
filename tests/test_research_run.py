@@ -292,6 +292,7 @@ class ResearchRunTest(unittest.TestCase):
                     information_path=information_path,
                     capital_flow_path=paths["capital_flow"],
                     initial_cash=100000.0,
+                    execution_delay_sessions=0,
                 )
             )
 
@@ -332,6 +333,7 @@ class ResearchRunTest(unittest.TestCase):
                     information_path=information_path,
                     capital_flow_path=paths["capital_flow"],
                     initial_cash=100000.0,
+                    execution_delay_sessions=0,
                 )
             )
 
@@ -372,6 +374,7 @@ class ResearchRunTest(unittest.TestCase):
                     information_path=information_path,
                     capital_flow_path=paths["capital_flow"],
                     initial_cash=100000.0,
+                    execution_delay_sessions=0,
                 )
             )
 

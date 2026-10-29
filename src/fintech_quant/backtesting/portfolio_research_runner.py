@@ -186,6 +186,7 @@ def run_portfolio_scored_baseline_backtest(
     closed_wins = 0
     closed_count = 0
     rolling_peak = float(initial_cash)
+    signal_books: dict[date, tuple[float, dict[str, _Position], dict[str, float]]] = {}
 
     grouped_bars = _group_by_date(ordered)
     for date_index, (trade_date, daily_bars) in enumerate(grouped_bars):
@@ -215,8 +216,18 @@ def run_portfolio_scored_baseline_backtest(
             str(bar["symbol"]): _bar_close(execution_by_key[(_bar_date(bar), str(bar["symbol"]))])
             for bar in daily_bars
         }
+        # A delayed order fills at the open, so risk and sizing may only see the book as it
+        # stood at the signal close, before this session's corporate actions and prices.
+        if execution_delay_sessions:
+            risk_date = signal_date
+            starting_equity, decision_positions, decision_closes = signal_books.get(
+                signal_date, (cash, {}, {})
+            )
+        else:
+            risk_date = trade_date
+            starting_equity = _equity(cash, positions, close_by_symbol)
+            decision_positions, decision_closes = positions, close_by_symbol
         bought_today: set[str] = set()
-        starting_equity = _equity(cash, positions, close_by_symbol)
         rolling_peak = max(rolling_peak, starting_equity)
 
         for bar in daily_bars:
@@ -229,10 +240,10 @@ def run_portfolio_scored_baseline_backtest(
             score = scores.get((signal_date, symbol)) if signal_date is not None else None
             position = positions.get(symbol, _Position())
             risk_input = _merge_risk_inputs(
-                risk_by_key.get((trade_date, symbol), RiskInput()),
+                risk_by_key.get((risk_date, symbol), RiskInput()),
                 _dynamic_risk_input(
-                    close,
-                    position,
+                    decision_closes.get(symbol, 0.0),
+                    decision_positions.get(symbol, _Position()),
                     starting_equity,
                     rolling_peak,
                     active_cost_model.commission_rate,
@@ -304,9 +315,9 @@ def run_portfolio_scored_baseline_backtest(
                 ):
                     trade, cash, notional, closed_win = _sell_position(
                         trade_date=trade_date,
-                        signal_date=trade_date,
+                        signal_date=signal_date or trade_date,
                         symbol=symbol,
-                        close=close,
+                        close=strategy_execution_price,
                         position=position,
                         cash=cash,
                         cost_model=active_cost_model,
@@ -424,6 +435,11 @@ def run_portfolio_scored_baseline_backtest(
                 positions_value=round(positions_value, 6),
                 equity=round(cash + positions_value, 6),
             )
+        )
+        signal_books[trade_date] = (
+            cash + positions_value,
+            {held: replace(position) for held, position in positions.items()},
+            close_by_symbol,
         )
         if control_state is not None and drawdown_policy is not None:
             control_state = update_drawdown_control(

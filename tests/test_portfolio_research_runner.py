@@ -399,6 +399,95 @@ class PortfolioResearchRunnerTest(unittest.TestCase):
         self.assertEqual(result.trades[1].signal_date, date(2026, 1, 5))
         self.assertEqual(result.trades[1].trade_date, date(2026, 1, 6))
 
+    def test_delayed_buy_sees_signal_day_risk_not_execution_day_risk(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+
+        bars = [
+            _bar("000001.SZ", "2026-01-02", 10.0),
+            _bar("000001.SZ", "2026-01-05", 10.0),
+        ]
+        scores = {(date(2026, 1, 2), "000001.SZ"): _score("000001.SZ", 80.0)}
+        crash = RiskInput(broad_market_drop_gt_3pct_count=100)
+
+        unknown_at_open = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            risk_inputs={(date(2026, 1, 5), "000001.SZ"): crash},
+            execution_delay_sessions=1,
+        )
+        known_at_signal = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            risk_inputs={(date(2026, 1, 2), "000001.SZ"): crash},
+            execution_delay_sessions=1,
+        )
+
+        self.assertEqual([t.action for t in unknown_at_open.trades], [TradeAction.BUY])
+        self.assertEqual(known_at_signal.trades, [])
+
+    def test_delayed_sell_cannot_react_to_the_execution_day_close(self) -> None:
+        from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
+        from fintech_quant.backtesting.costs import AShareCostModel
+
+        bars = [
+            _bar("000001.SZ", "2026-01-02", 10.0),
+            _bar("000001.SZ", "2026-01-05", 10.0),
+            _bar("000001.SZ", "2026-01-06", 5.0, open=10.0),
+            _bar("000001.SZ", "2026-01-07", 5.0),
+        ]
+        scores = {
+            (day, "000001.SZ"): _score("000001.SZ", 80.0)
+            for day in (date(2026, 1, 2), date(2026, 1, 5), date(2026, 1, 6))
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            execution_delay_sessions=1,
+            cost_model=AShareCostModel(
+                commission_rate=0.0,
+                minimum_commission=0.0,
+                include_stamp_duty=False,
+            ),
+        )
+
+        sell = [t for t in result.trades if t.action is TradeAction.SELL]
+        self.assertEqual([(t.trade_date, t.price) for t in sell], [(date(2026, 1, 7), 5.0)])
+
+    def test_delayed_risk_values_the_signal_book_across_a_bonus_share_ex_date(self) -> None:
+        from fintech_quant.backtesting import (
+            CorporateAction,
+            run_portfolio_scored_baseline_backtest,
+        )
+
+        bars = [
+            _bar("000001.SZ", "2026-01-02", 10.0),
+            _bar("000001.SZ", "2026-01-05", 10.0),
+            _bar("000001.SZ", "2026-01-06", 5.0),
+            _bar("000001.SZ", "2026-01-07", 5.0),
+        ]
+        scores = {
+            (day, "000001.SZ"): _score("000001.SZ", 80.0)
+            for day in (date(2026, 1, 2), date(2026, 1, 5), date(2026, 1, 6))
+        }
+
+        result = run_portfolio_scored_baseline_backtest(
+            bars,
+            scores,
+            corporate_actions=(
+                CorporateAction(
+                    symbol="000001.SZ",
+                    ex_date=date(2026, 1, 6),
+                    share_multiplier=2.0,
+                    source="fixture",
+                ),
+            ),
+            execution_delay_sessions=1,
+        )
+
+        self.assertEqual([t.action for t in result.trades], [TradeAction.BUY])
+        self.assertEqual(result.risk_warnings, [])
+
     def test_portfolio_runner_buys_100_share_lots_with_position_cap(self) -> None:
         from fintech_quant.backtesting import run_portfolio_scored_baseline_backtest
 
