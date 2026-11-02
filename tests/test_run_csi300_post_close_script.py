@@ -324,6 +324,38 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             self.assertEqual(attempt.parent_argument, "--append-from")
             self.assertEqual(attempt.parent_manifest, append_parent)
 
+    def test_complete_price_stage_with_unpublished_scopes_resumes_into_a_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            append_parent = root / "seed" / "manifest.json"
+            _write_manifest(append_parent, layer="raw")
+            request = {"start": "2026-01-03", "end": "2026-01-05", "adjust": "none"}
+            partial = root / "raw" / "prices-20260105" / "manifest.json"
+            _write_scoped_manifest(
+                partial,
+                parent=str(append_parent.resolve()),
+                rows_by_symbol={"000001.SZ": "row\n", "600000.SH": "", "600036.SH": ""},
+                request={**request, "membership_sha256": "a" * 64},
+            )
+
+            def attempt(max_empty_scopes: int, membership_sha256: str = "a" * 64):
+                return _raw_stage_attempt(
+                    root / "raw",
+                    base_run_id="prices-20260105",
+                    append_parent=append_parent,
+                    expected_request=request,
+                    require_rows=True,
+                    membership_sha256=membership_sha256,
+                    max_empty_scopes=max_empty_scopes,
+                )
+
+            self.assertFalse(attempt(max_empty_scopes=2).needs_run)
+            for stale in (attempt(max_empty_scopes=1), attempt(2, membership_sha256="b" * 64)):
+                self.assertTrue(stale.needs_run)
+                self.assertEqual(stale.run_id, "prices-20260105-retry-1")
+                self.assertEqual(stale.parent_argument, "--resume-from")
+                self.assertEqual(stale.parent_manifest, partial.resolve())
+
     def test_processed_factor_retry_rejects_stale_material_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -840,6 +872,42 @@ def _write_manifest(
         ],
     }
     _write_json(path, payload)
+
+
+def _write_scoped_manifest(
+    path: Path,
+    *,
+    parent: str,
+    rows_by_symbol: dict[str, str],
+    request: dict[str, object],
+) -> None:
+    scopes, artifacts = [], []
+    for symbol, text in rows_by_symbol.items():
+        artifact = path.parent / "prices" / f"{symbol}.jsonl"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_text(text, encoding="utf-8")
+        relative = f"prices/{symbol}.jsonl"
+        scopes.append(
+            {"symbol": symbol, "status": "success" if text else "empty", "artifact": relative, "error": None}
+        )
+        artifacts.append(
+            {
+                "path": relative,
+                "bytes": artifact.stat().st_size,
+                "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+            }
+        )
+    _write_json(
+        path,
+        {
+            "run_id": path.parent.name,
+            "layer": "raw",
+            "parent_manifest": parent,
+            "request": request,
+            "scopes": scopes,
+            "artifacts": artifacts,
+        },
+    )
 
 
 def _write_json(path: Path, payload: dict[str, object]) -> None:

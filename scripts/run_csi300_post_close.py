@@ -33,6 +33,8 @@ from fintech_quant.execution.paper_evidence import load_verified_anchor  # noqa:
 
 
 Runner = Callable[..., None]
+# Matches the decision report's default tolerance for confirmed suspensions.
+MAX_SUSPENDED_MEMBERS = 3
 
 
 @dataclass(frozen=True)
@@ -386,6 +388,8 @@ def _price_stage(
             "adjust": adjust,
         },
         require_rows=True,
+        membership_sha256=sha256_file(config.membership),
+        max_empty_scopes=MAX_SUSPENDED_MEMBERS,
     )
     if raw_attempt.needs_run:
         runner(
@@ -454,6 +458,7 @@ def _factor_stage(
         base_run_id=f"csi300-factor-raw-{date_token}",
         append_parent=parent,
         expected_request={"start": start.isoformat(), "end": config.as_of.isoformat()},
+        membership_sha256=sha256_file(config.membership),
     )
     if raw_attempt.needs_run:
         runner(
@@ -529,6 +534,7 @@ def _action_stage(
         base_run_id=f"csi300-action-raw-{date_token}",
         append_parent=parent,
         expected_request={"start": start.isoformat(), "end": config.as_of.isoformat()},
+        membership_sha256=sha256_file(config.membership),
     )
     if raw_attempt.needs_run:
         runner(
@@ -585,6 +591,8 @@ def _raw_stage_attempt(
     append_parent: Path,
     expected_request: Mapping[str, object],
     require_rows: bool = False,
+    membership_sha256: str | None = None,
+    max_empty_scopes: int | None = None,
 ) -> RawStageAttempt:
     latest_manifest: Path | None = None
     attempt = 0
@@ -615,14 +623,33 @@ def _raw_stage_attempt(
                 for scope in scopes
             )
             has_rows = _manifest_has_rows(verified.payload)
-            if complete and (not require_rows or has_rows):
+            # A complete run is stale when the membership changed or too many scopes came back
+            # empty (data not yet published); resuming from it refetches only those scopes.
+            stale = (
+                membership_sha256 is not None
+                and request.get("membership_sha256") != membership_sha256
+            ) or (
+                max_empty_scopes is not None
+                and _empty_artifact_count(verified.payload) > max_empty_scopes
+            )
+            if complete and not stale and (not require_rows or has_rows):
                 return RawStageAttempt(
                     run_id=run_id,
                     manifest=manifest.resolve(),
                     needs_run=False,
                 )
-            latest_manifest = None if complete else manifest.resolve()
+            restart = complete and require_rows and not has_rows
+            latest_manifest = None if restart else manifest.resolve()
         attempt += 1
+
+
+def _empty_artifact_count(payload: Mapping[str, object]) -> int:
+    artifacts = payload.get("artifacts")
+    if not isinstance(artifacts, list):
+        return 0
+    return sum(
+        1 for artifact in artifacts if isinstance(artifact, Mapping) and artifact.get("bytes") == 0
+    )
 
 
 def _manifest_has_rows(payload: Mapping[str, object]) -> bool:

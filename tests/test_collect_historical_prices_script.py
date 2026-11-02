@@ -107,6 +107,41 @@ def test_collect_historical_prices_resumes_completed_symbols_and_retries_failure
     assert status_by_symbol == {"000001.SZ": "reused", "600000.SH": "success"}
 
 
+def test_collect_historical_prices_refetches_empty_scopes_on_resume(tmp_path: Path) -> None:
+    membership = tmp_path / "membership.csv"
+    membership.write_text("symbol\n000001.SZ\n600000.SH\n", encoding="utf-8")
+    first_fixture = tmp_path / "first.json"
+    first_fixture.write_text(
+        json.dumps({"000001.SZ": [_bar("000001.SZ", "2026-01-02", 10.0)], "600000.SH": []}),
+        encoding="utf-8",
+    )
+    first = _run_collect(tmp_path, membership, first_fixture, "prices-1")
+    assert first.returncode == 0, first.stderr
+
+    second_fixture = tmp_path / "second.json"
+    second_fixture.write_text(
+        json.dumps(
+            {
+                "000001.SZ": {"error": "must be reused"},
+                "600000.SH": [_bar("600000.SH", "2026-01-02", 8.0)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    second = _run_collect(
+        tmp_path,
+        membership,
+        second_fixture,
+        "prices-2",
+        resume_from=tmp_path / "raw/prices-1/manifest.json",
+    )
+
+    assert second.returncode == 0, second.stderr
+    manifest = json.loads((tmp_path / "raw/prices-2/manifest.json").read_text(encoding="utf-8"))
+    status_by_symbol = {scope["symbol"]: scope["status"] for scope in manifest["scopes"]}
+    assert status_by_symbol == {"000001.SZ": "reused", "600000.SH": "success"}
+
+
 def test_collect_historical_prices_appends_a_new_raw_delta_without_reusing_scopes(
     tmp_path: Path,
 ) -> None:

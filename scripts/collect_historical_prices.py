@@ -229,6 +229,9 @@ def _verified_parent_scope(
         path = parent_path.parent / relative
         if artifact is None or sha256_file(path) != artifact.get("sha256"):
             raise ValueError(f"resume artifact hash mismatch: {relative}")
+        if artifact.get("bytes") == 0:
+            # An empty range may only mean the provider has not published the day yet.
+            return None
         return scope
     return None
 
