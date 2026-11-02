@@ -138,7 +138,7 @@ python scripts/bridge_csi300_paper_epoch.py \
   --as-of 2026-10-16 \
   --state data/paper/csi300_baseline/pipeline_state.json \
   --account data/paper/csi300_baseline/account.json \
-  --membership data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20260630.csv \
+  --membership data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20261030.csv \
   --comparison outputs/csi300_research/hfq-formal-20260713/benchmark_comparison.json \
   --formal-run-manifest outputs/csi300_research/hfq-formal-20260713/manifest.json \
   --reason "2026-07-22 至 2026-10-16 漏跑，账户全程空仓"
@@ -154,7 +154,7 @@ python scripts/run_csi300_post_close.py \
   --as-of 2026-07-14 \
   --state data/paper/csi300_baseline/pipeline_state.json \
   --account data/paper/csi300_baseline/account.json \
-  --membership data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20260630.csv \
+  --membership data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20261030.csv \
   --comparison outputs/csi300_research/hfq-formal-20260713/benchmark_comparison.json
 ```
 

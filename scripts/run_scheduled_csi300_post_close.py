@@ -59,7 +59,7 @@ def default_config(root: Path = ROOT) -> SchedulerConfig:
         state=root / "data/paper/csi300_baseline/pipeline_state.json",
         account=root / "data/paper/csi300_baseline/account.json",
         membership=root
-        / "data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20260630.csv",
+        / "data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20261030.csv",
         comparison=root / "outputs/csi300_research/hfq-formal-20260713/benchmark_comparison.json",
         audit_output=root / "outputs/paper_trading/csi300_baseline/validation_report.json",
         log_dir=root / "outputs/automation/csi300_post_close",
