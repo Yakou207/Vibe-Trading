@@ -142,6 +142,26 @@ def test_collect_historical_prices_refetches_empty_scopes_on_resume(tmp_path: Pa
     assert status_by_symbol == {"000001.SZ": "reused", "600000.SH": "success"}
 
 
+def test_collect_historical_prices_limits_a_run_to_requested_members(tmp_path: Path) -> None:
+    membership = tmp_path / "membership.csv"
+    membership.write_text("symbol\n000001.SZ\n600000.SH\n", encoding="utf-8")
+    fixture = tmp_path / "prices.json"
+    fixture.write_text(
+        json.dumps({"600000.SH": [_bar("600000.SH", "2026-01-02", 8.0)]}),
+        encoding="utf-8",
+    )
+
+    completed = _run_collect(tmp_path, membership, fixture, "prices-1", symbols=["600000.SH"])
+    unknown = _run_collect(tmp_path, membership, fixture, "prices-2", symbols=["300750.SZ"])
+
+    assert completed.returncode == 0, completed.stderr
+    manifest = json.loads((tmp_path / "raw/prices-1/manifest.json").read_text(encoding="utf-8"))
+    assert manifest["request"]["symbols"] == ["600000.SH"]
+    assert [scope["symbol"] for scope in manifest["scopes"]] == ["600000.SH"]
+    assert unknown.returncode != 0
+    assert "not members in the requested range: 300750.SZ" in unknown.stderr
+
+
 def test_collect_historical_prices_appends_a_new_raw_delta_without_reusing_scopes(
     tmp_path: Path,
 ) -> None:
@@ -277,6 +297,7 @@ def _run_collect(
     start: str = "2026-01-01",
     end: str = "2026-01-03",
     adjust: str | None = None,
+    symbols: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -302,6 +323,8 @@ def _run_collect(
         command.extend(("--append-from", str(append_from)))
     if adjust is not None:
         command.extend(("--adjust", adjust))
+    if symbols is not None:
+        command.extend(("--symbols", *symbols))
     return subprocess.run(
         command,
         cwd=Path(__file__).resolve().parents[1],

@@ -42,6 +42,7 @@ def main() -> int:
     parser.add_argument("--created-at", default=None)
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--adjust", choices=("qfq", "hfq", "none"), default="qfq")
+    parser.add_argument("--symbols", nargs="+", default=None)
     args = parser.parse_args()
 
     if args.source == "fixture" and not args.fixture_input:
@@ -58,7 +59,7 @@ def main() -> int:
         raise SystemExit("--end must not be earlier than --start")
 
     membership_path = Path(args.membership).resolve()
-    symbols = _membership_symbols(membership_path, start, end)
+    symbols = _membership_symbols(membership_path, start, end, args.symbols)
     fixture = _fixture(Path(args.fixture_input)) if args.fixture_input else None
     parent_path = Path(args.resume_from).resolve() if args.resume_from else None
     parent = _parent_manifest(parent_path)
@@ -163,8 +164,19 @@ def main() -> int:
     return 2 if failed else 0
 
 
-def _membership_symbols(path: Path, start: date, end: date) -> tuple[str, ...]:
-    return membership_symbols_for_range(path, start, end)
+def _membership_symbols(
+    path: Path,
+    start: date,
+    end: date,
+    requested: list[str] | None = None,
+) -> tuple[str, ...]:
+    symbols = membership_symbols_for_range(path, start, end)
+    if requested is None:
+        return symbols
+    missing = sorted(set(requested) - set(symbols))
+    if missing:
+        raise SystemExit(f"--symbols are not members in the requested range: {', '.join(missing)}")
+    return tuple(symbol for symbol in symbols if symbol in requested)
 
 
 def _fixture(path: Path) -> dict[str, object]:

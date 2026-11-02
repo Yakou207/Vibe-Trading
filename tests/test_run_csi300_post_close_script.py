@@ -116,6 +116,47 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             self.assertEqual(result["validation_report"], str(cycle_report))
             self.assertNotEqual(state_after, state)
 
+    def test_pipeline_backfills_members_without_history_before_the_daily_increment(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            state = _seed_state(config, date(2026, 1, 2), without_history=("000300.SZ",))
+            runner = RecordingRunner(config)
+
+            run_pipeline(config, runner=runner)
+
+            collect_commands = [
+                command
+                for command, _ in runner.calls
+                if Path(command[0]).name.startswith("collect_")
+            ]
+            self.assertEqual(len(collect_commands), 8)
+            for name, backfill, daily in zip(
+                ("signal_price", "execution_price", "factor", "corporate_action"),
+                collect_commands[0::2],
+                collect_commands[1::2],
+            ):
+                self.assertEqual(backfill[-2:], ["--symbols", "000300.SZ"])
+                self.assertEqual(_argument(backfill, "--start"), "2021-01-04")
+                self.assertEqual(_argument(backfill, "--end"), "2026-01-02")
+                self.assertEqual(
+                    _argument(backfill, "--append-from"),
+                    state["manifests"][name]["raw_manifest"],
+                )
+                self.assertIn("-backfill-raw-20260105", _argument(backfill, "--run-id"))
+                self.assertNotIn("--symbols", daily)
+                self.assertEqual(_argument(daily, "--start"), "2026-01-03")
+                self.assertEqual(
+                    Path(_argument(daily, "--append-from")),
+                    (
+                        Path(_argument(backfill, "--raw-root"))
+                        / _argument(backfill, "--run-id")
+                        / "manifest.json"
+                    ).resolve(),
+                )
+
     def test_pipeline_passes_sibling_pnl_curve_to_paper_cycle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -608,6 +649,7 @@ class RecordingRunner:
         elif script.startswith("collect_"):
             root = Path(_argument(command, "--raw-root"))
             run_id = _argument(command, "--run-id")
+            symbols_at = command.index("--symbols") + 1 if "--symbols" in command else None
             _write_manifest(
                 root / run_id / "manifest.json",
                 layer="raw",
@@ -615,6 +657,15 @@ class RecordingRunner:
                     _optional_argument(command, "--resume-from")
                     or _optional_argument(command, "--append-from")
                 ),
+                request={
+                    "start": _argument(command, "--start"),
+                    "end": _argument(command, "--end"),
+                    "symbols": (
+                        command[symbols_at:]
+                        if symbols_at is not None
+                        else [f"{value:06d}.SZ" for value in range(1, 301)]
+                    ),
+                },
             )
         elif script.startswith("build_") and script != "build_daily_decision_report.py":
             root = Path(_argument(command, "--processed-root"))
@@ -730,7 +781,11 @@ def _config(root: Path) -> PipelineConfig:
 
 
 def _seed_state(
-    config: PipelineConfig, as_of: date, *, with_validation_anchor: bool = True
+    config: PipelineConfig,
+    as_of: date,
+    *,
+    with_validation_anchor: bool = True,
+    without_history: tuple[str, ...] = (),
 ) -> dict[str, object]:
     account_payload = {
         "cash": 100000.0,
@@ -745,7 +800,19 @@ def _seed_state(
     for name in ("signal_price", "execution_price", "factor", "corporate_action"):
         raw = config.state.parent / "seed" / name / "raw" / "manifest.json"
         processed = config.state.parent / "seed" / name / "processed" / "manifest.json"
-        _write_manifest(raw, layer="raw")
+        _write_manifest(
+            raw,
+            layer="raw",
+            request={
+                "start": "2021-01-04",
+                "end": as_of.isoformat(),
+                "symbols": [
+                    symbol
+                    for symbol in (f"{value:06d}.SZ" for value in range(1, 301))
+                    if symbol not in without_history
+                ],
+            },
+        )
         _write_manifest(processed, layer="processed")
         manifests[name] = {
             "raw_manifest": str(raw.resolve()),

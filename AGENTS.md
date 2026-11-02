@@ -78,8 +78,12 @@ system for fintech graduate-school portfolio work.
   (not yet published) counted as complete and was reused. Complete runs are now stale when their
   membership hash differs or more than three price scopes are empty, and resumes refetch empty
   scopes. The 2026-11-02 cycle was then accepted (`valid_sessions=11`).
-- `002294.SZ` has no price or factor history in the incremental chain: score 5, confidence 0.25.
-  It cannot be selected until a history backfill exists.
+- `002294.SZ` had no price or factor history in the incremental chain (score 5, confidence 0.25).
+  Each stage of `scripts/run_csi300_post_close.py` now first appends a `-backfill-raw-` run with
+  the full history since the chain start for every current member the chain has not covered. The
+  daily increment then chains to it. The first such run is the 2026-11-03 cycle. A dry run on the
+  2026-11-02 inputs scored `002294.SZ` at 44.25 with confidence 0.81; the nine names passing the
+  70/0.8 gate were unchanged. The December rebalance members get the same backfill automatically.
 
 ### 2026-10-29 backtest look-ahead fix (research runner only)
 

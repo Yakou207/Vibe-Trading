@@ -378,6 +378,25 @@ def _price_stage(
     source: str,
     workers: int,
 ) -> tuple[Path, Path]:
+    parent = _backfill_new_members(
+        config,
+        runner=runner,
+        root=config.raw_price_root,
+        base_run_id=f"csi300-{label}-backfill-raw-{date_token}",
+        parent=parent,
+        end=start - timedelta(days=1),
+        collector=[
+            "scripts/collect_historical_prices.py",
+            "--source",
+            source,
+            "--adjust",
+            adjust,
+            "--workers",
+            str(workers),
+        ],
+        expected_request={"adjust": adjust},
+        require_rows=True,
+    )
     raw_attempt = _raw_stage_attempt(
         config.raw_price_root,
         base_run_id=f"csi300-{label}-raw-{date_token}",
@@ -453,6 +472,24 @@ def _factor_stage(
     benchmark: Path,
     signal_features: Path,
 ) -> tuple[Path, Path]:
+    parent = _backfill_new_members(
+        config,
+        runner=runner,
+        root=config.raw_factor_root,
+        base_run_id=f"csi300-factor-backfill-raw-{date_token}",
+        parent=parent,
+        end=start - timedelta(days=1),
+        collector=[
+            "scripts/collect_point_in_time_factors.py",
+            "--source",
+            "akshare",
+            "--groups",
+            "fundamentals",
+            "financial_statements",
+            "--workers",
+            "4",
+        ],
+    )
     raw_attempt = _raw_stage_attempt(
         config.raw_factor_root,
         base_run_id=f"csi300-factor-raw-{date_token}",
@@ -529,6 +566,15 @@ def _action_stage(
     start: date,
     parent: Path,
 ) -> tuple[Path, Path]:
+    parent = _backfill_new_members(
+        config,
+        runner=runner,
+        root=config.raw_action_root,
+        base_run_id=f"csi300-action-backfill-raw-{date_token}",
+        parent=parent,
+        end=start - timedelta(days=1),
+        collector=["scripts/collect_corporate_actions.py", "--source", "akshare-sina", "--workers", "4"],
+    )
     raw_attempt = _raw_stage_attempt(
         config.raw_action_root,
         base_run_id=f"csi300-action-raw-{date_token}",
@@ -582,6 +628,91 @@ def _action_stage(
     processed_manifest = processed_attempt.manifest
     load_verified_manifest(processed_manifest, expected_layer="processed")
     return raw_manifest.resolve(), processed_manifest.resolve()
+
+
+def _backfill_new_members(
+    config: PipelineConfig,
+    *,
+    runner: Runner,
+    root: Path,
+    base_run_id: str,
+    parent: Path,
+    end: date,
+    collector: list[str],
+    expected_request: Mapping[str, object] | None = None,
+    require_rows: bool = False,
+) -> Path:
+    """Append the full history of members the raw chain has not covered since its first day.
+
+    A daily increment only fetches its own dates, so a stock that joins the index would
+    otherwise reach scoring with a few rows and no indicators. Returns the new parent.
+    """
+    history_start, symbols = _members_missing_history(config, parent, end)
+    if not symbols:
+        return parent
+    attempt = _raw_stage_attempt(
+        root,
+        base_run_id=base_run_id,
+        append_parent=parent,
+        expected_request={
+            "start": history_start.isoformat(),
+            "end": end.isoformat(),
+            "symbols": list(symbols),
+            **(expected_request or {}),
+        },
+        require_rows=require_rows,
+        membership_sha256=sha256_file(config.membership),
+    )
+    if attempt.needs_run:
+        runner(
+            [
+                *collector,
+                "--membership",
+                str(config.membership),
+                "--start",
+                history_start.isoformat(),
+                "--end",
+                end.isoformat(),
+                "--run-id",
+                attempt.run_id,
+                "--raw-root",
+                str(root),
+                str(attempt.parent_argument),
+                str(attempt.parent_manifest),
+                "--symbols",
+                *symbols,
+            ],
+            timeout=config.stage_timeout,
+        )
+    load_verified_manifest_chain(attempt.manifest, expected_layer="raw")
+    return attempt.manifest.resolve()
+
+
+def _members_missing_history(
+    config: PipelineConfig,
+    parent: Path,
+    end: date,
+) -> tuple[date, tuple[str, ...]]:
+    requests = [
+        item.payload["request"]
+        for item in load_verified_manifest_chain(parent, expected_layer="raw")
+    ]
+    history_start = min(date.fromisoformat(str(request["start"])) for request in requests)
+    missing = []
+    for symbol in sorted(active_symbols(load_membership_intervals(config.membership), config.as_of)):
+        covered = sorted(
+            (date.fromisoformat(str(request["start"])), date.fromisoformat(str(request["end"])))
+            for request in requests
+            if symbol in request.get("symbols", ())
+        )
+        reached = history_start - timedelta(days=1)
+        for first, last in covered:
+            if first > reached + timedelta(days=1):
+                break
+            reached = max(reached, last)
+        if reached < end:
+            missing.append(symbol)
+    return history_start, tuple(missing)
 
 
 def _raw_stage_attempt(

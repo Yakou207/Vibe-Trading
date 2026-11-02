@@ -179,8 +179,11 @@ built from the official 2026-10-30 weight file (`20261030_anchor.xls`) and
 Retries now refetch scopes that came back empty because the day was not yet published, and they
 recollect after a membership change. The 2026-11-02 cycle was accepted, with `valid_sessions=11`.
 
-`002294.SZ` lacks history in the incremental chain (confidence 0.25), so it is excluded until it
-is backfilled. The auditor's walk-forward excess still comes from the withdrawn `hfq-formal-20260713`
+`002294.SZ` had no history in the incremental chain (confidence 0.25). From the 2026-11-03 cycle,
+each raw stage first appends a `csi300-<stage>-backfill-raw-<date>` run with the full history,
+from the chain start (2021-06-15), for current members the chain does not cover. It uses the
+collectors' new `--symbols` option. A dry run on the 2026-11-02 inputs scored it 44.25 with
+confidence 0.81 and left the gate-passing names unchanged. The auditor's walk-forward excess still comes from the withdrawn `hfq-formal-20260713`
 comparison, which the anchor hash-binds.
 
 ## Scheduled automation (launchd)
