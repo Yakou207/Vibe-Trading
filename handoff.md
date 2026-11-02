@@ -166,6 +166,23 @@ so this is an execution-correctness repair, not strategy tuning, and the epoch-2
 The 2026-10-21 cycle stays as recorded. Regression tests: `PaperFullExitTest` in
 `tests/test_paper_trading_loop.py`.
 
+## 2026-11-02 constituent change (601059.SH out, 002294.SZ in from 2026-10-19)
+
+The CSIndex notice of 2026-09-09 (attachment
+`https://oss-ch.csindex.com.cn/notice/20261013171630-附件：指数样本调整名单.xlsx`, sha256
+`213f7d73…8383`) removes `601059.SH` and adds `002294.SZ` from Cinda's delisting date, 2026-10-19.
+The scheduler now uses `data/diagnostics/csi300_official_adjustments/csi300_membership_20210615_20261030.csv`,
+built from the official 2026-10-30 weight file (`20261030_anchor.xls`) and
+`csi300_adjustments_202106_202610.csv`. It is identical to the 2026-06-30 membership before
+2026-10-19.
+
+Retries now refetch scopes that came back empty because the day was not yet published, and they
+recollect after a membership change. The 2026-11-02 cycle was accepted, with `valid_sessions=11`.
+
+`002294.SZ` lacks history in the incremental chain (confidence 0.25), so it is excluded until it
+is backfilled. The auditor's walk-forward excess still comes from the withdrawn `hfq-formal-20260713`
+comparison, which the anchor hash-binds.
+
 ## Scheduled automation (launchd)
 
 Added 2026-10-17. Missed post-close runs were the operational cause of the failed audit: as of

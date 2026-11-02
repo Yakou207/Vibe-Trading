@@ -63,6 +63,24 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-11-02 CSI 300 constituent change and stale-retry fix
+
+- The index changed on 2026-10-19, when Cinda Securities was delisted after its CICC merger
+  (CSIndex notice of 2026-09-09): `601059.SH` left CSI 300 and `002294.SZ` joined. The current-
+  constituent source is the monthly CSIndex weight file. It showed the change only from its
+  2026-10-30 edition, so the 2026-11-02 cycle failed closed on the constituent check.
+- The new membership is `csi300_membership_20210615_20261030.csv`. It was rebuilt from the
+  official 2026-10-30 anchor plus the adjustment and matches the old file on every date before
+  2026-10-19. The old file stays untouched because cycles 10-19..10-30 hash-reference it. Those
+  cycles used the 09-30 snapshot: suspended `601059.SH` was never scored and `002294.SZ` was never
+  a candidate.
+- Retries also could not recover. A raw price run where 101 Sina scopes came back empty at 16:30
+  (not yet published) counted as complete and was reused. Complete runs are now stale when their
+  membership hash differs or more than three price scopes are empty, and resumes refetch empty
+  scopes. The 2026-11-02 cycle was then accepted (`valid_sessions=11`).
+- `002294.SZ` has no price or factor history in the incremental chain: score 5, confidence 0.25.
+  It cannot be selected until a history backfill exists.
+
 ### 2026-10-29 backtest look-ahead fix (research runner only)
 
 - The research runner (`backtesting/portfolio_research_runner.py`, commit `5514a28`) now reads risk
