@@ -13,6 +13,7 @@ from fintech_quant.reports.live_stock import (
     live_intraday,
     reference_momentum,
     resolve_any,
+    stock_industry,
 )
 from fintech_quant.reports.picker import stock_payload, universe_payload
 from fintech_quant.research.momentum_setup import SymbolSeries
@@ -318,3 +319,44 @@ def test_intraday_still_resolves_a_full_code_when_the_share_list_is_down(tmp_pat
 
     assert payload["symbol"] == "600001.SH" and payload["name"] == ""
     assert "error" in intraday_payload(live, "领涨股份")
+
+
+def test_non_member_gets_a_v2_score_projected_onto_the_member_cross_section(tmp_path: Path) -> None:
+    from test_scoring_v2 import _projection_study  # noqa: PLC0415
+
+    *_, reference = _projection_study()
+    bars = _leader_with_flush().bars
+    calendar = [b.trade_date for b in bars][-len(reference["calendar"]):]
+    reference = {**reference, "calendar": calendar, "as_of": calendar[-1]}
+    snapshot = {"as_of": calendar[-1], "label": "研究评分 v2", "signs": reference["signs"],
+                "scores": {}, "reference": reference}
+
+    def sina(**kwargs):
+        return [{**row, "amount": row["close"] * row["volume"]} for row in _sina_rows()]
+
+    valuation = [{"数据日期": d, "PE(TTM)": 15.0, "市净率": 2.0, "总市值": 4.5e10,
+                  "流通市值": 3.0e10} for d in calendar[-40:]]
+    industry = [{"分类标准编码": "008003", "变更日期": "2020-01-01", "行业门类": "I1"}]
+    live = LiveContext(cache_dir=tmp_path, today=TODAY, fetchers=_fetchers(
+        sina=sina, value=lambda **kw: valuation, industry=lambda **kw: industry))
+
+    payload = stock_payload(_data(), "300624", live, scoring_v2=snapshot)
+    member = stock_payload(_data(), "600001", live, scoring_v2=snapshot)
+
+    v2 = payload["scoring_v2"]
+    assert v2["projected"] is True and v2["counted"] is False
+    assert v2["as_of"] == calendar[-1] and v2["industry"] == "I1"
+    assert 0 < v2["score"] <= 100
+    assert v2["factor_z"]["turnover_20d"] is not None and v2["factor_z"]["ep"] is not None
+    assert member["scoring_v2"] is None  # members keep the snapshot score via pool_context
+    assert stock_payload(_data(), "300624", live)["scoring_v2"] is None
+
+
+def test_industry_falls_back_to_the_official_shenwan_file(tmp_path: Path) -> None:
+    other = [{"分类标准编码": "008001", "变更日期": "2020-01-01", "行业门类": "金融业"}]
+    live = LiveContext(cache_dir=tmp_path, today=TODAY,
+                       fetchers=_fetchers(industry=lambda **kw: other))
+
+    assert stock_industry(live, "000002.SZ", {}, {"000002.SZ": "房地产"}) == "房地产"
+    assert stock_industry(live, "000002.SZ", {}) is None
+    assert stock_industry(live, "000002.SZ", {"000002.SZ": "银行"}, {"000002.SZ": "房地产"}) == "银行"

@@ -11,6 +11,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -19,6 +20,7 @@ from typing import Mapping
 
 from fintech_quant.data.historical_universe import active_symbols, load_membership_intervals
 from fintech_quant.data.manifest_chain import load_verified_manifest
+from fintech_quant.data.shenwan import read_official_shenwan
 from fintech_quant.execution.paper_evidence import approved_paper_policy, verify_file_reference
 from fintech_quant.information import event_llm
 from fintech_quant.information.event_nlp import analyze_items, financial_trend, research_consensus
@@ -50,7 +52,7 @@ from fintech_quant.research.momentum_setup import (
     momentum_table,
     screen,
 )
-from fintech_quant.research.scoring_v2 import snapshot_view
+from fintech_quant.research.scoring_v2 import project_scoring_v2, snapshot_view
 
 
 CHART_SESSIONS = 160
@@ -192,7 +194,7 @@ def stock_payload(
     pool = pit_stock_payload(data, symbol, scoring_v2) if symbol in data.members else None
     if live is None:
         return pool or {"error": f"未在当前 CSI 300 成分中找到：{query}"}
-    payload = live_stock_payload(data, live, symbol, fresh=fresh)
+    payload = live_stock_payload(data, live, symbol, scoring_v2, fresh=fresh)
     if pool is None:
         return payload
     if "error" in payload:  # live source down: fall back to yesterday's view, clearly labelled
@@ -247,7 +249,12 @@ def _pool_context(pool: Mapping[str, object]) -> dict[str, object]:
 
 
 def live_stock_payload(
-    data: PickerData, live: LiveContext, symbol: str, *, fresh: bool = False
+    data: PickerData,
+    live: LiveContext,
+    symbol: str,
+    scoring_v2: Mapping[str, object] | None = None,
+    *,
+    fresh: bool = False,
 ) -> dict[str, object]:
     """Any A-share, fetched now and analysed with the same rules as the pool."""
     try:
@@ -286,8 +293,40 @@ def live_stock_payload(
         "baseline": _baseline(score),
         "baseline_label": "实时参考分（不进入计数策略）",
         "fundamentals": result["fundamentals"],
+        # members show the snapshot's own v2 score through pool_context
+        "scoring_v2": None if member else projected_v2(live, symbol, result, scoring_v2, data.as_of),
         "market_warnings": [],
         "verdict": verdict,
+    }
+
+
+def projected_v2(
+    live: LiveContext,
+    symbol: str,
+    result: Mapping[str, object],
+    snapshot: Mapping[str, object] | None,
+    as_of: str,
+) -> dict[str, object] | None:
+    """A non-member's v2 score placed into the snapshot's member cross section."""
+    reference = (snapshot or {}).get("reference")
+    if not reference:
+        return None
+    day = str(reference["as_of"])  # type: ignore[index]
+    inputs = result["v2_inputs"]
+    mcap = inputs["mcap"].get(day)  # type: ignore[index, union-attr]
+    industry = stock_industry(live, symbol, _local_industries(), _official_industries())
+    view = project_scoring_v2(
+        reference, inputs, industry, math.log(mcap) if mcap and mcap > 0 else None  # type: ignore[arg-type]
+    )
+    return {
+        **view,
+        "label": snapshot.get("label"),  # type: ignore[union-attr]
+        "stale": day != as_of,
+        "counted": False,
+        "industry": industry,
+        "inverted": sorted(
+            name for name, sign in dict(reference["signs"]).items() if sign < 0  # type: ignore[index]
+        ),
     }
 
 
@@ -703,7 +742,20 @@ def _gather(
 
 
 INDUSTRY_TABLE = Path(__file__).resolve().parents[3] / "data/raw/industry/sw_industry_cninfo.csv"
+OFFICIAL_SHENWAN = INDUSTRY_TABLE.parent / "swsresearch" / "StockClassifyUse_stock.xls"
 _INDUSTRIES: dict[str, str] | None = None
+_OFFICIAL: dict[str, str] | None = None
+
+
+def _official_industries() -> dict[str, str]:
+    """Latest level-1 industry per stock from the official Shenwan file, when it was downloaded."""
+    global _OFFICIAL
+    if _OFFICIAL is None:
+        _OFFICIAL = {}
+        if OFFICIAL_SHENWAN.exists():
+            _OFFICIAL = {symbol: max(rows)[1]
+                         for symbol, rows in read_official_shenwan(OFFICIAL_SHENWAN).items()}
+    return _OFFICIAL
 
 
 def _local_industries() -> dict[str, str]:

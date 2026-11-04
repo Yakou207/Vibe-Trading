@@ -143,6 +143,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
   <div class="grid">
     <main>
       <section class="panel section" id="stock"><div class="empty">搜索一只股票，或点击右侧候选。</div></section>
+      <section class="panel section" id="jev-panel" hidden></section>
       <section class="panel section" id="research" hidden></section>
     </main>
     <aside>
@@ -275,11 +276,12 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     const v2Bars = v2 && v2.categories ? [["value", "价值", "--s1"], ["quality_growth", "质量/成长", "--s2"], ["low_risk", "低风险", "--s3"], ["liquidity", "低换手", "--s4"], ["reversal", "短期反转", "--s7"], ["momentum", "动量 12-1", "--s1"]].map(([k, l, c]) => {
       const x = v2.categories[k];
       return `<div class="bar-row"><span>${l} <span class="muted">${num(x.weight * 100, 0)}%</span></span><div class="track"><i style="width:${x.percentile}%;background:var(${c})"></i></div><span style="text-align:right">${num(x.percentile, 0)}</span></div>`;
-    }).join("") : '<div class="muted">今日无 v2 研究评分（缺少行业/市值或全部因子）。</div>';
+    }).join("") : `<div class="muted">今日无 v2 研究评分（${esc(v2 && v2.reason ? v2.reason : "缺少行业/市值或全部因子")}）。</div>`;
+    const v2Projected = v2 && v2.projected ? `非沪深 300 成分，这是投影分：用 ${esc(v2.as_of)} 沪深 300 截面的统计量（去极值边界、标准化、行业与市值回归、类别离散度）和训练期权重把它放进该截面，成分股分数不变；分位是插入该截面后的排名${v2.industry ? `，行业 ${esc(v2.industry)}` : ""}${v2.industry && v2.industry_in_reference === false ? "（该行业不在沪深 300 截面，按截面平均行业效应中性化）" : ""}${v2.mcap_outside_reference ? "；市值超出沪深 300 范围，市值中性化为线性外推" : ""}。估值、换手为实时抓取，ROE/增长取最新报告期，未做时点验证。` : "";
     const v2Section = v2 ? `
-      <div class="section-head" style="margin-top:14px"><h2>研究评分 v2（排名合成）</h2><span class="right">${v2.score == null ? "" : `${num(v2.score, 1)} 分位 · 覆盖 ${pct(v2.coverage, 0)}`}</span></div>
+      <div class="section-head" style="margin-top:14px"><h2>研究评分 v2（排名合成${v2.projected ? " · 投影" : ""}）</h2><span class="right">${v2.score == null ? "" : `${num(v2.score, 1)} 分位 · 覆盖 ${pct(v2.coverage, 0)}`}</span></div>
       <div class="bars">${v2Bars}</div>
-      <div class="note">${esc(v2.label)}${v2.stale ? `；快照日期 ${esc(v2.as_of)}，不是今日` : ""}。分位为沪深 300 截面排名（0–100），类别条为各类别的截面分位，类别名旁为训练期 ICIR 权重；缺失因子按中性 0 处理并降低覆盖率。方向按训练期 ICIR 对齐${v2.inverted && v2.inverted.length ? `，以下因子取负（数值越低排名越高）：${esc(v2.inverted.join("、"))}` : ""}。</div>` : "";
+      <div class="note">${v2Projected}${esc(v2.label)}${v2.stale ? `；快照日期 ${esc(v2.as_of)}，不是今日` : ""}。分位为沪深 300 截面排名（0–100），类别条为各类别的截面分位，类别名旁为训练期 ICIR 权重；缺失因子按中性 0 处理并降低覆盖率。方向按训练期 ICIR 对齐${v2.inverted && v2.inverted.length ? `，以下因子取负（数值越低排名越高）：${esc(v2.inverted.join("、"))}` : ""}。</div>` : "";
     const zone = a.zone ? `共振区 ${num(a.zone.bottom)}–${num(a.zone.top)}` : "无共振区";
     $("stock").innerHTML = `
       <div class="stock-head"><span class="name">${esc(s.name)}</span><span class="mono muted">${esc(s.symbol)}</span>
@@ -413,6 +415,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     const el = $("research");
     el.hidden = false;
     el.innerHTML = '<div class="empty">正在汇总新闻、公告、研报、互动问答和财报…</div>';
+    $("jev-panel").hidden = true;
     try { renderResearch(await getJSON(`/api/research?q=${encodeURIComponent(symbol)}`)); }
     catch (e) { el.innerHTML = `<div class="empty">信息汇总失败：${esc(e.message)}</div>`; }
   }
@@ -446,8 +449,12 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
           <ul class="flags">${flags}</ul></div>
         <div><div class="section-head"><h2>研报共识</h2><span class="right">近 ${c.window_days} 天</span></div>
           <div class="mono" style="font-size:12px;line-height:1.8">研报 ${c.reports} 篇 · 机构 ${c.institutions} 家<br>评级：${ratings}<br>看多占比：${pct(c.bullish_share, 0)}<br>EPS 预测中位数：${eps}</div></div>
-      </div>
-      <div class="section-head" style="margin-top:16px"><h2>Jev 判断</h2><span class="right">固定问题 → 概率或 JSON 作答 → SOFT 阈值</span></div>
+      </div>`;
+    const jevPanel = $("jev-panel");
+    jevPanel.hidden = false;
+    jevPanel.innerHTML = `
+      <div class="section-head"><h2>Jev 综合判断</h2><span class="right">固定问题 → 概率或 JSON 作答 → SOFT 阈值</span></div>
+      <div class="note" style="margin-bottom:10px">读取整份资料包，不只是 NLP：Luk 四步技术检查、多因子分及分项、大盘风险提示、NLP 情绪与事件、近期新闻/公告标题、研报共识、近 6 期财报（不含 v2 研究分）。只做多：结论为支持 / 中性 / 否决，否决＝回避，不是做空；仅供参考，不能推翻技术面的回避结论，也不改变计数策略。</div>
       <div id="jev"></div>`;
     renderJev(r.jev_record, r);
     renderEventsLlm(r.events_llm_result, r);
@@ -549,6 +556,7 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--surface-2); 
     history.replaceState(null, "", `#${encodeURIComponent(query)}`);
     $("stock").innerHTML = '<div class="empty">分析中…</div>';
     $("research").hidden = true;
+    $("jev-panel").hidden = true;
     try {
       const stock = await getJSON(`/api/stock?q=${encodeURIComponent(query)}`);
       renderStock(stock);

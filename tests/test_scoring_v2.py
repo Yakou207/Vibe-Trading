@@ -12,7 +12,9 @@ from fintech_quant.research.scoring_v2 import (
     category_weights,
     current_score_summary,
     fit_scoring_v2,
+    project_scoring_v2,
     run_scoring_v2_study,
+    scoring_v2_reference,
     score_scoring_v2,
 )
 
@@ -183,3 +185,63 @@ def test_study_runs_end_to_end_on_a_synthetic_panel() -> None:
     assert set(study["composite"]) == {"train", "holdout", "holdout_ex_window"}
     assert study["split"]["signal_dates"]["holdout_ex_window"]["5"] == 60 - 11
     assert np.nanmax(result.score.to_numpy()) <= 100.0
+
+
+def _projection_study(outsider: str | None = None):
+    from test_factor_lab import _panel  # noqa: PLC0415
+
+    panel = _panel(0)
+    dates, symbols = panel["close"].index, panel["close"].columns
+    universe = pd.DataFrame(True, index=dates, columns=symbols)
+    if outsider is not None:
+        universe[outsider] = False
+    industry = pd.DataFrame([[f"I{i % 4}" for i in range(len(symbols))]] * len(dates),
+                            index=dates, columns=symbols)
+    log_mcap = np.log(panel["float_mcap"] * 3)
+    study, result, _, _ = run_scoring_v2_study(
+        panel, universe, industry, log_mcap, dates[250], dates[260], (dates[270], dates[280]))
+    reference = scoring_v2_reference(panel, universe, industry, log_mcap, study["fit"], result)
+    return panel, industry, log_mcap, result, reference
+
+
+def _inputs(panel: dict[str, pd.DataFrame], symbol: str) -> dict[str, pd.Series]:
+    return {name: panel[name][symbol] for name in panel}
+
+
+def test_a_member_projected_onto_its_own_cross_section_reproduces_its_score() -> None:
+    panel, industry, log_mcap, result, reference = _projection_study()
+    day = reference["as_of"]
+    scored = result.score.loc[day].dropna().index
+
+    for symbol in scored[:25]:
+        view = project_scoring_v2(reference, _inputs(panel, symbol), industry.loc[day, symbol],
+                                  float(log_mcap.loc[day, symbol]))
+        assert view["composite"] == pytest.approx(result.composite.loc[day, symbol], abs=1e-4)
+        for category in CATEGORIES:
+            assert view["categories"][category]["z"] == pytest.approx(
+                result.categories[category].loc[day, symbol], abs=1e-4)
+        # inserted next to itself, the rank moves by at most one place
+        assert abs(view["score"] - result.score.loc[day, symbol]) <= 100 / len(scored) + 1e-6
+
+
+def test_an_outsider_is_scored_without_moving_members_and_ignores_later_data() -> None:
+    outsider = "S007"
+    panel, industry, log_mcap, result, reference = _projection_study(outsider)
+    day = reference["as_of"]
+    assert outsider not in result.score.loc[day].dropna().index
+
+    inputs = _inputs(panel, outsider)
+    view = project_scoring_v2(reference, inputs, "I3", float(log_mcap.loc[day, outsider]))
+    assert view["projected"] is True
+    assert 0 < view["score"] <= 100
+    assert view["coverage"] == 1.0
+    assert view["industry_in_reference"] is True
+
+    later = {name: pd.concat([s, pd.Series([s.iloc[-1] * 5], index=["2099-01-01"])])
+             for name, s in inputs.items()}
+    assert project_scoring_v2(reference, later, "I3", float(log_mcap.loc[day, outsider])) == view
+
+    unknown = project_scoring_v2(reference, inputs, "Other", float(log_mcap.loc[day, outsider]))
+    assert unknown["industry_in_reference"] is False and unknown["score"] is not None
+    assert project_scoring_v2(reference, inputs, None, 1.0)["score"] is None
+    assert project_scoring_v2(reference, {}, "I3", 1.0)["score"] is None

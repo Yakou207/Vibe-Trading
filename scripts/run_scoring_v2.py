@@ -37,6 +37,7 @@ from fintech_quant.research.scoring_v2 import (  # noqa: E402
     PRIMARY_HORIZON,
     current_score_summary,
     run_scoring_v2_study,
+    scoring_v2_reference,
 )
 
 COMPONENTS = ("fundamental", "technical", "capital_flow", "sentiment")
@@ -97,7 +98,7 @@ def main() -> int:
     study_path.write_text(json.dumps(study, ensure_ascii=False, indent=2, default=_json_default)
                           + "\n", encoding="utf-8")
     latest_path = out_dir / "latest_scores.json"
-    latest_path.write_text(json.dumps(latest_snapshot(study, result, universe), ensure_ascii=False,
+    latest_path.write_text(json.dumps(latest_snapshot(study, result, inputs), ensure_ascii=False,
                                       indent=2, default=_json_default) + "\n", encoding="utf-8")
     report = Path(args.report)
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -140,7 +141,8 @@ def current_scores(inputs: dict, universe: pd.DataFrame):
     return wide("total"), wide("confidence"), {name: wide(name) for name in COMPONENTS}
 
 
-def latest_snapshot(study: dict, result, universe: pd.DataFrame) -> dict[str, object]:
+def latest_snapshot(study: dict, result, inputs: dict) -> dict[str, object]:
+    universe = inputs["universe"]
     day = universe.index[-1]
     scored = result.score.loc[day].dropna()
     category_pct = {c: z.loc[day, scored.index].rank(pct=True) * 100.0
@@ -173,6 +175,9 @@ def latest_snapshot(study: dict, result, universe: pd.DataFrame) -> dict[str, ob
         "members": int(len(members)),
         "unscored_members": sorted(set(members) - set(scored.index)),
         "scores": rows,
+        # lets the picker place a non-member into this date's member cross section
+        "reference": scoring_v2_reference(inputs["panel"], universe, inputs["industry"],
+                                          inputs["log_mcap"], study["fit"], result),
     }
 
 

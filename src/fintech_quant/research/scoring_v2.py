@@ -59,12 +59,16 @@ import pandas as pd
 
 from fintech_quant.research.factor_lab import (
     FACTORS,
+    MAD_SCALE,
     daily_ic,
     evaluate_signal,
     forward_open_returns,
     ic_summary,
+    neutralize,
     preprocess_factors,
     purged_train_dates,
+    winsorize_mad,
+    zscore,
 )
 
 CATEGORIES: dict[str, tuple[str, ...]] = {
@@ -202,7 +206,189 @@ def snapshot_view(
     }
 
 
-# ------------------------------------------------------------------ evaluation
+# ------------------------------------------------------------------ projection
+#
+# A stock outside the CSI 300 cross section is scored by placing it into the
+# latest member cross section: every per-date statistic (winsorize bounds,
+# z-score moments, the industry + size regression, category spreads, the
+# composite distribution) comes from the members only and is stored with the
+# snapshot. The outsider never changes a member's score, and a member projected
+# against its own cross section reproduces its snapshot values.
+
+REFERENCE_SESSIONS = 253  # 12-1 momentum reads close[T-252]
+REFERENCE_INPUTS = ("close", "amount", "float_mcap", "pe", "pb", "roe", "growth")
+
+
+def _moments(values: np.ndarray) -> list[float | None]:
+    """Mean and standard deviation as ``factor_lab.zscore`` uses them; None std means all zero."""
+    std = values.std()
+    return [float(values.mean()), float(std) if std != 0 and np.isfinite(std) else None]
+
+
+def _apply(value: float, moments: list[float | None]) -> float:
+    mean, std = moments
+    return 0.0 if std is None else (value - mean) / std  # type: ignore[operator]
+
+
+def factor_reference(
+    values: np.ndarray, industries: np.ndarray, log_mcap: np.ndarray
+) -> dict[str, object]:
+    """The parameters ``preprocess_factors`` applies to one factor's cross section on one date."""
+    median = np.median(values)
+    mad = np.median(np.abs(values - median)) * MAD_SCALE
+    winsorized = winsorize_mad(values)
+    x = zscore(winsorized)
+    codes, labels = pd.factorize(industries)
+    design = np.zeros((len(values), codes.max() + 2))
+    design[np.arange(len(values)), codes] = 1.0
+    design[:, -1] = zscore(log_mcap)
+    beta, *_ = np.linalg.lstsq(design, x, rcond=None)
+    resid = neutralize(x, industries, log_mcap)
+    counts = np.bincount(codes, minlength=len(labels))
+    return {
+        "names": int(len(values)),
+        "bounds": None if mad == 0 else [float(median - 3.0 * mad), float(median + 3.0 * mad)],
+        "z": _moments(winsorized),
+        "log_mcap": _moments(log_mcap),
+        "industry_beta": {str(label): float(beta[i]) for i, label in enumerate(labels)},
+        "average_industry_beta": float(counts @ beta[: len(labels)] / counts.sum()),
+        "mcap_beta": float(beta[-1]),
+        "resid": _moments(resid),
+    }
+
+
+def project_factor(
+    reference: Mapping[str, object], value: float, industry: str, log_mcap: float
+) -> float:
+    bounds = reference["bounds"]
+    winsorized = value if bounds is None else min(max(value, bounds[0]), bounds[1])  # type: ignore[index]
+    x = _apply(winsorized, reference["z"])  # type: ignore[arg-type]
+    industry_beta = dict(reference["industry_beta"]).get(  # type: ignore[call-overload]
+        industry, reference["average_industry_beta"]
+    )
+    resid = x - industry_beta - reference["mcap_beta"] * _apply(log_mcap, reference["log_mcap"])  # type: ignore[operator, arg-type]
+    return _apply(resid, reference["resid"])  # type: ignore[arg-type]
+
+
+def _insert_percentile(sorted_values: list[float], value: float) -> float:
+    """Percentile the value would get if inserted into the cross section (average rank on ties)."""
+    lower = int(np.searchsorted(sorted_values, value, side="left"))
+    upper = int(np.searchsorted(sorted_values, value, side="right"))
+    return (lower + (upper - lower + 2) / 2) / (len(sorted_values) + 1) * 100.0
+
+
+def scoring_v2_reference(
+    panel: Mapping[str, pd.DataFrame],
+    universe: pd.DataFrame,
+    industry: pd.DataFrame,
+    log_mcap: pd.DataFrame,
+    fit: Mapping[str, object],
+    result: ScoringV2Result,
+    min_names: int = 30,
+) -> dict[str, object]:
+    """Everything needed to project a non-member onto the latest member cross section."""
+    calendar = universe.index[-REFERENCE_SESSIONS:]
+    day = calendar[-1]
+    tail = {name: panel[name].reindex(index=calendar) for name in REFERENCE_INPUTS}
+    definitions = {f.name: f for f in FACTORS}
+    base = (universe.loc[day].to_numpy(bool) & industry.loc[day].notna().to_numpy()
+            & np.isfinite(log_mcap.loc[day].to_numpy(float)))
+    industries = industry.loc[day].to_numpy(object)
+    mcaps = log_mcap.loc[day].to_numpy(float)
+    factors: dict[str, object] = {}
+    neutral: dict[str, np.ndarray] = {}  # the day's preprocessed z, 0 where missing
+    for name in FACTOR_NAMES:
+        values = definitions[name].compute(tail).astype(float).reindex(
+            columns=universe.columns).loc[day].to_numpy(float)
+        mask = base & np.isfinite(values)
+        neutral[name] = np.zeros(len(values))
+        if mask.sum() < min_names:
+            factors[name] = None
+            continue
+        factors[name] = factor_reference(values[mask], industries[mask], mcaps[mask])
+        neutral[name][mask] = zscore(neutralize(zscore(winsorize_mad(values[mask])),
+                                                industries[mask], mcaps[mask]))
+    signs = dict(fit["signs"])  # type: ignore[call-overload]
+    scored_mask = result.score.loc[day].reindex(universe.columns).notna().to_numpy()
+    scored = universe.columns[scored_mask]
+    spreads: dict[str, float | None] = {}
+    for category, names in CATEGORIES.items():
+        raw = sum(signs[n] * neutral[n] for n in names) / len(names)
+        std = raw[scored_mask].std()
+        spreads[category] = float(std) if std != 0 and np.isfinite(std) else None
+    return {
+        "as_of": day,
+        "calendar": list(calendar),
+        "industries": sorted({str(i) for i in industries[base]}),
+        "log_mcap_range": [float(mcaps[base].min()), float(mcaps[base].max())],
+        "signs": signs,
+        "weights": dict(fit["weights"]),  # type: ignore[call-overload]
+        "factors": factors,
+        "category_spread": spreads,
+        "category_sorted": {c: sorted(float(v) for v in z.loc[day, scored])
+                            for c, z in result.categories.items()},
+        "composite_sorted": sorted(float(v) for v in result.composite.loc[day, scored]),
+    }
+
+
+def project_scoring_v2(
+    reference: Mapping[str, object],
+    inputs: Mapping[str, pd.Series],
+    industry: str | None,
+    log_mcap: float | None,
+) -> dict[str, object]:
+    """One stock's v2 score placed into the reference cross section.
+
+    ``inputs`` maps each of ``REFERENCE_INPUTS`` to a date-indexed series; only the reference
+    calendar is read, so data after the reference date never enters the score.
+    """
+    day = str(reference["as_of"])
+    view: dict[str, object] = {"as_of": day, "projected": True, "score": None,
+                               "coverage": None, "categories": None}
+    if not industry:
+        return {**view, "reason": "没有申万一级行业，无法做行业中性化"}
+    if log_mcap is None or not np.isfinite(log_mcap):
+        return {**view, "reason": f"缺少 {day} 的总市值，无法做市值中性化"}
+    calendar = pd.Index(reference["calendar"])  # type: ignore[arg-type]
+    panel = {name: pd.DataFrame({"x": pd.Series(inputs.get(name, pd.Series(dtype=float)),
+                                                dtype=float).reindex(calendar)})
+             for name in REFERENCE_INPUTS}
+    definitions = {f.name: f for f in FACTORS}
+    factor_refs = dict(reference["factors"])  # type: ignore[call-overload]
+    z: dict[str, float | None] = {}
+    for name in FACTOR_NAMES:
+        value = float(definitions[name].compute(panel).iloc[-1, 0])
+        ref = factor_refs.get(name)
+        z[name] = None if ref is None or not np.isfinite(value) else project_factor(
+            ref, value, industry, float(log_mcap))
+    present = sum(v is not None for v in z.values())
+    if present == 0:
+        return {**view, "reason": f"{day} 没有可用的 v2 因子"}
+    signs, weights = dict(reference["signs"]), dict(reference["weights"])  # type: ignore[call-overload]
+    spreads = dict(reference["category_spread"])  # type: ignore[call-overload]
+    categories = {}
+    composite = 0.0
+    for category, names in CATEGORIES.items():
+        raw = sum(signs[n] * (z[n] or 0.0) for n in names) / len(names)
+        cz = 0.0 if spreads[category] is None else raw / spreads[category]
+        composite += weights[category] * cz
+        categories[category] = {
+            "z": round(cz, 4),
+            "percentile": round(_insert_percentile(
+                reference["category_sorted"][category], cz), 1),  # type: ignore[index]
+            "weight": round(float(weights[category]), 4),
+        }
+    low, high = reference["log_mcap_range"]  # type: ignore[misc]
+    return {
+        **view,
+        "score": round(_insert_percentile(reference["composite_sorted"], composite), 2),  # type: ignore[arg-type]
+        "coverage": round(present / len(FACTOR_NAMES), 4),
+        "composite": round(composite, 4),
+        "categories": categories,
+        "factor_z": {n: None if v is None else round(v, 4) for n, v in z.items()},
+        "industry_in_reference": industry in reference["industries"],  # type: ignore[operator]
+        "mcap_outside_reference": not low <= log_mcap <= high,
+    }
 
 
 def current_score_summary(

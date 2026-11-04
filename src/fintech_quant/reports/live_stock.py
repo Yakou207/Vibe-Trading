@@ -40,6 +40,7 @@ from fintech_quant.research.momentum_setup import Bar, SetupConfig, SymbolSeries
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")  # A-share clock, whatever time zone the Mac is in
 HISTORY_DAYS = 430
+VALUATION_HISTORY_SESSIONS = 30
 INTRADAY_TIMEOUT = 12.0
 Fetcher = Callable[..., object]
 
@@ -99,7 +100,10 @@ def resolve_any(context: LiveContext, query: str) -> str | None:
 
 def live_bars(context: LiveContext, symbol: str, *, fresh: bool = False) -> tuple[list[Bar], str]:
     """Forward-adjusted daily bars; ``fresh`` refetches instead of reusing today's cache."""
+    return _bars(_bar_payload(context, symbol, fresh=fresh))
 
+
+def _bar_payload(context: LiveContext, symbol: str, *, fresh: bool = False) -> dict[str, object]:
     def fetch() -> dict[str, object]:
         end = context.day()
         start = end - timedelta(days=HISTORY_DAYS)
@@ -122,10 +126,13 @@ def live_bars(context: LiveContext, symbol: str, *, fresh: bool = False) -> tupl
                 return {"source": source, "rows": [_bar_row(row, source) for row in rows]}
         raise ValueError(f"no price history for {symbol} ({'; '.join(errors) or 'empty'})")
 
-    payload = _cached(context, "bars", symbol, fetch, fresh=fresh)
+    return _cached(context, "bars", symbol, fetch, fresh=fresh)
+
+
+def _bars(payload: Mapping[str, object]) -> tuple[list[Bar], str]:
     bars = [
         Bar(r["trade_date"], r["open"], r["high"], r["low"], r["close"], r["volume"])
-        for r in payload["rows"]
+        for r in payload["rows"]  # type: ignore[union-attr]
     ]
     return sorted(bars, key=lambda b: b.trade_date), str(payload["source"])
 
@@ -139,13 +146,21 @@ def live_fundamentals(context: LiveContext, symbol: str) -> dict[str, object]:
             "roe": None,
             "growth": None,
             "period": None,
+            "valuation_history": [],
         }
         try:
-            valuation = _records(context._call("value", symbol=code))
-            latest = max(valuation, key=lambda r: str(r.get("数据日期")))
+            valuation = sorted(_records(context._call("value", symbol=code)),
+                               key=lambda r: str(r.get("数据日期")))
+            latest = valuation[-1]
             result["pe"] = _number(latest.get("PE(TTM)"))
             result["pb"] = _number(latest.get("市净率"))
             result["valuation_date"] = str(latest.get("数据日期"))[:10]
+            result["valuation_history"] = [  # enough sessions for v2's 20-day turnover
+                {"date": str(r.get("数据日期"))[:10], "pe": _number(r.get("PE(TTM)")),
+                 "pb": _number(r.get("市净率")), "mcap": _number(r.get("总市值")),
+                 "float_mcap": _number(r.get("流通市值"))}
+                for r in valuation[-VALUATION_HISTORY_SESSIONS:]
+            ]
         except Exception as exc:
             result["valuation_error"] = type(exc).__name__
         try:
@@ -161,18 +176,41 @@ def live_fundamentals(context: LiveContext, symbol: str) -> dict[str, object]:
             result["financials_error"] = type(exc).__name__
         return result
 
-    return _cached(context, "fundamentals", symbol, fetch)
+    cached = _cached(context, "fundamentals", symbol, fetch)
+    if "valuation_history" not in cached:  # written today before the history was kept
+        cached = _cached(context, "fundamentals", symbol, fetch, fresh=True)
+    return cached
+
+
+def v2_inputs(
+    rows: Sequence[Mapping[str, object]], fundamentals: Mapping[str, object]
+) -> dict[str, dict[str, float | None]]:
+    """Date-keyed inputs for projecting the stock onto the scoring v2 cross section.
+
+    ROE and growth are the latest reported period, not point-in-time."""
+    history = list(fundamentals.get("valuation_history") or [])  # type: ignore[call-overload]
+    return {
+        "close": {str(r["trade_date"]): r["close"] for r in rows},  # type: ignore[misc]
+        "amount": {str(r["trade_date"]): r.get("amount") for r in rows},
+        **{key: {h["date"]: h[key] for h in history} for key in ("pe", "pb", "float_mcap", "mcap")},
+        **{key: {h["date"]: fundamentals.get(key) for h in history} for key in ("roe", "growth")},
+    }
 
 
 SHENWAN_STANDARD_CODE = "008003"
 
 
 def stock_industry(
-    context: LiveContext, symbol: str, known: Mapping[str, str] | None = None
+    context: LiveContext,
+    symbol: str,
+    known: Mapping[str, str] | None = None,
+    official: Mapping[str, str] | None = None,
 ) -> str | None:
-    """Shenwan level-1 industry: the local table when it has the stock, else CNInfo (cached daily)."""
+    """Shenwan level-1 industry: the local table when it has the stock, else CNInfo (cached daily),
+    else the official Shenwan file's latest entry."""
     if known and known.get(symbol):
         return known[symbol]
+    fallback = (official or {}).get(symbol)
 
     def fetch() -> dict[str, object]:
         rows = _records(
@@ -186,9 +224,9 @@ def stock_industry(
         return {"industry": None if latest is None else str(latest.get("行业门类"))}
 
     try:
-        return _cached(context, "industry", symbol, fetch).get("industry")  # type: ignore[union-attr]
+        return _cached(context, "industry", symbol, fetch).get("industry") or fallback  # type: ignore[union-attr]
     except Exception:  # unknown industry only narrows the global-news filter to macro items
-        return None
+        return fallback
 
 def reference_momentum(
     item: SymbolSeries,
@@ -293,7 +331,8 @@ def analyze_live(
     """Analyse one stock on data fetched now. With ``fresh`` the daily bars are refetched and,
     during or after a session the daily source has not published yet, today's minutes are merged
     in as a provisional bar."""
-    bars, source = live_bars(context, symbol, fresh=fresh)
+    payload = _bar_payload(context, symbol, fresh=fresh)
+    bars, source = _bars(payload)
     provisional = False
     if fresh:
         try:
@@ -311,6 +350,7 @@ def analyze_live(
         "analysis": analysis,
         "score": live_score(symbol, bars, fundamentals, momentum),
         "fundamentals": fundamentals,
+        "v2_inputs": v2_inputs(payload["rows"], fundamentals),  # type: ignore[arg-type]
         "source": source,
         "provisional": provisional,
         "fetched_at": datetime.now(SHANGHAI).isoformat(timespec="seconds"),
@@ -466,6 +506,7 @@ def _bar_row(row: Mapping[str, object], source: str) -> dict[str, object]:
         "low": float(row["low"]),  # type: ignore[arg-type]
         "close": close,
         "volume": volume,
+        "amount": _number(row.get("amount")) if source == "sina" else None,  # yuan; Tencent has none
     }
 
 
