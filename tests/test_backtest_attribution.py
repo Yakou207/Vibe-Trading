@@ -5,6 +5,7 @@ import math
 import random
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -186,3 +187,40 @@ def test_script_help_runs() -> None:
     )
     assert result.returncode == 0
     assert "--offline" in result.stdout
+
+
+def test_load_industries_falls_back_to_the_official_shenwan_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        import analyze_backtest_attribution as script
+    finally:
+        sys.path.pop(0)
+    import pandas as pd
+
+    cache = tmp_path / "sw_industry_cninfo.csv"
+    cache.write_text(
+        "symbol,change_date,sw_level1\n000333.SZ,2013-01-18,家用电器\n000651.SZ,,\n",
+        encoding="utf-8",
+    )
+    cninfo = pd.DataFrame(  # cninfo answers, but with no Shenwan standard row
+        {"分类标准编码": ["008014"], "变更日期": ["2021-12-17"], "行业门类": ["可选消费"]}
+    )
+    akshare = types.ModuleType("akshare")
+    akshare.stock_industry_change_cninfo = lambda **_: cninfo  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "akshare", akshare)
+    monkeypatch.setattr(script.time, "sleep", lambda _: None)
+    official = {
+        "000651.SZ": [{"symbol": "000651.SZ", "change_date": "1996-11-18", "sw_level1": "家用电器"}]
+    }
+    monkeypatch.setattr(script, "_official_shenwan", lambda _: official)
+
+    offline = script.load_industries(["000333.SZ", "000651.SZ"], cache, offline=True)
+    online = script.load_industries(["000333.SZ", "000651.SZ"], cache, offline=False)
+    again = script.load_industries(["000651.SZ"], cache, offline=True)
+
+    assert "000651.SZ" not in offline
+    assert online["000651.SZ"] == [("1996-11-18", "家用电器")]
+    assert again["000651.SZ"] == [("1996-11-18", "家用电器")]
+    assert online["000333.SZ"] == [("2013-01-18", "家用电器")]

@@ -20,6 +20,7 @@ import math
 import subprocess
 import sys
 import time
+import urllib.request
 from collections import defaultdict
 from pathlib import Path
 
@@ -28,6 +29,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.data.symbols import normalize_a_share_symbol  # noqa: E402
+from fintech_quant.research.jev import _ssl_context  # noqa: E402
 from fintech_quant.reports.backtest_attribution import (  # noqa: E402
     annualized_return,
     beta_alpha_correlation,
@@ -59,6 +62,21 @@ INDEX_NAMES = {
 INDEX_START = "20210101"
 RALLY_WINDOW = ("2024-09-15", "2024-10-31")
 SHENWAN_STANDARD_CODE = "008003"
+# cninfo has no Shenwan record for a few old members (000002, 000651, 600795, ...); the official
+# Shenwan classification file covers every stock with dated industry codes.
+SHENWAN_FILE_URL = "https://www.swsresearch.com/swindex/pdf/SwClass2021/StockClassifyUse_stock.xls"
+# Level-1 name by the first two digits of a Shenwan code, as cninfo names it. Checked on 2026-11-04
+# against every cached cninfo row that shares a symbol and date with the official file: each code
+# matched exactly one name. 76 (环保) is in the 2021 standard but had no matched row.
+SHENWAN_LEVEL1 = {
+    "11": "农林牧渔", "22": "基础化工", "23": "钢铁", "24": "有色金属", "27": "电子", "28": "汽车",
+    "31": "国防军工", "33": "家用电器", "34": "食品饮料", "35": "纺织服饰", "36": "轻工制造",
+    "37": "医药生物", "41": "公用事业", "42": "交通运输", "43": "房地产", "44": "非银金融",
+    "45": "商贸零售", "46": "社会服务", "48": "银行", "49": "非银金融", "51": "综合",
+    "61": "建筑材料", "62": "建筑装饰", "63": "电力设备", "64": "机械设备", "65": "国防军工",
+    "71": "计算机", "72": "传媒", "73": "通信", "74": "煤炭", "75": "石油石化", "76": "环保",
+    "77": "美容护理",
+}
 DSR_TRIALS = (1, 7, 20, 50, 100)
 DSR_SHARPE_STD = (0.25, 0.5, 1.0)
 HEADLINE_TRIALS = 7
@@ -702,7 +720,9 @@ def load_industries(symbols: list[str], cache: Path, offline: bool) -> dict[str,
     if cache.exists():
         with cache.open(encoding="utf-8") as handle:
             rows = list(csv.DictReader(handle))
-    known = {row["symbol"] for row in rows}
+    # Online runs retry symbols cached as unclassified; offline runs accept them as they are.
+    known = {row["symbol"] for row in rows if offline or row["sw_level1"]}
+    unclassified = {row["symbol"] for row in rows if not row["sw_level1"]}
     missing = [s for s in symbols if s not in known]
     if missing:
         if offline:
@@ -715,6 +735,7 @@ def load_industries(symbols: list[str], cache: Path, offline: bool) -> dict[str,
             writer = csv.DictWriter(handle, fieldnames=["symbol", "change_date", "sw_level1"])
             if new_file:
                 writer.writeheader()
+            official = None
             for symbol in missing:
                 fetched = []
                 for attempt in range(3):
@@ -733,6 +754,11 @@ def load_industries(symbols: list[str], cache: Path, offline: bool) -> dict[str,
                         for day, name in zip(sw["变更日期"], sw["行业门类"])
                     ]
                 if not fetched:
+                    official = _official_shenwan(cache) if official is None else official
+                    fetched = official.get(symbol, [])
+                if not fetched:
+                    if symbol in unclassified:
+                        continue
                     fetched = [{"symbol": symbol, "change_date": "", "sw_level1": ""}]
                 writer.writerows(fetched)
                 handle.flush()
@@ -743,6 +769,31 @@ def load_industries(symbols: list[str], cache: Path, offline: bool) -> dict[str,
         if row["sw_level1"]:
             history[row["symbol"]].append((row["change_date"], row["sw_level1"]))
     return {symbol: sorted(items) for symbol, items in history.items()}
+
+
+def _official_shenwan(cache: Path) -> dict[str, list[dict[str, str]]]:
+    """Level-1 history per symbol from the official Shenwan file, downloaded once next to the cache."""
+    path = cache.parent / "swsresearch" / "StockClassifyUse_stock.xls"
+    if not path.exists():
+        # The site answers only browser user agents, and only on a direct connection.
+        request = urllib.request.Request(SHENWAN_FILE_URL, headers={"User-Agent": "Mozilla/5.0"})
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=_ssl_context())
+        )
+        with opener.open(request, timeout=60) as response:
+            body = response.read()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(body)
+    import pandas as pd
+
+    frame = pd.read_excel(path, dtype=str)
+    history: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for code, day, industry in zip(frame["股票代码"], frame["计入日期"], frame["行业代码"]):
+        name = SHENWAN_LEVEL1.get(str(industry)[:2])
+        if name:
+            symbol = normalize_a_share_symbol(str(code))
+            history[symbol].append({"symbol": symbol, "change_date": str(day)[:10], "sw_level1": name})
+    return history
 
 
 def _industry_as_of(history: list[tuple[str, str]], day: str) -> str:
