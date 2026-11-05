@@ -186,6 +186,18 @@ collectors' new `--symbols` option. A dry run on the 2026-11-02 inputs scored it
 confidence 0.81 and left the gate-passing names unchanged. The auditor's walk-forward excess still comes from the withdrawn `hfq-formal-20260713`
 comparison, which the anchor hash-binds.
 
+## 2026-11-05 late Q3 statements
+
+Sina's 更新日期 for an evening report is that day, but the row appears after the 16:30 fetch, and
+the next window starts the day after, so most Q3 (2026-09-30) statements never entered the chain.
+On 2026-11-04 only 23 members had a full Q3, and 40 had no ROE. The daily factor stage now passes
+`--statement-lookback-days 92`. Rows the chain never held (by title, provider date and values) are
+kept and dated to the run's start (`first_observed`). Late rows for a period older than the
+chain's newest are dropped, and the newest version of a statement is read first. The first cycle
+with the fix is 2026-11-05; its dry run captured 766 Q3 rows and left no member without ROE or
+growth (`688981.SH` stays on the half-year report until Sina publishes its Q3). Regression tests are the two lookback tests in
+`tests/test_collect_point_in_time_factors_script.py`.
+
 ## Scheduled automation (launchd)
 
 Added 2026-10-17. Missed post-close runs were the operational cause of the failed audit: as of

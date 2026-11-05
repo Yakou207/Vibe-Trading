@@ -63,6 +63,22 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-11-05 late financial-statement fix (data collection, not a strategy change)
+
+- On 2026-11-04 only 23 of 300 members had all three Q3 (2026-09-30) statements in the chain. 40
+  had a partial Q3 and no ROE, which scored 0 of 8.75 ROE points in the counted baseline. 231 still
+  used the half-year report. The cause: Sina dates an evening report to that day after the 16:30
+  post-close fetch has run, and each daily window starts the next day, so the row was never kept.
+- The daily statement fetch now looks back 92 days (`STATEMENT_LOOKBACK_DAYS`) for rows the chain
+  never held, keyed on title, provider date and values. It dates them to the run's start
+  (`available_date_source=first_observed`, original date in `provider_published_at`) and drops
+  late rows older than the chain's newest period. When a period holds several versions of a
+  statement, the newest is read first (000895.SZ's Q3 balance sheet was corrected in place).
+- A dry run on 2026-11-05 picked up 766 missed Q3 rows. 299 members reached Q3 and no member
+  lacks ROE or growth; `688981.SH` keeps its half-year report because Sina has no Q3 for it yet. 335 rows dated 2026-10-19..11-04 in the next processed table change
+  because a partial Q3 now counts only once complete. Earlier cycles keep their own immutable
+  processed runs. No threshold or weight changed, so the epoch-2 window continues.
+
 ### 2026-11-02 CSI 300 constituent change and stale-retry fix
 
 - The index changed on 2026-10-19, when Cinda Securities was delisted after its CICC merger

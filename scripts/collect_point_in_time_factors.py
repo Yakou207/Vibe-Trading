@@ -7,7 +7,8 @@ import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
 
@@ -47,6 +48,14 @@ def main() -> int:
     parser.add_argument("--groups", nargs="+", choices=GROUPS, default=list(GROUPS))
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--symbols", nargs="+", default=None)
+    parser.add_argument(
+        "--statement-lookback-days",
+        type=int,
+        default=0,
+        help="also keep financial-statement rows dated up to N days before --start that the "
+        "parent chain never held, dated --start (the provider dates evening reports to a day "
+        "whose post-close fetch already ran)",
+    )
     args = parser.parse_args()
 
     if args.source == "fixture" and not args.fixture_input:
@@ -55,6 +64,11 @@ def main() -> int:
         raise SystemExit("--resume-from and --append-from cannot be used together")
     if args.workers < 1:
         raise SystemExit("--workers must be positive")
+    lookback = args.statement_lookback_days
+    if lookback < 0:
+        raise SystemExit("--statement-lookback-days must not be negative")
+    if lookback and not (args.resume_from or args.append_from):
+        raise SystemExit("--statement-lookback-days needs a parent chain")
 
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end)
@@ -67,6 +81,11 @@ def main() -> int:
     if append_path is not None:
         load_verified_manifest_chain(append_path, expected_layer="raw")
     fixture = _load_fixture(Path(args.fixture_input)) if args.fixture_input else None
+    held = (
+        _chain_statements(parent_path or append_path)  # type: ignore[arg-type]
+        if lookback and "financial_statements" in args.groups
+        else {}
+    )
     created_at = args.created_at or datetime.now(timezone.utc).isoformat()
     store = RunArtifactStore(
         Path(args.raw_root),
@@ -102,7 +121,15 @@ def main() -> int:
 
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         future_by_scope = {
-            executor.submit(_fetch_rows, args.source, fixture, symbol, group, start, end): (
+            executor.submit(
+                _fetch_rows,
+                args.source,
+                fixture,
+                symbol,
+                group,
+                start - timedelta(days=lookback) if group == "financial_statements" else start,
+                end,
+            ): (
                 symbol,
                 group,
             )
@@ -125,6 +152,8 @@ def main() -> int:
                 )
                 failed_scopes += 1
             else:
+                if lookback and group == "financial_statements":
+                    rows = _late_statements(rows, *held.get(symbol, (set(), "")), start)
                 store.write_jsonl(relative_path, rows)
                 scopes.append(
                     {
@@ -154,6 +183,7 @@ def main() -> int:
             "end": end.isoformat(),
             "symbols": list(symbols),
             "groups": list(args.groups),
+            **({"statement_lookback_days": lookback} if lookback else {}),
         },
         scopes=scopes,
         created_at=created_at,
@@ -215,6 +245,63 @@ def _fetch_rows(
     fetcher = fetcher_factory[group]()
     records = fetcher.fetch(symbol, None, start, end)  # type: ignore[attr-defined]
     return [_record_to_json(record) for record in records]
+
+
+def _chain_statements(manifest: Path) -> dict[str, tuple[set[tuple[str, str, str]], str]]:
+    """{symbol: ({(title, provider date, values)}, newest report period)} over the parent chain.
+
+    The values are part of the key because Sina corrects a row in place without changing its
+    update date (000895.SZ's 2026-09-30 balance sheet first showed zero total assets).
+    """
+    keys: dict[str, set[tuple[str, str, str]]] = defaultdict(set)
+    newest: dict[str, str] = defaultdict(str)
+    for verified in load_verified_manifest_chain(manifest, expected_layer="raw"):
+        for relative, path in verified.artifacts.items():
+            if not relative.startswith("financial_statements/"):
+                continue
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                metadata = row.get("metadata") or {}
+                symbol = str(row["symbol"])
+                keys[symbol].add(
+                    (
+                        str(row["title"]),
+                        str(metadata.get("provider_published_at", row["published_at"])),
+                        str(row["summary"]),
+                    )
+                )
+                newest[symbol] = max(newest[symbol], str(metadata.get("report_period", "")))
+    return {symbol: (keys[symbol], newest[symbol]) for symbol in keys}
+
+
+def _late_statements(
+    rows: list[dict[str, object]],
+    held: set[tuple[str, str, str]],
+    newest_period: str,
+    start: date,
+) -> list[dict[str, object]]:
+    """Rows dated before the window that the chain never held, dated when first observed.
+
+    A late row for a period older than the chain's newest is dropped: it would replace a newer
+    report with an older one.
+    """
+    window_start = start.isoformat()
+    kept: list[dict[str, object]] = []
+    for row in rows:
+        published = str(row["published_at"])
+        if published >= window_start:
+            kept.append(row)
+            continue
+        metadata = dict(row.get("metadata") or {})  # type: ignore[arg-type]
+        if (str(row["title"]), published, str(row["summary"])) in held:
+            continue
+        if str(metadata.get("report_period", "")) < newest_period:
+            continue
+        metadata |= {"provider_published_at": published, "available_date_source": "first_observed"}
+        kept.append({**row, "published_at": window_start, "metadata": metadata})
+    return kept
 
 
 def _record_to_json(record: InformationRecord) -> dict[str, object]:

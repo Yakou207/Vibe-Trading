@@ -35,6 +35,9 @@ from fintech_quant.execution.paper_evidence import load_verified_anchor  # noqa:
 Runner = Callable[..., None]
 # Matches the decision report's default tolerance for confirmed suspensions.
 MAX_SUSPENDED_MEMBERS = 3
+# Sina dates an evening report to the day whose post-close fetch already ran, so each daily
+# statement fetch also looks back one quarter for rows the chain never held.
+STATEMENT_LOOKBACK_DAYS = 92
 
 
 @dataclass(frozen=True)
@@ -520,6 +523,8 @@ def _factor_stage(
                 "financial_statements",
                 "--workers",
                 "4",
+                "--statement-lookback-days",
+                str(STATEMENT_LOOKBACK_DAYS),
             ],
             timeout=config.stage_timeout,
         )

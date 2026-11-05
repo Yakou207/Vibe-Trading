@@ -169,6 +169,129 @@ def test_collector_rejects_tampered_resume_artifact(tmp_path: Path) -> None:
     assert "resume artifact hash mismatch" in second.stderr
 
 
+def test_statement_lookback_catches_late_published_rows_and_dates_them_when_observed(
+    tmp_path: Path,
+) -> None:
+    """Sina dates an evening report to that day, after the post-close fetch already ran."""
+    from fintech_quant.data.factor_store import materialize_fundamentals
+    from fintech_quant.information import InformationRepository
+
+    membership_path = _write_membership(tmp_path)
+    raw_root = tmp_path / "raw-runs"
+    symbol = "000001.SZ"
+    h1 = [_statement(symbol, kind, "2026-06-30", "2026-08-27") for kind in ("balance", "income")]
+    q3_cash = _statement(symbol, "cash", "2026-09-30", "2026-10-29")
+    parent_fixture = tmp_path / "parent.json"
+    parent_fixture.write_text(json.dumps({symbol: {"financial_statements": [*h1, q3_cash]}}),
+                              encoding="utf-8")
+    parent = _run_collector(membership_path, parent_fixture, raw_root, run_id="raw-1",
+                            groups=("financial_statements",), start="2026-08-01",
+                            end="2026-10-29", extra=("--symbols", symbol))
+    assert parent.returncode == 0, parent.stderr
+
+    # What Sina returns a day later: the Q3 balance sheet and income statement are now there,
+    # dated 10-29, plus an old Q1 row the chain never held.
+    q3 = [_statement(symbol, kind, "2026-09-30", "2026-10-29") for kind in ("balance", "income")]
+    q1 = _statement(symbol, "income", "2026-03-31", "2026-04-29")
+    child_fixture = tmp_path / "child.json"
+    child_fixture.write_text(
+        json.dumps({symbol: {"financial_statements": [*h1, *q3, q3_cash, q1]}}), encoding="utf-8")
+    child = _run_collector(membership_path, child_fixture, raw_root, run_id="raw-2",
+                           append_from=raw_root / "raw-1/manifest.json",
+                           groups=("financial_statements",), start="2026-10-30",
+                           end="2026-10-30",
+                           extra=("--symbols", symbol, "--statement-lookback-days", "92"))
+
+    assert child.returncode == 0, child.stderr
+    manifest = json.loads((raw_root / "raw-2/manifest.json").read_text(encoding="utf-8"))
+    assert manifest["request"]["statement_lookback_days"] == 92
+    rows = [json.loads(line) for line in
+            (raw_root / f"raw-2/financial_statements/{symbol}.jsonl").read_text().splitlines()]
+    assert sorted(row["title"] for row in rows) == [
+        f"{symbol} balance 2026-09-30", f"{symbol} income 2026-09-30"]
+    for row in rows:
+        assert row["published_at"] == "2026-10-30"
+        assert row["metadata"]["provider_published_at"] == "2026-10-29"
+        assert row["metadata"]["available_date_source"] == "first_observed"
+
+    records = [record for run in ("raw-1", "raw-2") for record in
+               InformationRepository(raw_root / f"{run}/financial_statements/{symbol}.jsonl")
+               .all_records()]
+    snapshots = {s.available_date.isoformat(): s for s in
+                 materialize_fundamentals(records, source_fetched_at="fixture")}
+    assert snapshots["2026-10-30"].report_period == date(2026, 9, 30)
+    assert snapshots["2026-10-30"].values["roe"] is not None
+
+    # The next day sees the same rows again and adds nothing.
+    again = _run_collector(membership_path, child_fixture, raw_root, run_id="raw-3",
+                           append_from=raw_root / "raw-2/manifest.json",
+                           groups=("financial_statements",), start="2026-10-31",
+                           end="2026-10-31",
+                           extra=("--symbols", symbol, "--statement-lookback-days", "92"))
+    assert again.returncode == 0, again.stderr
+    assert (raw_root / f"raw-3/financial_statements/{symbol}.jsonl").read_text() == ""
+
+
+def test_statement_lookback_catches_an_in_place_correction_and_reads_it_first(
+    tmp_path: Path,
+) -> None:
+    from fintech_quant.data.factor_store import materialize_fundamentals
+    from fintech_quant.information import InformationRepository
+
+    membership_path = _write_membership(tmp_path)
+    raw_root = tmp_path / "raw-runs"
+    symbol = "000001.SZ"
+    zero = _statement(symbol, "balance", "2026-09-30", "2026-10-27",
+                      summary="total_assets=0.0; total_liabilities=0.0")
+    income = _statement(symbol, "income", "2026-09-30", "2026-10-27")
+    parent_fixture = tmp_path / "parent.json"
+    parent_fixture.write_text(json.dumps({symbol: {"financial_statements": [zero, income]}}),
+                              encoding="utf-8")
+    parent = _run_collector(membership_path, parent_fixture, raw_root, run_id="raw-1",
+                            groups=("financial_statements",), start="2026-10-01",
+                            end="2026-10-27", extra=("--symbols", symbol))
+    assert parent.returncode == 0, parent.stderr
+    corrected = _statement(symbol, "balance", "2026-09-30", "2026-10-27")
+    child_fixture = tmp_path / "child.json"
+    child_fixture.write_text(json.dumps({symbol: {"financial_statements": [corrected, income]}}),
+                             encoding="utf-8")
+    child = _run_collector(membership_path, child_fixture, raw_root, run_id="raw-2",
+                           append_from=raw_root / "raw-1/manifest.json",
+                           groups=("financial_statements",), start="2026-11-05",
+                           end="2026-11-05",
+                           extra=("--symbols", symbol, "--statement-lookback-days", "92"))
+
+    assert child.returncode == 0, child.stderr
+    records = [record for run in ("raw-1", "raw-2") for record in
+               InformationRepository(raw_root / f"{run}/financial_statements/{symbol}.jsonl")
+               .all_records()]
+    snapshots = {s.available_date.isoformat(): s for s in
+                 materialize_fundamentals(records, source_fetched_at="fixture")}
+    # The period counts from the corrected row: 15 * 4/3 earnings over 200 equity.
+    assert list(snapshots) == ["2026-11-05"]
+    assert snapshots["2026-11-05"].values["roe"] == 0.1
+
+
+def _statement(symbol: str, kind: str, period: str, published_at: str,
+               summary: str | None = None) -> dict[str, object]:
+    summary = summary or {"balance": "total_assets=300.0; total_liabilities=100.0",
+                          "income": "revenue=80.0; net_profit=15.0",
+                          "cash": "operating_cash_flow=10.0"}[kind]
+    return {
+        "symbol": symbol,
+        "sector": None,
+        "published_at": published_at,
+        "source": "akshare_financial_statement",
+        "category": "stock_data",
+        "title": f"{symbol} {kind} {period}",
+        "url": "",
+        "summary": summary,
+        "risk_tags": ["selected_universe", "financial_statement"],
+        "metadata": {"statement_type": kind, "report_period": period,
+                     "available_date_source": "更新日期"},
+    }
+
+
 def _run_collector(
     membership_path: Path,
     fixture_path: Path,
@@ -180,6 +303,7 @@ def _run_collector(
     groups: tuple[str, ...] | None = None,
     start: str = "2026-01-01",
     end: str = "2026-06-30",
+    extra: tuple[str, ...] = (),
 ) -> subprocess.CompletedProcess[str]:
     command = [
         sys.executable,
@@ -207,6 +331,7 @@ def _run_collector(
         command.extend(["--append-from", str(append_from)])
     if groups is not None:
         command.extend(["--groups", *groups])
+    command.extend(extra)
     return subprocess.run(
         command,
         cwd=Path(__file__).resolve().parents[1],

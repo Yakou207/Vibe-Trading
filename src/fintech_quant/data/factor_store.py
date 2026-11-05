@@ -205,6 +205,9 @@ def _financial_events(
             if not record.metadata.get("available_date_source"):
                 raise ValueError("financial statement is missing available_date_source")
             statements.setdefault(report_period, []).append(record)
+    # A corrected row arrives later under the same title; read the newest version first.
+    for period_statements in statements.values():
+        period_statements.sort(key=lambda record: record.published_at, reverse=True)
 
     statement_metrics = {
         report_period: _statement_metrics(report_period, period_statements)
