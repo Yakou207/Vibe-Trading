@@ -63,6 +63,10 @@ def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: P
     assert snapshot["quotes_status"] == "demo"
     assert len(snapshot["agents"]) >= 6
     assert snapshot["backtest_curve"] is not None
+    curve = snapshot["backtest_curve"]["series"]
+    # Endpoints must match the withdrawn-leak rerun (docs/research/2026-10-29-lag-fix-rerun.md).
+    assert curve["risk_controlled"]["equity"][-1] == 83000.0
+    assert curve["baseline"]["equity"][-1] == 65600.0
     assert snapshot["header"]["excess_return"] is None
     assert snapshot["header"]["paper_return"] <= snapshot["header"]["benchmark_return"]
 

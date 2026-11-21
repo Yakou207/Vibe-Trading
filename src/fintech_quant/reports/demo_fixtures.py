@@ -33,7 +33,7 @@ DEMO_CYCLE_COUNT = 5
 DEMO_STOCKS: tuple[dict[str, object], ...] = (
     {
         "symbol": "999001.SH",
-        "name": "华辰新能",
+        "name": "曜辰新能",
         "industry": "电力设备",
         "profile": "trigger",
         "base_price": 185.0,
@@ -592,8 +592,11 @@ def build_demo_workspace(root: Path) -> DemoPaths:
     if curve_dates[-1] != DEMO_AS_OF:
         curve_dates.append(DEMO_AS_OF)
     m = len(curve_dates)
-    baseline_equity = [
+    risk_controlled_equity = [
         round(100000.0 * (1.0 - 0.17 * (i / max(1, m - 1))), 2) for i in range(m)
+    ]
+    unrestricted_equity = [
+        round(100000.0 * (1.0 - 0.344 * (i / max(1, m - 1))), 2) for i in range(m)
     ]
     csi300_equity = [
         round(
@@ -614,11 +617,11 @@ def build_demo_workspace(root: Path) -> DemoPaths:
             "series": {
                 "risk_controlled": {
                     "label": "Risk-controlled baseline（示意，端点 −17.0%）",
-                    "equity": baseline_equity,
+                    "equity": risk_controlled_equity,
                 },
                 "baseline": {
-                    "label": "Baseline（示意，端点 −17.0%）",
-                    "equity": baseline_equity,
+                    "label": "Unrestricted baseline（示意，端点 −34.4%）",
+                    "equity": unrestricted_equity,
                 },
                 "csi300": {
                     "label": "CSI 300 Total Return（示意，端点 +3.7%）",
