@@ -4,20 +4,19 @@ import argparse
 import csv
 import importlib
 import sys
-import threading
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, TypeVar
+from typing import Iterable, Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.data.deadline import call_with_deadline
 from fintech_quant.data.errors import MissingProviderDependency, ProviderFetchError
 
-T = TypeVar("T")
 PROVIDER_TIMEOUT_SECONDS = 120.0
 CSI300_HISTORY_START = "20050101"  # CSI 300 base date is 2004-12-31
 
@@ -75,7 +74,8 @@ def _bars_from_akshare(index_symbol: str, start: date, end: date) -> list[IndexB
         raise MissingProviderDependency("akshare is required for fetch_market_state.py") from exc
 
     try:
-        rows = _call_with_deadline(
+        rows = call_with_deadline(
+            PROVIDER_TIMEOUT_SECONDS,
             ak.stock_zh_index_daily_em,
             symbol=index_symbol,
             start_date="",
@@ -88,33 +88,13 @@ def _bars_from_akshare(index_symbol: str, start: date, end: date) -> list[IndexB
     return sorted((_bar_from_row(row) for row in rows), key=lambda bar: bar.trade_date)
 
 
-def _call_with_deadline(function: Callable[..., T], **kwargs: object) -> T:
-    """AkShare's index requests set no timeout, so a stalled connection would hang the process.
-    Run the call in a daemon thread and give up after PROVIDER_TIMEOUT_SECONDS."""
-    outcome: dict[str, object] = {}
-
-    def call() -> None:
-        try:
-            outcome["value"] = function(**kwargs)
-        except BaseException as exc:  # re-raised in the caller's thread
-            outcome["error"] = exc
-
-    worker = threading.Thread(target=call, daemon=True)
-    worker.start()
-    worker.join(PROVIDER_TIMEOUT_SECONDS)
-    if worker.is_alive():
-        raise TimeoutError(f"provider call did not return within {PROVIDER_TIMEOUT_SECONDS:g}s")
-    if "error" in outcome:
-        raise outcome["error"]  # type: ignore[misc]
-    return outcome["value"]  # type: ignore[return-value]
-
-
 def _fallback_index_rows(ak: object, index_symbol: str, start: date, end: date) -> list[dict[str, object]] | None:
     if _normalized_index_code(index_symbol) != "000300":
         return None
     try:
         # Full history, like the Eastmoney call, so the moving average is warm at `start`.
-        return _call_with_deadline(
+        return call_with_deadline(
+            PROVIDER_TIMEOUT_SECONDS,
             ak.stock_zh_index_hist_csindex,
             symbol="000300",
             start_date=CSI300_HISTORY_START,

@@ -764,6 +764,30 @@ class InformationRepositoryTest(unittest.TestCase):
         self.assertEqual(records[0].metadata["raw_row"]["营业收入"], "120000")
         self.assertIn("revenue=120000", records[1].summary)
 
+    def test_akshare_financial_statement_fetcher_fails_a_stalled_request(self) -> None:
+        # 2026-11-19 catch-up: three Sina statement requests stalled with no timeout, the factor
+        # stage hit its 1800s limit, and the 597 finished scopes were lost with the killed run.
+        import threading
+        import time
+        from unittest.mock import patch
+
+        from fintech_quant.data.errors import ProviderFetchError
+        from fintech_quant.information import AkShareFinancialStatementFetcher
+
+        release = threading.Event()
+        fetcher = AkShareFinancialStatementFetcher(
+            statement_types=("资产负债表",),
+            fetcher=lambda stock, statement_type: release.wait(30),
+        )
+        started = time.monotonic()
+        try:
+            with patch("fintech_quant.information.fetchers.STATEMENT_TIMEOUT_SECONDS", 0.2):
+                with self.assertRaisesRegex(ProviderFetchError, "financial-statement fetch failed"):
+                    fetcher.fetch("000001", None, date(2025, 1, 1), date(2026, 3, 31))
+        finally:
+            release.set()
+        self.assertLess(time.monotonic() - started, 5.0)
+
     def test_akshare_financial_statement_fetcher_fails_without_public_availability_date(self) -> None:
         from fintech_quant.data.errors import ProviderFetchError
         from fintech_quant.information import AkShareFinancialStatementFetcher

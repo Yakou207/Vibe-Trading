@@ -9,12 +9,14 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from fintech_quant.data.deadline import call_with_deadline
 from fintech_quant.data.errors import MissingProviderCredential, MissingProviderDependency, ProviderFetchError
 from fintech_quant.data.symbols import normalize_a_share_symbol
 from fintech_quant.information.models import InformationCategory, InformationRecord
 
 
 _MISSING = object()
+STATEMENT_TIMEOUT_SECONDS = 120.0
 
 
 class InformationFetcher(ABC):
@@ -445,10 +447,15 @@ class AkShareFinancialStatementFetcher(InformationFetcher):
         return _filter_records(records, normalized_symbol, None, start, end)
 
     def _fetch_rows(self, stock: str, statement_type: str) -> list[dict[str, object]]:
+        # Sina requests set no timeout; a stall fails this scope instead of the whole stage.
         if self._fetcher is not None:
-            return _rows_from_fetch_result(self._fetcher(stock, statement_type))
-        ak = _import_akshare("AkShareFinancialStatementFetcher")
-        return _rows_from_fetch_result(ak.stock_financial_report_sina(stock=stock, symbol=statement_type))
+            rows = call_with_deadline(STATEMENT_TIMEOUT_SECONDS, self._fetcher, stock, statement_type)
+        else:
+            ak = _import_akshare("AkShareFinancialStatementFetcher")
+            rows = call_with_deadline(
+                STATEMENT_TIMEOUT_SECONDS, ak.stock_financial_report_sina, stock=stock, symbol=statement_type
+            )
+        return _rows_from_fetch_result(rows)
 
 
 class AkSharePledgeRatioFetcher(InformationFetcher):
