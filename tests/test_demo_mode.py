@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import json
+import socket
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
+
+from fintech_quant.reports.demo_fixtures import (
+    DEMO_AS_OF,
+    DEMO_STOCKS,
+    build_demo_workspace,
+    demo_jev_payload,
+    demo_research_payload,
+)
+from fintech_quant.reports.desk import build_desk_snapshot
+from fintech_quant.reports.picker import load_picker_data, picks_payload, stock_payload
+from scripts.build_demo_pages import build_demo_pages
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: Path) -> None:
+    demo = build_demo_workspace(tmp_path)
+
+    snapshot = build_desk_snapshot(demo.cycle_root, pnl_curve=demo.pnl_curve, quotes_status="demo")
+    assert snapshot["as_of"] == DEMO_AS_OF
+    assert snapshot["quotes_status"] == "demo"
+    assert len(snapshot["agents"]) >= 6
+    assert snapshot["backtest_curve"] is not None
+
+    picker = load_picker_data(demo.state)
+    assert picker.as_of == DEMO_AS_OF
+    assert len(picker.members) == len(DEMO_STOCKS)
+
+    scoring_v2 = json.loads(demo.scoring_v2.read_text(encoding="utf-8"))
+    payload = stock_payload(picker, "300750", live=None, scoring_v2=scoring_v2, fresh=False)
+    assert payload["symbol"] == "300750.SZ"
+    assert payload["verdict"]["level"] == "entry"
+    assert payload["scoring_v2"]["score"] is not None
+
+    pool = json.loads((demo.pool_root / "state.json").read_text(encoding="utf-8"))
+    pool_v2 = json.loads((demo.pool_v2_root / "state.json").read_text(encoding="utf-8"))
+    picks = picks_payload(picker, pool, pool_v2)
+    assert len(picks["candidates"]) >= 2
+    assert picks["candidates"][0]["symbol"] in {"300750.SZ", "601899.SH"}
+
+    research = demo_research_payload(picker, "300750")
+    assert research["symbol"] == "300750.SZ"
+    assert len(research["items"]) >= 1
+    assert research["jev_record"]["verdict"] == "support"
+    assert demo_jev_payload(picker, "600276")["verdict"] == "veto"
+
+
+def test_build_demo_pages_writes_self_contained_static_site(tmp_path: Path) -> None:
+    written = build_demo_pages(tmp_path)
+    names = {path.name for path in written}
+    assert names == {"index.html", "picks.html", ".nojekyll"}
+
+    desk_html = (tmp_path / "index.html").read_text(encoding="utf-8")
+    picks_html = (tmp_path / "picks.html").read_text(encoding="utf-8")
+    assert "__DESK_" not in desk_html
+    assert "__PICKER_" not in picks_html
+    assert "STATIC DEMO" in desk_html
+    assert "static-demo-bundle" in picks_html
+    assert "./picks.html" in desk_html
+    assert "./index.html" in picks_html
+
+
+def test_serve_trading_desk_demo_mode_serves_all_endpoints_offline() -> None:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = int(sock.getsockname()[1])
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "serve_trading_desk.py"),
+            "--demo",
+            "--port",
+            str(port),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        snapshot = json.loads(_get(f"http://127.0.0.1:{port}/api/snapshot"))
+        assert snapshot["as_of"] == DEMO_AS_OF
+        assert snapshot["quotes_status"] == "demo"
+
+        assert "CSI 300 Desk" in _get(f"http://127.0.0.1:{port}/")
+        assert "选股 · CSI 300" in _get(f"http://127.0.0.1:{port}/picks")
+
+        stock = json.loads(_get(f"http://127.0.0.1:{port}/api/stock?q=300750"))
+        assert stock["verdict"]["level"] == "entry"
+
+        research = json.loads(_get(f"http://127.0.0.1:{port}/api/research?q=300750"))
+        assert research["jev_record"]["verdict"] == "support"
+
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/jev?q=300750", method="POST")
+        with _NO_PROXY_OPENER.open(req, timeout=3) as resp:
+            jev = json.loads(resp.read().decode("utf-8"))
+        assert jev["verdict"] == "support"
+    finally:
+        process.terminate()
+        process.wait(timeout=5)
+
+
+_NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def _get(url: str) -> str:
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            with _NO_PROXY_OPENER.open(url, timeout=2) as response:
+                return response.read().decode("utf-8")
+        except OSError:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.1)

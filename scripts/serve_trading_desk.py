@@ -5,6 +5,7 @@ import json
 import os
 import queue
 import sys
+import tempfile
 import threading
 import time
 from datetime import date
@@ -19,6 +20,11 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from fintech_quant.information.stock_intel import prune_daily_cache  # noqa: E402
+from fintech_quant.reports.demo_fixtures import (  # noqa: E402
+    build_demo_workspace,
+    demo_jev_payload,
+    demo_research_payload,
+)
 from fintech_quant.reports.desk import (  # noqa: E402
     build_desk_snapshot,
     cycle_fingerprint,
@@ -51,15 +57,17 @@ class DeskState:
 
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
+        self.demo = bool(getattr(args, "demo", False))
         self.lock = threading.Lock()
         self.subscribers: list[queue.Queue[str]] = []
         self.quotes: list[dict[str, object]] = []
-        self.quotes_status = "off"
+        self.quotes_status = "demo" if self.demo else "off"
         self.quotes_fetched_at = 0.0
         self.fingerprint: tuple[object, ...] | None = None
         self.snapshot: dict[str, object] = {}
-        self.live = LiveContext(cache_dir=args.intel_cache / "live")
-        threading.Thread(target=self._warm_universe, daemon=True).start()
+        self.live = None if self.demo else LiveContext(cache_dir=args.intel_cache / "live")
+        if not self.demo:
+            threading.Thread(target=self._warm_universe, daemon=True).start()
         self.picker_lock = threading.Lock()
         self.picker_data: PickerData | None = None
         self.picker_mtime = 0
@@ -207,29 +215,38 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                         self._query(),
                         state.live,
                         state.scoring_v2_state(),
-                        fresh=True,
+                        fresh=not state.demo,
                     )
                 )
             elif path == "/api/intraday-monitor":
                 self._json(state.intraday_monitor())
             elif path == "/api/intraday":
-                self._json(intraday_payload(state.live, self._query()))
+                if state.demo or state.live is None:
+                    self._json({"error": "Demo 模式为离线静态行情，不含盘中分时数据"})
+                else:
+                    self._json(intraday_payload(state.live, self._query()))
             elif path == "/api/research":
-                self._json(
-                    research_payload(
-                        state.picker(),
-                        self._query(),
-                        cache_dir=state.args.intel_cache,
-                        jev_record_dir=state.args.jev_records,
-                        live=state.live,
+                if state.demo:
+                    self._json(demo_research_payload(state.picker(), self._query()))
+                else:
+                    self._json(
+                        research_payload(
+                            state.picker(),
+                            self._query(),
+                            cache_dir=state.args.intel_cache,
+                            jev_record_dir=state.args.jev_records,
+                            live=state.live,
+                        )
                     )
-                )
             else:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
         def do_POST(self) -> None:  # noqa: N802
             path = self.path.split("?", 1)[0]
             if path == "/api/events_llm":
+                if state.demo:
+                    self._json({"error": "Demo 模式不调用外部 LLM API"})
+                    return
                 try:
                     result = events_llm_payload(
                         state.picker(),
@@ -243,6 +260,9 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                 return
             if path != "/api/jev":
                 self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            if state.demo:
+                self._json(demo_jev_payload(state.picker(), self._query()))
                 return
             try:
                 payload = jev_payload(
@@ -367,7 +387,27 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--export", type=Path, default=None, help="Write a static HTML snapshot and exit."
     )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Launch with built-in synthetic CSI 300 demo data (offline, zero dependencies).",
+    )
     return parser
+
+
+def _apply_demo_paths(args: argparse.Namespace, demo_root: Path) -> None:
+    demo = build_demo_workspace(demo_root)
+    args.cycle_root = demo.cycle_root
+    args.pnl_curve = demo.pnl_curve
+    args.state = demo.state
+    args.pool_root = demo.pool_root
+    args.pool_v2_root = demo.pool_v2_root
+    args.intraday_root = demo.intraday_root
+    args.scoring_v2 = demo.scoring_v2
+    args.intel_cache = demo.intel_cache
+    args.jev_records = demo.jev_records
+    args.quotes = None
+    args.live_quotes = False
 
 
 def main() -> int:
@@ -376,34 +416,50 @@ def main() -> int:
         print(f"loaded .env keys: {', '.join(sorted(loaded))}", flush=True)
     args = build_parser().parse_args()
 
-    if args.export:
-        snapshot = build_desk_snapshot(
-            args.cycle_root,
-            pnl_curve=args.pnl_curve,
-            quotes=load_quotes_csv(args.quotes) if args.quotes and args.quotes.exists() else None,
-        )
-        args.export.parent.mkdir(parents=True, exist_ok=True)
-        args.export.write_text(render_desk_html(snapshot, live=False), encoding="utf-8")
-        print(f"output={args.export}")
-        return 0
+    demo_dir: tempfile.TemporaryDirectory[str] | None = None
+    if args.demo:
+        demo_dir = tempfile.TemporaryDirectory(prefix="vibe-trading-demo-")
+        _apply_demo_paths(args, Path(demo_dir.name))
 
-    state = DeskState(args)
-    stop = threading.Event()
-    threading.Thread(target=watch, args=(state, args.poll, stop), daemon=True).start()
-    server = ThreadingHTTPServer((args.host, args.port), make_handler(state))
-    server.daemon_threads = True
-    print(
-        f"trading desk on http://{args.host}:{args.port} as_of={state.snapshot.get('as_of')}",
-        flush=True,
-    )
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+        if args.export:
+            snapshot = build_desk_snapshot(
+                args.cycle_root,
+                pnl_curve=args.pnl_curve,
+                quotes=(
+                    load_quotes_csv(args.quotes)
+                    if args.quotes and args.quotes.exists()
+                    else None
+                ),
+                quotes_status="demo" if args.demo else None,
+            )
+            args.export.parent.mkdir(parents=True, exist_ok=True)
+            args.export.write_text(render_desk_html(snapshot, live=False), encoding="utf-8")
+            print(f"output={args.export}")
+            return 0
+
+        state = DeskState(args)
+        stop = threading.Event()
+        threading.Thread(target=watch, args=(state, args.poll, stop), daemon=True).start()
+        server = ThreadingHTTPServer((args.host, args.port), make_handler(state))
+        server.daemon_threads = True
+        mode_tag = " [DEMO · synthetic data]" if args.demo else ""
+        print(
+            f"trading desk on http://{args.host}:{args.port} "
+            f"(picker at /picks) as_of={state.snapshot.get('as_of')}{mode_tag}",
+            flush=True,
+        )
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            stop.set()
+            server.server_close()
+        return 0
     finally:
-        stop.set()
-        server.server_close()
-    return 0
+        if demo_dir is not None:
+            demo_dir.cleanup()
 
 
 if __name__ == "__main__":

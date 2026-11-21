@@ -8,12 +8,14 @@ Multi-factor stock selection · Martin Luk–style entry research · event NLP �
 
 ![Python](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-695%20passing-2ea44f)
+![License](https://img.shields.io/badge/license-MIT-blue)
+[![Live Demo](https://img.shields.io/badge/demo-GitHub%20Pages-0969da?logo=githubpages&logoColor=white)](https://yakou207.github.io/Vibe-Trading/)
 ![Market](https://img.shields.io/badge/market-CSI%20300%20A--shares-c0392b)
 ![Mode](https://img.shields.io/badge/mode-paper%20trading%20only-6c757d)
 ![Data](https://img.shields.io/badge/data-AkShare-1f6feb)
 ![LLM](https://img.shields.io/badge/judge-TypeSafe%20Jev%20%7C%20DeepSeek-8e44ad)
 
-[English](README.md) · [中文](README_zh.md)
+[English](README.md) · [中文](README_zh.md) · [Interactive Static Demo](https://yakou207.github.io/Vibe-Trading/)
 
 </div>
 
@@ -164,6 +166,16 @@ flowchart TB
 
 ## Quick start
 
+**Try it in 10 seconds (zero dependencies, offline synthetic CSI 300 data):**
+
+```bash
+python scripts/serve_trading_desk.py --demo   # desk at http://127.0.0.1:8765, picker at /picks
+```
+
+Or browse the read-only [Interactive Static Demo](https://yakou207.github.io/Vibe-Trading/) on GitHub Pages (built via `python scripts/build_demo_pages.py`).
+
+**Full research setup:**
+
 ```bash
 python3.14 -m venv .venv && source .venv/bin/activate
 pip install pytest akshare pandas numpy matplotlib truststore
@@ -171,7 +183,7 @@ python -m pytest -q        # code runs from src/, no package install needed
 ```
 
 ```bash
-python scripts/serve_trading_desk.py          # desk at http://127.0.0.1:8765, picker at /picks
+python scripts/serve_trading_desk.py          # live desk backed by local paper artifacts
 ```
 
 ```bash
