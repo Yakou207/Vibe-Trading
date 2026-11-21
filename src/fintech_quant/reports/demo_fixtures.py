@@ -661,32 +661,21 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         {
             "as_of": DEMO_AS_OF,
             "label": "研究评分 v2（横截面排名），不驱动计数策略",
-            "signs": {"ep": 1, "roe": 1, "mom_12_1": 1, "vol_60d": -1},
+            "signs": {
+                "ep": 1, "bp": 1, "roe": -1, "growth": -1, "vol_60d": -1,
+                "max_ret_20d": -1, "turnover_20d": -1, "rev_5d": 1, "mom_12m_skip1m": 1,
+            },
             "scores": {
                 str(spec["symbol"]): {
                     "score": float(spec["v2_score"]),
                     "coverage": 0.9259,
                     "categories": {
-                        "value": {
-                            "z": round((float(spec["v2_score"]) - 60.0) / 25.0, 2),
-                            "percentile": float(spec["v2_score"]),
-                            "weight": 0.25,
-                        },
-                        "quality": {
-                            "z": round((float(spec["roe"]) - 16.0) / 8.0, 2),
-                            "percentile": min(99.0, round(float(spec["roe"]) * 3.8, 1)),
-                            "weight": 0.25,
-                        },
-                        "momentum": {
-                            "z": round((float(spec["v2_score"]) - 55.0) / 22.0, 2),
-                            "percentile": float(spec["v2_score"]),
-                            "weight": 0.30,
-                        },
-                        "low_vol": {
-                            "z": 0.45,
-                            "percentile": 66.0,
-                            "weight": 0.20,
-                        },
+                        key: {
+                            "z": round((pct - 50.0) / 30.0, 2),
+                            "percentile": pct,
+                            "weight": weight,
+                        }
+                        for key, pct, weight in _v2_categories(spec)
                     },
                 }
                 for spec in DEMO_STOCKS
@@ -713,6 +702,26 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         intel_cache=intel_cache,
         jev_records=jev_records,
     )
+
+
+# Category keys, training-window weights and demo percentile offsets from the stock's v2 score.
+# The keys and weights match the real scoring v2 snapshot; the picker renders exactly these six.
+V2_CATEGORIES: tuple[tuple[str, float, float], ...] = (
+    ("value", 0.1902, 0.0),
+    ("quality_growth", 0.1396, -6.0),
+    ("low_risk", 0.2597, -12.0),
+    ("liquidity", 0.261, -20.0),
+    ("reversal", 0.0109, -30.0),
+    ("momentum", 0.1387, 4.0),
+)
+
+
+def _v2_categories(spec: Mapping[str, object]) -> list[tuple[str, float, float]]:
+    score = float(spec["v2_score"])
+    return [
+        (key, max(1.0, min(99.0, round(score + offset, 1))), weight)
+        for key, weight, offset in V2_CATEGORIES
+    ]
 
 
 def _stock_spec(symbol: str) -> dict[str, object]:

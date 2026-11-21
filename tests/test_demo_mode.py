@@ -79,6 +79,10 @@ def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: P
     assert payload["symbol"] == "999001.SH"
     assert payload["verdict"]["level"] == "entry"
     assert payload["scoring_v2"]["score"] is not None
+    # The picker template reads these six categories; a missing one breaks the stock view.
+    assert set(payload["scoring_v2"]["categories"]) == {
+        "value", "quality_growth", "low_risk", "liquidity", "reversal", "momentum"
+    }
 
     pool = json.loads((demo.pool_root / "state.json").read_text(encoding="utf-8"))
     pool_v2 = json.loads((demo.pool_v2_root / "state.json").read_text(encoding="utf-8"))
