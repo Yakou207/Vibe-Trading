@@ -4,8 +4,10 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -80,6 +82,50 @@ class FetchMarketStateScriptTest(unittest.TestCase):
         self.assertEqual(bars[0].trade_date.isoformat(), "2021-06-16")
         self.assertEqual(bars[0].close, 5080.49)
 
+    def test_stalled_eastmoney_request_falls_back_to_csindex(self) -> None:
+        # 2026-11-18: Eastmoney's index request stalled behind the proxy with no timeout, so the
+        # stage hit its 1800s limit and the CSIndex fallback was never tried.
+        from scripts.fetch_market_state import _bars_from_akshare
+
+        fake_akshare = _FakeAkShareIndexModule(stall_eastmoney=True)
+        started = time.monotonic()
+        try:
+            # The timeout patch goes first: once import_module is patched, patch() cannot resolve targets.
+            with patch("scripts.fetch_market_state.PROVIDER_TIMEOUT_SECONDS", 0.2), patch(
+                "scripts.fetch_market_state.importlib.import_module", return_value=fake_akshare
+            ):
+                bars = _bars_from_akshare(
+                    "sh000300",
+                    date.fromisoformat("2021-06-16"),
+                    date.fromisoformat("2026-06-16"),
+                )
+        finally:
+            fake_akshare.release.set()
+
+        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertTrue(fake_akshare.csindex_called)
+        self.assertEqual(bars[0].close, 5080.49)
+
+    def test_csindex_fallback_writes_the_same_market_state_as_eastmoney(self) -> None:
+        # Eastmoney returns the full history, so the 250-session MA is warm at the first output
+        # date. The fallback must fetch the same history, not only the output window.
+        from scripts.fetch_market_state import _bars_from_akshare, _build_market_state_rows
+
+        history = [
+            {"日期": (date(2019, 1, 1) + timedelta(days=offset)).isoformat(), "收盘": 4000.0 + offset}
+            for offset in range(400)
+        ]
+        start, end = date(2019, 12, 1), date(2020, 2, 4)
+        outputs = []
+        for fail_eastmoney in (False, True):
+            fake_akshare = _FakeHistoryAkShare(history, fail_eastmoney=fail_eastmoney)
+            with patch("scripts.fetch_market_state.importlib.import_module", return_value=fake_akshare):
+                bars = _bars_from_akshare("sh000300", start, end)
+            outputs.append(_build_market_state_rows(bars, "sh000300", start, end, 250))
+
+        self.assertEqual(len(outputs[0]), 66)
+        self.assertEqual(outputs[1], outputs[0])
+
     def test_fetch_market_state_reads_own_index_close_csv_output(self) -> None:
         from scripts.fetch_market_state import _bars_from_csv
 
@@ -97,19 +143,41 @@ class FetchMarketStateScriptTest(unittest.TestCase):
         self.assertEqual(bars[0].close, 100.0)
 
 class _FakeAkShareIndexModule:
-    def __init__(self) -> None:
+    def __init__(self, *, stall_eastmoney: bool = False) -> None:
         self.em_called = False
         self.csindex_called = False
+        self.stall_eastmoney = stall_eastmoney
+        self.release = threading.Event()
 
     def stock_zh_index_daily_em(self, **_kwargs: object) -> object:
         self.em_called = True
+        if self.stall_eastmoney:
+            self.release.wait(30)
         raise RuntimeError("eastmoney unavailable")
 
     def stock_zh_index_hist_csindex(self, **kwargs: object) -> object:
         self.csindex_called = True
-        if kwargs != {"symbol": "000300", "start_date": "20210616", "end_date": "20260616"}:
+        if kwargs != {"symbol": "000300", "start_date": "20050101", "end_date": "20260616"}:
             raise AssertionError(kwargs)
         return _FakeFrame([{"日期": "2021-06-16", "收盘": 5080.49}])
+
+
+class _FakeHistoryAkShare:
+    """Both providers serve one history; CSIndex honours the requested start date."""
+
+    def __init__(self, rows: list[dict[str, object]], *, fail_eastmoney: bool) -> None:
+        self.rows = rows
+        self.fail_eastmoney = fail_eastmoney
+
+    def stock_zh_index_daily_em(self, **_kwargs: object) -> object:
+        if self.fail_eastmoney:
+            raise RuntimeError("eastmoney unavailable")
+        return _FakeFrame([{"date": row["日期"], "close": row["收盘"]} for row in self.rows])
+
+    def stock_zh_index_hist_csindex(self, **kwargs: object) -> object:
+        first = str(kwargs["start_date"])
+        first_day = date.fromisoformat(f"{first[:4]}-{first[4:6]}-{first[6:]}")
+        return _FakeFrame([row for row in self.rows if date.fromisoformat(str(row["日期"])) >= first_day])
 
 
 class _FakeFrame:
