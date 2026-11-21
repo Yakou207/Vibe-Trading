@@ -166,9 +166,10 @@ flowchart TB
 
 ## Quick start
 
-**Try it in 10 seconds (zero dependencies, offline fictional A-share sample data):**
+**Try it in 10 seconds (only numpy and pandas, offline fictional A-share sample data):**
 
 ```bash
+pip install numpy pandas
 python scripts/serve_trading_desk.py --demo   # desk at http://127.0.0.1:8765, picker at /picks
 ```
 
