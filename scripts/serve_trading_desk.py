@@ -390,7 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--demo",
         action="store_true",
-        help="Launch with built-in fictional A-share sample data (offline, zero dependencies).",
+        help="Launch with built-in fictional A-share sample data (offline; needs only numpy and pandas).",
     )
     return parser
 

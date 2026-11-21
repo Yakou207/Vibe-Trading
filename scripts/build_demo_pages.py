@@ -1,8 +1,8 @@
 """Build a self-contained static GitHub Pages demo site (Trading Desk + Stock Picker).
 
 Uses strictly fictional sample tickers (``999001.SH``..``999010.SH``) from ``demo_fixtures`` and
-zero third-party dependencies so GitHub Actions can publish an interactive preview directly from
-the standard library.
+only numpy and pandas (needed by the picker's scoring imports), so GitHub Actions can publish an
+interactive preview without network access or API keys.
 """
 
 from __future__ import annotations

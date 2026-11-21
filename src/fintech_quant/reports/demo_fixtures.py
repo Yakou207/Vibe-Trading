@@ -3,7 +3,7 @@
 Everything generated here uses strictly fictional tickers (``999001.SH``..``999010.SH``, a
 reserved numeric range with no listed A-share companies) and synthetic sample data so visitors
 can inspect the pixel-office trading desk, stock picker, shadow pools, event NLP and Jev
-advisory workflow with zero third-party dependencies, zero network calls and zero API keys. It
+advisory workflow with only numpy and pandas installed, zero network calls and zero API keys. It
 never reads or mutates canonical ``data/`` or ``outputs/`` directories, and never references
 real listed companies.
 """
