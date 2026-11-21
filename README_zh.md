@@ -8,12 +8,14 @@
 
 ![Python](https://img.shields.io/badge/python-3.14-3776AB?logo=python&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-695%20passing-2ea44f)
+![License](https://img.shields.io/badge/license-MIT-blue)
+[![Live Demo](https://img.shields.io/badge/demo-GitHub%20Pages-0969da?logo=githubpages&logoColor=white)](https://yakou207.github.io/Vibe-Trading/)
 ![Market](https://img.shields.io/badge/market-CSI%20300%20A--shares-c0392b)
 ![Mode](https://img.shields.io/badge/mode-paper%20trading%20only-6c757d)
 ![Data](https://img.shields.io/badge/data-AkShare-1f6feb)
 ![LLM](https://img.shields.io/badge/judge-TypeSafe%20Jev%20%7C%20DeepSeek-8e44ad)
 
-[English](README.md) · [中文](README_zh.md)
+[English](README.md) · [中文](README_zh.md) · [在线静态 Demo](https://yakou207.github.io/Vibe-Trading/)
 
 </div>
 
@@ -150,6 +152,16 @@ flowchart TB
 
 ## 快速开始
 
+**10 秒零依赖体验（内置合成 A 股样例数据，虚构代码，无需联网或 API Key）：**
+
+```bash
+python scripts/serve_trading_desk.py --demo   # 交易台 http://127.0.0.1:8765，选股页 /picks
+```
+
+也可以直接打开 GitHub Pages 上的[在线静态 Demo](https://yakou207.github.io/Vibe-Trading/)（可通过 `python scripts/build_demo_pages.py` 本地导出）。
+
+**完整研究环境：**
+
 ```bash
 python3.14 -m venv .venv && source .venv/bin/activate
 pip install pytest akshare pandas numpy matplotlib truststore
@@ -157,7 +169,7 @@ python -m pytest -q        # 代码直接从 src/ 运行，无需安装成包
 ```
 
 ```bash
-python scripts/serve_trading_desk.py          # 交易台 http://127.0.0.1:8765，选股页 /picks
+python scripts/serve_trading_desk.py          # 连接本地完整纸面交易产物
 ```
 
 ```bash
