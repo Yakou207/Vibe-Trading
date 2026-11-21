@@ -1,9 +1,11 @@
-"""Self-contained synthetic demo workspace for ``serve_trading_desk.py --demo`` and GitHub Pages.
+"""Self-contained fictional demo workspace for ``serve_trading_desk.py --demo`` and GitHub Pages.
 
-Everything generated here is clearly labelled synthetic sample data so visitors can launch the
-pixel-office trading desk, stock picker, shadow pools, event NLP and Jev advisory panels with
-zero third-party dependencies, zero network calls and zero API keys. It never reads or mutates
-canonical ``data/`` or ``outputs/`` directories.
+Everything generated here uses strictly fictional tickers (``999001.SH``..``999010.SH``, a
+reserved numeric range with no listed A-share companies) and synthetic sample data so visitors
+can inspect the pixel-office trading desk, stock picker, shadow pools, event NLP and Jev
+advisory workflow with zero third-party dependencies, zero network calls and zero API keys. It
+never reads or mutates canonical ``data/`` or ``outputs/`` directories, and never references
+real listed companies.
 """
 
 from __future__ import annotations
@@ -30,8 +32,8 @@ DEMO_CYCLE_COUNT = 5
 
 DEMO_STOCKS: tuple[dict[str, object], ...] = (
     {
-        "symbol": "300750.SZ",
-        "name": "宁德时代",
+        "symbol": "999001.SH",
+        "name": "示例新能源 A",
         "industry": "电力设备",
         "profile": "trigger",
         "base_price": 185.0,
@@ -44,8 +46,8 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
         "profit_yoy": 22.4,
     },
     {
-        "symbol": "601899.SH",
-        "name": "紫金矿业",
+        "symbol": "999002.SH",
+        "name": "示例有色 B",
         "industry": "有色金属",
         "profile": "trigger",
         "base_price": 14.2,
@@ -58,8 +60,8 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
         "profit_yoy": 31.5,
     },
     {
-        "symbol": "002594.SZ",
-        "name": "比亚迪",
+        "symbol": "999003.SH",
+        "name": "示例整车 C",
         "industry": "汽车",
         "profile": "setup",
         "base_price": 248.0,
@@ -72,8 +74,8 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
         "profit_yoy": 19.7,
     },
     {
-        "symbol": "000333.SZ",
-        "name": "美的集团",
+        "symbol": "999004.SH",
+        "name": "示例家电 D",
         "industry": "家用电器",
         "profile": "setup",
         "base_price": 62.5,
@@ -86,8 +88,8 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
         "profit_yoy": 13.4,
     },
     {
-        "symbol": "600900.SH",
-        "name": "长江电力",
+        "symbol": "999005.SH",
+        "name": "示例公用 E",
         "industry": "公用事业",
         "profile": "leader_no_base",
         "base_price": 26.8,
@@ -100,8 +102,8 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
         "profit_yoy": 8.9,
     },
     {
-        "symbol": "600036.SH",
-        "name": "招商银行",
+        "symbol": "999006.SH",
+        "name": "示例银行 F",
         "industry": "银行",
         "profile": "vetoed",
         "base_price": 34.5,
@@ -114,8 +116,8 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
         "profit_yoy": 3.8,
     },
     {
-        "symbol": "601318.SH",
-        "name": "中国平安",
+        "symbol": "999007.SH",
+        "name": "示例保险 G",
         "industry": "非银金融",
         "profile": "sideways",
         "base_price": 48.0,
@@ -128,22 +130,22 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
         "profit_yoy": 6.2,
     },
     {
-        "symbol": "600519.SH",
-        "name": "贵州茅台",
+        "symbol": "999008.SH",
+        "name": "示例消费 H",
         "industry": "食品饮料",
         "profile": "sideways",
-        "base_price": 1520.0,
+        "base_price": 152.0,
         "ratio": 0.78,
         "score": 62.1,
         "confidence": 0.90,
         "v2_score": 55.2,
-        "roe": 34.5,
+        "roe": 24.5,
         "rev_yoy": 8.2,
         "profit_yoy": 9.1,
     },
     {
-        "symbol": "600276.SH",
-        "name": "恒瑞医药",
+        "symbol": "999009.SH",
+        "name": "示例医药 I",
         "industry": "医药生物",
         "profile": "downtrend",
         "base_price": 46.5,
@@ -156,16 +158,16 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
         "profit_yoy": 4.0,
     },
     {
-        "symbol": "000858.SZ",
-        "name": "五粮液",
-        "industry": "食品饮料",
+        "symbol": "999010.SH",
+        "name": "示例制造 J",
+        "industry": "机械设备",
         "profile": "downtrend",
-        "base_price": 138.0,
+        "base_price": 38.0,
         "ratio": 0.83,
         "score": 49.6,
         "confidence": 0.76,
         "v2_score": 33.4,
-        "roe": 21.0,
+        "roe": 11.0,
         "rev_yoy": -1.8,
         "profit_yoy": -3.2,
     },
@@ -322,30 +324,30 @@ def _score_row(spec: Mapping[str, object], day_offset: int) -> dict[str, object]
                 "score": fund,
                 "max_score": 35.0,
                 "reasons": [
-                    f"ROE {spec['roe']}% / Revenue YoY {spec['rev_yoy']}% (synthetic demo sample)"
+                    f"Synthetic sample ROE {spec['roe']}% / Revenue YoY {spec['rev_yoy']}% (fictional demo)"
                 ],
             },
             "technical": {
                 "score": tech,
                 "max_score": 25.0,
-                "reasons": ["Trend alignment and volatility compression check"],
+                "reasons": ["Trend alignment and volatility compression check (synthetic demo)"],
             },
             "capital_flow": {
                 "score": flow,
                 "max_score": 25.0,
-                "reasons": ["Turnover and liquidity stability proxy"],
+                "reasons": ["Turnover and liquidity stability proxy (synthetic demo)"],
             },
             "sentiment": {
                 "score": sent,
                 "max_score": 15.0,
-                "reasons": ["Demo event NLP net score"],
+                "reasons": ["Synthetic demo event NLP net score"],
             },
         },
     }
 
 
 def build_demo_workspace(root: Path) -> DemoPaths:
-    """Materialize a complete, hash-verified synthetic demo workspace under ``root``."""
+    """Materialize a complete, hash-verified fictional demo workspace under ``root``."""
     root = root.resolve()
     days = _trading_days(DEMO_SESSIONS, DEMO_AS_OF)
     cycle_days = days[-DEMO_CYCLE_COUNT:]
@@ -401,7 +403,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         for spec in DEMO_STOCKS:
             writer.writerow(
                 [
-                    "000300",
+                    "DEMO300",
                     str(spec["symbol"]),
                     days[0],
                     "",
@@ -457,7 +459,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
             "risk_summary": {"total_warnings": 1, "by_rule": {"main_outflow": 1}},
             "risk_warnings": [
                 {
-                    "symbol": "600036.SH",
+                    "symbol": "999006.SH",
                     "rule": "main_outflow",
                     "action": "reduce",
                     "message": "Demo risk rule: capital-flow proxy triggered position cap.",
@@ -480,12 +482,12 @@ def build_demo_workspace(root: Path) -> DemoPaths:
                 "account": {
                     "cash": round(cur_equity - 15740.0, 2),
                     "positions": {
-                        "300750.SZ": {
+                        "999001.SH": {
                             "shares": 100,
                             "cost_basis": 152.8,
                             "last_buy_date": cycle_days[0],
                         },
-                        "601899.SH": {
+                        "999002.SH": {
                             "shares": 200,
                             "cost_basis": 12.1,
                             "last_buy_date": cycle_days[min(1, idx)],
@@ -504,7 +506,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
                 "trades": [
                     {
                         "trade_date": cycle_days[0],
-                        "symbol": "300750.SZ",
+                        "symbol": "999001.SH",
                         "side": "buy",
                         "shares": 100,
                         "price": 152.8,
@@ -521,7 +523,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
                 "status": "DEMO_PENDING_WINDOW",
                 "live_trading_authorized": False,
                 "failures": [
-                    f"Synthetic demo window ({idx + 1}/40 sessions) — paper evidence only"
+                    f"Fictional demo window ({idx + 1}/40 sessions) — UI preview only"
                 ],
                 "gates": {
                     "hash_chain_integrity": {"observed": True, "passed": True, "required": True},
@@ -545,7 +547,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         (cdir / "csi300_market_state.csv").write_text(
             "trade_date,index_symbol,index_close\n"
             + "".join(
-                f"{cycle_days[i]},sh000300,{bench_path[i]}\n" for i in range(idx + 1)
+                f"{cycle_days[i]},demo000300,{bench_path[i]}\n" for i in range(idx + 1)
             ),
             encoding="utf-8",
         )
@@ -555,9 +557,9 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         (cdir / "targets.csv").write_text(
             "symbol,raw_target_weight,target_weight,portfolio_exposure_multiplier,"
             "score,score_confidence,rl_action,reason\n"
-            "300750.SZ,0.08,0.08,1.0,81.4,0.92,buy,score=81.40 (demo)\n"
-            "601899.SH,0.08,0.08,1.0,77.8,0.88,buy,score=77.80 (demo)\n"
-            "002594.SZ,0.08,0.08,1.0,75.2,0.85,buy,score=75.20 (demo)\n",
+            "999001.SH,0.08,0.08,1.0,81.4,0.92,buy,score=81.40 (demo)\n"
+            "999002.SH,0.08,0.08,1.0,77.8,0.88,buy,score=77.80 (demo)\n"
+            "999003.SH,0.08,0.08,1.0,75.2,0.85,buy,score=75.20 (demo)\n",
             encoding="utf-8",
         )
         manifest_path = cdir / "cycle_manifest.json"
@@ -650,7 +652,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         scoring_v2_path,
         {
             "as_of": DEMO_AS_OF,
-            "label": "研究评分 v2（横截面排名合成 · Demo 样例），不驱动计数策略",
+            "label": "研究评分 v2（横截面排名合成 · 虚构样例），不驱动计数策略",
             "signs": {"ep": 1, "roe": 1, "mom_12_1": 1, "vol_60d": -1},
             "scores": {
                 str(spec["symbol"]): {
@@ -716,7 +718,7 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
     """Offline synthetic Event NLP + financial trend + cached Jev status for demo mode."""
     symbol = resolve_symbol(data, query)
     if symbol is None:
-        return {"error": f"Demo 模式仅包含 10 只沪深 300 样例股，未找到：{query}"}
+        return {"error": f"Demo 模式仅包含 10 只合成样例股（999001–999010），未找到：{query}"}
     spec = _stock_spec(symbol)
     name = str(spec["name"])
     day = date.fromisoformat(DEMO_AS_OF)
@@ -724,25 +726,24 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
     raw_items = [
         {
             "source": "cninfo_notice",
-            "title": f"[DEMO] {name}发布三季报：营收同比增长 {spec['rev_yoy']}%，归母净利润同比变动 {spec['profit_yoy']}%",
+            "title": f"[DEMO] {name}示例定期报告摘要：用于展示规则型事件 NLP 与财报趋势字段",
             "published_at": f"{DEMO_AS_OF} 08:15",
             "url": "",
-            "summary": "合成演示公告：用于展示规则型事件 NLP 与财报趋势面板，非真实实时公告。",
+            "summary": "虚构演示条目：用于展示公告解析与财报趋势面板结构，不对应任何真实公司。",
         },
         {
             "source": "research_report",
-            "title": f"[DEMO] 券商点评：{name}盈利能力稳健，维持“买入”评级",
+            "title": f"[DEMO] 示例研报（{name}）：评级字段仅用于展示面板结构",
             "published_at": "2026-11-03 10:30",
-            "rating": "买入",
             "url": "",
-            "summary": "合成演示研报摘要。",
+            "summary": "虚构演示条目：不含任何真实券商观点或买卖评级。",
         },
         {
             "source": "eastmoney_news",
-            "title": f"[DEMO] {spec['industry']}板块景气度跟踪：{name}产能利用率维持高位",
+            "title": f"[DEMO] {spec['industry']}行业示例资讯：用于展示多源信息流与 14 天半衰期衰减",
             "published_at": "2026-11-01 14:20",
             "url": "",
-            "summary": "合成演示资讯。",
+            "summary": "虚构演示条目：仅供界面与数据流结构演示。",
         },
     ]
     nlp = analyze_items(raw_items, today=day, name=name, symbol=symbol)
@@ -770,7 +771,7 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
     return {
         "symbol": symbol,
         "name": name,
-        "fetched_at": f"{DEMO_AS_OF}T16:35:00Z (demo)",
+        "fetched_at": f"{DEMO_AS_OF}T16:35:00Z (fictional demo)",
         "sources": {
             "cninfo_notice": {"ok": True, "count": 1},
             "research_report": {"ok": True, "count": 1},
@@ -778,7 +779,7 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
         },
         "global": {
             "industry": str(spec["industry"]),
-            "industry_keywords": [str(spec["industry"]), "CSI 300 Demo"],
+            "industry_keywords": [str(spec["industry"]), "Synthetic Demo"],
             "overseas": [],
         },
         "nlp": {k: v for k, v in nlp.items() if k != "items"},
@@ -791,7 +792,7 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
             "configured": True,
             "provider": "demo",
             "model": "Jev-Demo (offline)",
-            "reason": "Offline synthetic demo verdict",
+            "reason": "Offline fictional demo workflow output",
         },
         "events_llm": {"configured": False, "model": "", "reason": "Disabled in offline demo mode"},
         "jev_packet_sha256": hashlib.sha256(f"demo-{symbol}-{DEMO_AS_OF}".encode()).hexdigest(),
@@ -801,29 +802,29 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
 
 
 def demo_jev_payload(data: PickerData, query: str) -> dict[str, object]:
-    """Deterministic offline TypeSafe Jev advisory verdict for demo mode."""
+    """Deterministic offline TypeSafe Jev workflow output for fictional demo tickers."""
     symbol = resolve_symbol(data, query)
     if symbol is None:
-        return {"error": f"Demo 模式未找到：{query}"}
+        return {"error": f"Demo 模式仅包含 10 只合成样例股（999001–999010），未找到：{query}"}
     spec = _stock_spec(symbol)
     profile = str(spec["profile"])
 
     if profile == "trigger":
-        verdict, label = "support", "支持观察/入场（Demo 建议性裁决）"
+        verdict, label = "support", "示例输出：support（虚构标的，仅展示阈值状态）"
         probs = [0.78, 0.74, 0.14, 0.18, 0.76]
     elif profile == "setup":
-        verdict, label = "neutral", "中性等待确认（Demo 建议性裁决）"
+        verdict, label = "neutral", "示例输出：neutral（虚构标的，仅展示阈值状态）"
         probs = [0.64, 0.62, 0.22, 0.26, 0.60]
     else:
-        verdict, label = "veto", "否决 / 回避（Demo 建议性裁决）"
+        verdict, label = "veto", "示例输出：veto（虚构标的，仅展示阈值状态）"
         probs = [0.34, 0.38, 0.62, 0.58, 0.32]
 
     questions = [
-        "趋势与平台结构是否支撑多头延续？",
-        "最新财报与事件面是否无明显恶化？",
-        "是否存在未消化重大监管/减持/诉讼风险？",
-        "短期波动或换手是否显示筹码松动？",
-        "风险收益比是否满足严格止损纪律？",
+        "合成趋势与平台结构是否满足阈值条件？",
+        "合成财报与事件特征是否稳定？",
+        "合成风险项是否触发否决条件？",
+        "合成波动与换手特征是否偏高？",
+        "合成止损距离是否落在预设区间内？",
     ]
     return {
         "symbol": symbol,
@@ -835,11 +836,11 @@ def demo_jev_payload(data: PickerData, query: str) -> dict[str, object]:
         "verdict": verdict,
         "verdict_label": label,
         "summary": (
-            f"[DEMO] {spec['name']} ({symbol}) 的离线示例裁决：仅用于演示 Jev 概率阈值交互，"
-            "不接入实盘且不修改计数策略。"
+            f"[DEMO] {spec['name']} ({symbol}) 为虚构标的，本输出仅用于演示 Jev 概率问答与"
+            "软阈值面板的数据接口，不构成任何投资建议。"
         ),
         "answers": [
-            {"question": q, "probability": p, "rationale": "Synthetic offline demo score"}
+            {"question": q, "probability": p, "rationale": "Fictional demo score for UI preview"}
             for q, p in zip(questions, probs)
         ],
         "cost_usd": 0.0,

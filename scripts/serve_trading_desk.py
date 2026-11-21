@@ -390,7 +390,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--demo",
         action="store_true",
-        help="Launch with built-in synthetic CSI 300 demo data (offline, zero dependencies).",
+        help="Launch with built-in fictional A-share sample data (offline, zero dependencies).",
     )
     return parser
 

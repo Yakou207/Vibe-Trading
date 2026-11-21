@@ -1,7 +1,8 @@
 """Build a self-contained static GitHub Pages demo site (Trading Desk + Stock Picker).
 
-Uses synthetic CSI 300 sample data from ``demo_fixtures`` and zero third-party dependencies so
-GitHub Actions can publish an interactive preview directly from the standard library.
+Uses strictly fictional sample tickers (``999001.SH``..``999010.SH``) from ``demo_fixtures`` and
+zero third-party dependencies so GitHub Actions can publish an interactive preview directly from
+the standard library.
 """
 
 from __future__ import annotations
@@ -37,12 +38,35 @@ DEMO_BANNER_HTML = (
     '<div style="background:#161b22;color:#c9d1d9;border-bottom:1px solid #30363d;'
     'padding:8px 16px;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;'
     'display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
-    '<span><strong>STATIC DEMO</strong> · Synthetic CSI 300 sample data (read-only preview) · '
-    'Run locally: <code>python scripts/serve_trading_desk.py --demo</code></span>'
+    '<span><strong>STATIC DEMO</strong> · 虚构数据，仅供界面演示，不构成任何投资建议 / '
+    'Fictional data for UI demo only. Not investment advice. · '
+    'Local: <code>python scripts/serve_trading_desk.py --demo</code></span>'
     '<a href="https://github.com/Yakou207/Vibe-Trading" '
     'style="color:#58a6ff;text-decoration:none" target="_blank" rel="noopener">'
     'GitHub Repo ↗</a></div>'
 )
+
+DESK_NAV_OLD = (
+    '<nav class="nav" id="nav" hidden><a href="/" aria-current="page">交易桌</a>'
+    '<a href="/picks">选股</a></nav>'
+)
+DESK_NAV_NEW = (
+    '<nav class="nav" id="nav"><a href="./index.html" aria-current="page">交易桌</a>'
+    '<a href="./picks.html">选股</a></nav>'
+)
+PICKER_NAV_OLD = (
+    '<nav class="nav"><a href="/">交易桌</a><a href="/picks" aria-current="page">选股</a></nav>'
+)
+PICKER_NAV_NEW = (
+    '<nav class="nav"><a href="./index.html">交易桌</a>'
+    '<a href="./picks.html" aria-current="page">选股</a></nav>'
+)
+
+
+def _replace_required(source: str, old: str, new: str, *, label: str) -> str:
+    if old not in source:
+        raise RuntimeError(f"expected template marker not found while exporting {label}: {old!r}")
+    return source.replace(old, new, 1)
 
 
 def _static_fetch_shim(bundle: dict[str, object]) -> str:
@@ -83,7 +107,7 @@ def _static_fetch_shim(bundle: dict[str, object]) -> str:
         "    if (p === '/api/intraday') return jsonResp({error: '静态 Demo 不包含盘中分时行情'});\n"
         "    if (p === '/api/events_llm') return jsonResp({error: '静态 Demo 不调用外部 LLM API'});\n"
         "    const sym = resolveSym(q);\n"
-        "    if (p === '/api/stock') return jsonResp(sym ? B.stocks[sym] : {error: 'Demo 仅包含 10 只样例股，未找到：' + q});\n"
+        "    if (p === '/api/stock') return jsonResp(sym ? B.stocks[sym] : {error: 'Demo 仅包含 10 只合成样例股（999001–999010），未找到：' + q});\n"
         "    if (p === '/api/research') return jsonResp(sym ? B.research[sym] : {error: 'Demo 未找到：' + q});\n"
         "    if (p === '/api/jev') return jsonResp(sym ? B.jev[sym] : {error: 'Demo 未找到：' + q});\n"
         "    return jsonResp({error: 'Unsupported demo endpoint: ' + p});\n"
@@ -104,11 +128,10 @@ def build_demo_pages(output_dir: Path) -> list[Path]:
             quotes_status="demo",
         )
         desk_html = render_desk_html(snapshot, live=False)
-        desk_html = desk_html.replace(
-            '<nav class="nav" id="nav" hidden><a href="/" aria-current="page">交易桌</a><a href="/picks">选股</a></nav>',
-            '<nav class="nav" id="nav"><a href="./index.html" aria-current="page">交易桌</a><a href="./picks.html">选股</a></nav>',
+        desk_html = _replace_required(desk_html, DESK_NAV_OLD, DESK_NAV_NEW, label="desk nav")
+        desk_html = _replace_required(
+            desk_html, "<body>", f"<body>\n{DEMO_BANNER_HTML}", label="desk body"
         )
-        desk_html = desk_html.replace("<body>", f"<body>\n{DEMO_BANNER_HTML}", 1)
 
         picker_data = load_picker_data(demo.state)
         pool_state = json.loads((demo.pool_root / "state.json").read_text(encoding="utf-8"))
@@ -134,14 +157,17 @@ def build_demo_pages(output_dir: Path) -> list[Path]:
         }
 
         picker_html = PICKER_TEMPLATE.read_text(encoding="utf-8").replace(
-            "__PICKER_TITLE__", html.escape(f"选股 Demo · CSI 300 · {picker_data.as_of}")
+            "__PICKER_TITLE__", html.escape(f"选股 Demo · 合成样例 · {picker_data.as_of}")
         )
-        picker_html = picker_html.replace(
-            '<nav class="nav"><a href="/">交易桌</a><a href="/picks" aria-current="page">选股</a></nav>',
-            '<nav class="nav"><a href="./index.html">交易桌</a><a href="./picks.html" aria-current="page">选股</a></nav>',
+        picker_html = _replace_required(
+            picker_html, PICKER_NAV_OLD, PICKER_NAV_NEW, label="picker nav"
         )
-        picker_html = picker_html.replace("<body>", f"<body>\n{DEMO_BANNER_HTML}", 1)
-        picker_html = picker_html.replace("</head>", f"{_static_fetch_shim(bundle)}\n</head>", 1)
+        picker_html = _replace_required(
+            picker_html, "<body>", f"<body>\n{DEMO_BANNER_HTML}", label="picker body"
+        )
+        picker_html = _replace_required(
+            picker_html, "</head>", f"{_static_fetch_shim(bundle)}\n</head>", label="picker head"
+        )
 
     index_path = output_dir / "index.html"
     picks_path = output_dir / "picks.html"

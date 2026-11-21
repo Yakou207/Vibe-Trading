@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 import subprocess
 import sys
@@ -21,6 +22,38 @@ from scripts.build_demo_pages import build_demo_pages
 
 
 ROOT = Path(__file__).resolve().parents[1]
+REAL_COMPANY_BLOCKLIST = {
+    "宁德时代",
+    "紫金矿业",
+    "比亚迪",
+    "美的集团",
+    "长江电力",
+    "招商银行",
+    "中国平安",
+    "贵州茅台",
+    "恒瑞医药",
+    "五粮液",
+}
+BROKER_RATING_TERMS = ("买入", "增持", "强烈推荐", "推荐评级")
+
+
+def test_demo_stocks_are_strictly_fictional_and_have_no_broker_ratings(tmp_path: Path) -> None:
+    for spec in DEMO_STOCKS:
+        symbol = str(spec["symbol"])
+        name = str(spec["name"])
+        assert re.fullmatch(r"999\d{3}\.SH", symbol), f"non-fictional demo symbol: {symbol}"
+        assert name.startswith("示例"), f"demo name must be clearly fictional: {name}"
+        assert name not in REAL_COMPANY_BLOCKLIST
+
+    demo = build_demo_workspace(tmp_path)
+    picker = load_picker_data(demo.state)
+    for spec in DEMO_STOCKS:
+        research = demo_research_payload(picker, str(spec["symbol"]))
+        blob = json.dumps(research, ensure_ascii=False)
+        for term in BROKER_RATING_TERMS:
+            assert term not in blob, f"unexpected broker rating term {term!r} in demo research"
+        for item in research["items"]:
+            assert not item.get("rating")
 
 
 def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: Path) -> None:
@@ -37,8 +70,8 @@ def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: P
     assert len(picker.members) == len(DEMO_STOCKS)
 
     scoring_v2 = json.loads(demo.scoring_v2.read_text(encoding="utf-8"))
-    payload = stock_payload(picker, "300750", live=None, scoring_v2=scoring_v2, fresh=False)
-    assert payload["symbol"] == "300750.SZ"
+    payload = stock_payload(picker, "999001", live=None, scoring_v2=scoring_v2, fresh=False)
+    assert payload["symbol"] == "999001.SH"
     assert payload["verdict"]["level"] == "entry"
     assert payload["scoring_v2"]["score"] is not None
 
@@ -46,13 +79,13 @@ def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: P
     pool_v2 = json.loads((demo.pool_v2_root / "state.json").read_text(encoding="utf-8"))
     picks = picks_payload(picker, pool, pool_v2)
     assert len(picks["candidates"]) >= 2
-    assert picks["candidates"][0]["symbol"] in {"300750.SZ", "601899.SH"}
+    assert picks["candidates"][0]["symbol"] in {"999001.SH", "999002.SH"}
 
-    research = demo_research_payload(picker, "300750")
-    assert research["symbol"] == "300750.SZ"
+    research = demo_research_payload(picker, "999001")
+    assert research["symbol"] == "999001.SH"
     assert len(research["items"]) >= 1
     assert research["jev_record"]["verdict"] == "support"
-    assert demo_jev_payload(picker, "600276")["verdict"] == "veto"
+    assert demo_jev_payload(picker, "999009")["verdict"] == "veto"
 
 
 def test_build_demo_pages_writes_self_contained_static_site(tmp_path: Path) -> None:
@@ -64,7 +97,9 @@ def test_build_demo_pages_writes_self_contained_static_site(tmp_path: Path) -> N
     picks_html = (tmp_path / "picks.html").read_text(encoding="utf-8")
     assert "__DESK_" not in desk_html
     assert "__PICKER_" not in picks_html
-    assert "STATIC DEMO" in desk_html
+    assert "虚构数据，仅供界面演示，不构成任何投资建议" in desk_html
+    assert "Fictional data for UI demo only. Not investment advice." in desk_html
+    assert "虚构数据，仅供界面演示，不构成任何投资建议" in picks_html
     assert "static-demo-bundle" in picks_html
     assert "./picks.html" in desk_html
     assert "./index.html" in picks_html
@@ -94,13 +129,13 @@ def test_serve_trading_desk_demo_mode_serves_all_endpoints_offline() -> None:
         assert "CSI 300 Desk" in _get(f"http://127.0.0.1:{port}/")
         assert "选股 · CSI 300" in _get(f"http://127.0.0.1:{port}/picks")
 
-        stock = json.loads(_get(f"http://127.0.0.1:{port}/api/stock?q=300750"))
+        stock = json.loads(_get(f"http://127.0.0.1:{port}/api/stock?q=999001"))
         assert stock["verdict"]["level"] == "entry"
 
-        research = json.loads(_get(f"http://127.0.0.1:{port}/api/research?q=300750"))
+        research = json.loads(_get(f"http://127.0.0.1:{port}/api/research?q=999001"))
         assert research["jev_record"]["verdict"] == "support"
 
-        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/jev?q=300750", method="POST")
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/api/jev?q=999001", method="POST")
         with _NO_PROXY_OPENER.open(req, timeout=3) as resp:
             jev = json.loads(resp.read().decode("utf-8"))
         assert jev["verdict"] == "support"

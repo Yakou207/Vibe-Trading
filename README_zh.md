@@ -152,7 +152,7 @@ flowchart TB
 
 ## 快速开始
 
-**10 秒零依赖体验（内置合成沪深 300 样例数据，无需联网或 API Key）：**
+**10 秒零依赖体验（内置合成 A 股样例数据，虚构代码，无需联网或 API Key）：**
 
 ```bash
 python scripts/serve_trading_desk.py --demo   # 交易台 http://127.0.0.1:8765，选股页 /picks
