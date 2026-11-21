@@ -107,7 +107,7 @@ def _static_fetch_shim(bundle: dict[str, object]) -> str:
         "    if (p === '/api/intraday') return jsonResp({error: '静态 Demo 不包含盘中分时行情'});\n"
         "    if (p === '/api/events_llm') return jsonResp({error: '静态 Demo 不调用外部 LLM API'});\n"
         "    const sym = resolveSym(q);\n"
-        "    if (p === '/api/stock') return jsonResp(sym ? B.stocks[sym] : {error: 'Demo 仅包含 10 只合成样例股（999001–999010），未找到：' + q});\n"
+        "    if (p === '/api/stock') return jsonResp(sym ? B.stocks[sym] : {error: 'Demo 仅包含 10 只演示标的（999001–999010），未找到：' + q});\n"
         "    if (p === '/api/research') return jsonResp(sym ? B.research[sym] : {error: 'Demo 未找到：' + q});\n"
         "    if (p === '/api/jev') return jsonResp(sym ? B.jev[sym] : {error: 'Demo 未找到：' + q});\n"
         "    return jsonResp({error: 'Unsupported demo endpoint: ' + p});\n"
@@ -157,7 +157,7 @@ def build_demo_pages(output_dir: Path) -> list[Path]:
         }
 
         picker_html = PICKER_TEMPLATE.read_text(encoding="utf-8").replace(
-            "__PICKER_TITLE__", html.escape(f"选股 Demo · 合成样例 · {picker_data.as_of}")
+            "__PICKER_TITLE__", html.escape(f"选股 Demo · {picker_data.as_of}")
         )
         picker_html = _replace_required(
             picker_html, PICKER_NAV_OLD, PICKER_NAV_NEW, label="picker nav"

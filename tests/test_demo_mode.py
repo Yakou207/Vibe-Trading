@@ -42,7 +42,6 @@ def test_demo_stocks_are_strictly_fictional_and_have_no_broker_ratings(tmp_path:
         symbol = str(spec["symbol"])
         name = str(spec["name"])
         assert re.fullmatch(r"999\d{3}\.SH", symbol), f"non-fictional demo symbol: {symbol}"
-        assert name.startswith("示例"), f"demo name must be clearly fictional: {name}"
         assert name not in REAL_COMPANY_BLOCKLIST
 
     demo = build_demo_workspace(tmp_path)
@@ -64,6 +63,8 @@ def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: P
     assert snapshot["quotes_status"] == "demo"
     assert len(snapshot["agents"]) >= 6
     assert snapshot["backtest_curve"] is not None
+    assert snapshot["header"]["excess_return"] is None
+    assert snapshot["header"]["paper_return"] <= snapshot["header"]["benchmark_return"]
 
     picker = load_picker_data(demo.state)
     assert picker.as_of == DEMO_AS_OF

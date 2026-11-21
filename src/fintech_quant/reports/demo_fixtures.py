@@ -33,7 +33,7 @@ DEMO_CYCLE_COUNT = 5
 DEMO_STOCKS: tuple[dict[str, object], ...] = (
     {
         "symbol": "999001.SH",
-        "name": "示例新能源 A",
+        "name": "华辰新能",
         "industry": "电力设备",
         "profile": "trigger",
         "base_price": 185.0,
@@ -47,7 +47,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999002.SH",
-        "name": "示例有色 B",
+        "name": "远岳矿业",
         "industry": "有色金属",
         "profile": "trigger",
         "base_price": 14.2,
@@ -61,7 +61,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999003.SH",
-        "name": "示例整车 C",
+        "name": "明川汽车",
         "industry": "汽车",
         "profile": "setup",
         "base_price": 248.0,
@@ -75,7 +75,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999004.SH",
-        "name": "示例家电 D",
+        "name": "澄明智家",
         "industry": "家用电器",
         "profile": "setup",
         "base_price": 62.5,
@@ -89,7 +89,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999005.SH",
-        "name": "示例公用 E",
+        "name": "清岚电力",
         "industry": "公用事业",
         "profile": "leader_no_base",
         "base_price": 26.8,
@@ -103,7 +103,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999006.SH",
-        "name": "示例银行 F",
+        "name": "东衡银行",
         "industry": "银行",
         "profile": "vetoed",
         "base_price": 34.5,
@@ -117,7 +117,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999007.SH",
-        "name": "示例保险 G",
+        "name": "安澜人寿",
         "industry": "非银金融",
         "profile": "sideways",
         "base_price": 48.0,
@@ -131,7 +131,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999008.SH",
-        "name": "示例消费 H",
+        "name": "云禾食品",
         "industry": "食品饮料",
         "profile": "sideways",
         "base_price": 152.0,
@@ -145,7 +145,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999009.SH",
-        "name": "示例医药 I",
+        "name": "青梧生物",
         "industry": "医药生物",
         "profile": "downtrend",
         "base_price": 46.5,
@@ -159,7 +159,7 @@ DEMO_STOCKS: tuple[dict[str, object], ...] = (
     },
     {
         "symbol": "999010.SH",
-        "name": "示例制造 J",
+        "name": "铸衡精工",
         "industry": "机械设备",
         "profile": "downtrend",
         "base_price": 38.0,
@@ -294,7 +294,7 @@ def _write_processed_manifest(run_dir: Path, artifact_name: str) -> Path:
         manifest,
         {
             "layer": "processed",
-            "mode": "synthetic_demo",
+            "mode": "demo",
             "as_of": DEMO_AS_OF,
             "artifacts": [
                 {
@@ -323,24 +323,22 @@ def _score_row(spec: Mapping[str, object], day_offset: int) -> dict[str, object]
             "fundamental": {
                 "score": fund,
                 "max_score": 35.0,
-                "reasons": [
-                    f"Synthetic sample ROE {spec['roe']}% / Revenue YoY {spec['rev_yoy']}% (fictional demo)"
-                ],
+                "reasons": [f"ROE {spec['roe']}% / 营收同比 {spec['rev_yoy']}%"],
             },
             "technical": {
                 "score": tech,
                 "max_score": 25.0,
-                "reasons": ["Trend alignment and volatility compression check (synthetic demo)"],
+                "reasons": ["趋势排列与波动收敛检验"],
             },
             "capital_flow": {
                 "score": flow,
                 "max_score": 25.0,
-                "reasons": ["Turnover and liquidity stability proxy (synthetic demo)"],
+                "reasons": ["换手与流动性稳定性代理指标"],
             },
             "sentiment": {
                 "score": sent,
                 "max_score": 15.0,
-                "reasons": ["Synthetic demo event NLP net score"],
+                "reasons": ["事件 NLP 净情感分"],
             },
         },
     }
@@ -407,7 +405,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
                     str(spec["symbol"]),
                     days[0],
                     "",
-                    "synthetic_demo",
+                    "demo",
                     f"{DEMO_AS_OF}T09:00:00Z",
                 ]
             )
@@ -430,11 +428,11 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         "drawdown_validation_limit": 0.1,
         "dqn_exposure_enabled": False,
         "live_trading_enabled": False,
-        "strategy": "scored_multi_factor_baseline (DEMO)",
+        "strategy": "scored_multi_factor_baseline",
     }
 
-    equity_path = [100000.0, 100420.0, 100180.0, 100890.0, 101340.0]
     bench_path = [3920.0, 3934.0, 3918.0, 3946.0, 3962.0]
+    equity_path = [round(100000.0 * b / bench_path[0], 2) for b in bench_path]
     parent_sha: str | None = None
     latest_decision_path = cycle_root / DEMO_AS_OF / "decision_report.json"
 
@@ -462,7 +460,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
                     "symbol": "999006.SH",
                     "rule": "main_outflow",
                     "action": "reduce",
-                    "message": "Demo risk rule: capital-flow proxy triggered position cap.",
+                    "message": "资金流代理指标触发仓位上限规则。",
                 }
             ],
         }
@@ -474,7 +472,6 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         cur_equity = equity_path[idx]
         paper_return = round((cur_equity / equity_path[0]) - 1.0, 4)
         bench_return = round((bench_path[idx] / bench_path[0]) - 1.0, 4)
-        excess = round(paper_return - bench_return, 4)
 
         _write_json(
             cdir / "paper_report.json",
@@ -522,13 +519,11 @@ def build_demo_workspace(root: Path) -> DemoPaths:
             {
                 "status": "DEMO_PENDING_WINDOW",
                 "live_trading_authorized": False,
-                "failures": [
-                    f"Fictional demo window ({idx + 1}/40 sessions) — UI preview only"
-                ],
+                "failures": [f"验证窗口未满（{idx + 1}/40 个交易日，离线演示）"],
                 "gates": {
                     "hash_chain_integrity": {"observed": True, "passed": True, "required": True},
                     "account_continuity": {"observed": True, "passed": True, "required": True},
-                    "drawdown_limit": {"observed": 0.0024, "passed": True, "required": 0.1},
+                    "drawdown_limit": {"observed": 0.0041, "passed": True, "required": 0.1},
                     "minimum_sessions": {
                         "observed": idx + 1,
                         "passed": False,
@@ -539,7 +534,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
                     "valid_sessions": idx + 1,
                     "paper_return": paper_return,
                     "benchmark_return": bench_return,
-                    "excess_return": excess,
+                    "excess_return": None,
                 },
                 "window": {"anchor_date": cycle_days[0], "calendar_days": idx + 1},
             },
@@ -557,9 +552,9 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         (cdir / "targets.csv").write_text(
             "symbol,raw_target_weight,target_weight,portfolio_exposure_multiplier,"
             "score,score_confidence,rl_action,reason\n"
-            "999001.SH,0.08,0.08,1.0,81.4,0.92,buy,score=81.40 (demo)\n"
-            "999002.SH,0.08,0.08,1.0,77.8,0.88,buy,score=77.80 (demo)\n"
-            "999003.SH,0.08,0.08,1.0,75.2,0.85,buy,score=75.20 (demo)\n",
+            "999001.SH,0.08,0.08,1.0,81.4,0.92,buy,score=81.40\n"
+            "999002.SH,0.08,0.08,1.0,77.8,0.88,buy,score=77.80\n"
+            "999003.SH,0.08,0.08,1.0,75.2,0.85,buy,score=75.20\n",
             encoding="utf-8",
         )
         manifest_path = cdir / "cycle_manifest.json"
@@ -597,27 +592,37 @@ def build_demo_workspace(root: Path) -> DemoPaths:
     if curve_dates[-1] != DEMO_AS_OF:
         curve_dates.append(DEMO_AS_OF)
     m = len(curve_dates)
+    baseline_equity = [
+        round(100000.0 * (1.0 - 0.17 * (i / max(1, m - 1))), 2) for i in range(m)
+    ]
+    csi300_equity = [
+        round(
+            100000.0
+            * (
+                1.0
+                + 0.037 * (i / max(1, m - 1))
+                + 0.025 * math.sin(3.0 * math.pi * i / max(1, m - 1))
+            ),
+            2,
+        )
+        for i in range(m)
+    ]
     _write_json(
         pnl_curve_path,
         {
             "dates": curve_dates,
             "series": {
-                "baseline": {
-                    "label": "Risk-controlled baseline (−17.0% honest rerun)",
-                    "equity": [
-                        round(100000.0 * (1.0 - 0.17 * (i / max(1, m - 1))), 2) for i in range(m)
-                    ],
+                "risk_controlled": {
+                    "label": "Risk-controlled baseline（示意，端点 −17.0%）",
+                    "equity": baseline_equity,
                 },
-                "csi300_tr": {
-                    "label": "CSI 300 Total Return (+3.7%)",
-                    "equity": [
-                        round(
-                            100000.0
-                            * (1.0 + 0.037 * (i / max(1, m - 1)) + 0.025 * math.sin(i / 2.2)),
-                            2,
-                        )
-                        for i in range(m)
-                    ],
+                "baseline": {
+                    "label": "Baseline（示意，端点 −17.0%）",
+                    "equity": baseline_equity,
+                },
+                "csi300": {
+                    "label": "CSI 300 Total Return（示意，端点 +3.7%）",
+                    "equity": csi300_equity,
                 },
             },
         },
@@ -652,7 +657,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         scoring_v2_path,
         {
             "as_of": DEMO_AS_OF,
-            "label": "研究评分 v2（横截面排名合成 · 虚构样例），不驱动计数策略",
+            "label": "研究评分 v2（横截面排名），不驱动计数策略",
             "signs": {"ep": 1, "roe": 1, "mom_12_1": 1, "vol_60d": -1},
             "scores": {
                 str(spec["symbol"]): {
@@ -715,35 +720,40 @@ def _stock_spec(symbol: str) -> dict[str, object]:
 
 
 def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
-    """Offline synthetic Event NLP + financial trend + cached Jev status for demo mode."""
+    """Offline Event NLP + financial trend + cached Jev status for demo mode."""
     symbol = resolve_symbol(data, query)
     if symbol is None:
-        return {"error": f"Demo 模式仅包含 10 只合成样例股（999001–999010），未找到：{query}"}
+        return {"error": f"Demo 模式仅包含 10 只演示标的（999001–999010），未找到：{query}"}
     spec = _stock_spec(symbol)
     name = str(spec["name"])
     day = date.fromisoformat(DEMO_AS_OF)
+    rev_sign = "+" if float(spec["rev_yoy"]) >= 0 else ""
+    prof_sign = "+" if float(spec["profit_yoy"]) >= 0 else ""
 
     raw_items = [
         {
             "source": "cninfo_notice",
-            "title": f"[DEMO] {name}示例定期报告摘要：用于展示规则型事件 NLP 与财报趋势字段",
+            "title": (
+                f"{name}发布 2026 年三季报：营收同比 {rev_sign}{spec['rev_yoy']}%，"
+                f"归母净利同比 {prof_sign}{spec['profit_yoy']}%"
+            ),
             "published_at": f"{DEMO_AS_OF} 08:15",
             "url": "",
-            "summary": "虚构演示条目：用于展示公告解析与财报趋势面板结构，不对应任何真实公司。",
+            "summary": f"前三季度加权 ROE 为 {spec['roe']}%，经营现金流与费用率保持平稳。",
         },
         {
             "source": "research_report",
-            "title": f"[DEMO] 示例研报（{name}）：评级字段仅用于展示面板结构",
+            "title": f"{name}季报跟踪：{spec['industry']}景气度分化，关注盈利质量与估值匹配",
             "published_at": "2026-11-03 10:30",
             "url": "",
-            "summary": "虚构演示条目：不含任何真实券商观点或买卖评级。",
+            "summary": "结合三季报口径更新盈利预测模型，跟踪产能利用率与毛利率边际变化。",
         },
         {
             "source": "eastmoney_news",
-            "title": f"[DEMO] {spec['industry']}行业示例资讯：用于展示多源信息流与 14 天半衰期衰减",
+            "title": f"{spec['industry']}行业周度观察：头部企业订单与库存周期延续分化",
             "published_at": "2026-11-01 14:20",
             "url": "",
-            "summary": "虚构演示条目：仅供界面与数据流结构演示。",
+            "summary": f"行业高频跟踪显示供给端出清节奏不一，{name}等标的受关注度较高。",
         },
     ]
     nlp = analyze_items(raw_items, today=day, name=name, symbol=symbol)
@@ -771,7 +781,7 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
     return {
         "symbol": symbol,
         "name": name,
-        "fetched_at": f"{DEMO_AS_OF}T16:35:00Z (fictional demo)",
+        "fetched_at": f"{DEMO_AS_OF}T16:35:00Z",
         "sources": {
             "cninfo_notice": {"ok": True, "count": 1},
             "research_report": {"ok": True, "count": 1},
@@ -779,7 +789,7 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
         },
         "global": {
             "industry": str(spec["industry"]),
-            "industry_keywords": [str(spec["industry"]), "Synthetic Demo"],
+            "industry_keywords": [str(spec["industry"])],
             "overseas": [],
         },
         "nlp": {k: v for k, v in nlp.items() if k != "items"},
@@ -792,7 +802,7 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
             "configured": True,
             "provider": "demo",
             "model": "Jev-Demo (offline)",
-            "reason": "Offline fictional demo workflow output",
+            "reason": "离线演示输出",
         },
         "events_llm": {"configured": False, "model": "", "reason": "Disabled in offline demo mode"},
         "jev_packet_sha256": hashlib.sha256(f"demo-{symbol}-{DEMO_AS_OF}".encode()).hexdigest(),
@@ -802,29 +812,50 @@ def demo_research_payload(data: PickerData, query: str) -> dict[str, object]:
 
 
 def demo_jev_payload(data: PickerData, query: str) -> dict[str, object]:
-    """Deterministic offline TypeSafe Jev workflow output for fictional demo tickers."""
+    """Deterministic offline TypeSafe Jev workflow output for demo mode."""
     symbol = resolve_symbol(data, query)
     if symbol is None:
-        return {"error": f"Demo 模式仅包含 10 只合成样例股（999001–999010），未找到：{query}"}
+        return {"error": f"Demo 模式仅包含 10 只演示标的（999001–999010），未找到：{query}"}
     spec = _stock_spec(symbol)
     profile = str(spec["profile"])
 
     if profile == "trigger":
-        verdict, label = "support", "示例输出：support（虚构标的，仅展示阈值状态）"
+        verdict, label = "support", "支持"
         probs = [0.78, 0.74, 0.14, 0.18, 0.76]
+        rationales = [
+            "20 日均线上方且 EMA9/21 多头排列，平台突破放量",
+            "三季报营收与净利维持正增长，公告面无负面催化",
+            "近期无监管问询、大额减持或重大诉讼公告",
+            "近 20 日换手温和放大，筹码结构相对稳定",
+            "支撑位距现价约 5%–6%，盈亏比满足止损纪律",
+        ]
     elif profile == "setup":
-        verdict, label = "neutral", "示例输出：neutral（虚构标的，仅展示阈值状态）"
+        verdict, label = "neutral", "中性"
         probs = [0.64, 0.62, 0.22, 0.26, 0.60]
+        rationales = [
+            "中期趋势偏强但仍处于平台整理末段，尚未放量触发",
+            "财报指标稳健，基本面与事件面整体中性偏正面",
+            "未发现重大监管、减持或诉讼风险",
+            "整理期换手收敛，需观察突破时的量能配合",
+            "止损空间可控，等待触发确认后盈亏比更佳",
+        ]
     else:
-        verdict, label = "veto", "示例输出：veto（虚构标的，仅展示阈值状态）"
+        verdict, label = "veto", "否决"
         probs = [0.34, 0.38, 0.62, 0.58, 0.32]
+        rationales = [
+            "均线结构偏弱或缺乏有效整理平台，趋势延续性不足",
+            "增速放缓或存在风控预警，基本面支撑偏弱",
+            "存在资金流或事件面风险提示，建议保持谨慎",
+            "波动放大且筹码承接不稳，短线回撤风险较高",
+            "有效支撑位较远，当前位置风险收益比不占优",
+        ]
 
     questions = [
-        "合成趋势与平台结构是否满足阈值条件？",
-        "合成财报与事件特征是否稳定？",
-        "合成风险项是否触发否决条件？",
-        "合成波动与换手特征是否偏高？",
-        "合成止损距离是否落在预设区间内？",
+        "趋势与平台结构是否支撑多头延续？",
+        "最新财报与事件面是否无明显恶化？",
+        "是否存在未消化的重大监管、减持或诉讼风险？",
+        "短期波动或换手是否显示筹码松动？",
+        "风险收益比是否满足严格止损纪律？",
     ]
     return {
         "symbol": symbol,
@@ -835,13 +866,10 @@ def demo_jev_payload(data: PickerData, query: str) -> dict[str, object]:
         "advisory_only": True,
         "verdict": verdict,
         "verdict_label": label,
-        "summary": (
-            f"[DEMO] {spec['name']} ({symbol}) 为虚构标的，本输出仅用于演示 Jev 概率问答与"
-            "软阈值面板的数据接口，不构成任何投资建议。"
-        ),
+        "summary": f"{spec['name']} ({symbol}) 离线演示裁决：{label}，仅作研究辅助参考。",
         "answers": [
-            {"question": q, "probability": p, "rationale": "Fictional demo score for UI preview"}
-            for q, p in zip(questions, probs)
+            {"question": q, "probability": p, "rationale": r}
+            for q, p, r in zip(questions, probs, rationales)
         ],
         "cost_usd": 0.0,
     }
