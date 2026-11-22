@@ -25,10 +25,16 @@ from fintech_quant.research.scoring_v2 import snapshot_view
 
 BRIEF_SCHEMA_VERSION = 1
 CYCLE_FILES = ("cycle_manifest.json", "targets.csv", "paper_report.json", "decision_report.json")
+TEMPLATE_PATH = Path(__file__).with_name("premarket_template.html")
 # Exchange rule change: SSE/SZSE main-board risk-warning (ST) stocks moved from a
 # 5% to a 10% daily price limit on 2025-07-07.
 MAIN_BOARD_ST_10PCT_FROM = date(2025, 7, 7)
 STAR_MINIMUM_BUY_SHARES = 200
+AUCTION_VOLUME_SURGE_RATIO = 0.15
+AUCTION_THIN_LIQUIDITY_RATIO = 0.005
+AUCTION_WEAK_VS_INDEX_PCT = -0.02
+AUCTION_STRONG_VS_INDEX_PCT = 0.03
+AUCTION_STOP_TOO_WIDE_PCT = 0.08
 
 
 def price_limit_rate(symbol: str, name: str, trade_date: date) -> float:
@@ -107,6 +113,9 @@ def build_brief(
     capital: float,
     near_miss_floor: float = 65.0,
     scoring_v2_path: Path | None = None,
+    *,
+    market_pulse: Mapping[str, object] | None = None,
+    pitfall_calendar: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     manifest = _load_json(cycle_dir / "cycle_manifest.json")
     if manifest.get("schema_version") != 2 or manifest.get("kind") != "paper_trading_cycle":
@@ -129,7 +138,8 @@ def build_brief(
     _verify(universe_path, universe_ref)
 
     targets = {row["symbol"]: row for row in _read_csv(targets_path)}
-    account = _load_json(paper_path)["account"]
+    paper = _load_json(paper_path)
+    account = paper["account"]
     if account.get("pending_signal_date") != as_of.isoformat():
         raise ValueError("paper account pending signal date does not match the cycle")
     if set(account.get("pending_targets", {})) != set(targets):
@@ -217,7 +227,11 @@ def build_brief(
             item["suggested"] = {"shares": 0, "reason": "paper_exit_target_weight_zero"}
         return item
 
-    return {
+    target_entries = [entry(symbol, "target") for symbol in sorted(targets)]
+    near_miss_entries = [entry(symbol, "near_miss") for symbol in near_miss]
+    exit_entries = [entry(symbol, "paper_exit") for symbol in exits]
+
+    brief: dict[str, object] = {
         "schema_version": BRIEF_SCHEMA_VERSION,
         "kind": "premarket_brief",
         "signal_date": as_of.isoformat(),
@@ -237,9 +251,66 @@ def build_brief(
         },
         "scoring_v2": v2_status,
         "systemic_risk": decision.get("risk_summary", {}),
-        "targets": [entry(symbol, "target") for symbol in sorted(targets)],
-        "near_miss": [entry(symbol, "near_miss") for symbol in near_miss],
-        "paper_exits": [entry(symbol, "paper_exit") for symbol in exits],
+        "portfolio_summary": _portfolio_summary(paper, policy, capital, target_entries),
+        "targets": target_entries,
+        "near_miss": near_miss_entries,
+        "paper_exits": exit_entries,
+    }
+    if market_pulse is not None:
+        brief["market_pulse"] = dict(market_pulse)
+    if pitfall_calendar is not None:
+        brief["pitfall_calendar"] = dict(pitfall_calendar)
+    return brief
+
+
+def _portfolio_summary(
+    paper: Mapping[str, object],
+    policy: Mapping[str, object],
+    capital: float,
+    target_entries: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    account = paper.get("account") if isinstance(paper.get("account"), Mapping) else {}
+    nav = paper.get("nav") if isinstance(paper.get("nav"), Mapping) else {}
+    dd_state = (
+        account.get("drawdown_control_state")
+        if isinstance(account.get("drawdown_control_state"), Mapping)
+        else {}
+    )
+    paper_equity = _opt_float(nav.get("equity"))
+    paper_cash = _opt_float(account.get("cash"))
+    actual_peak = _opt_float(dd_state.get("actual_peak"))
+    if actual_peak is None and paper_equity is not None:
+        actual_peak = paper_equity
+
+    drawdown_pct: float | None = None
+    if paper_equity is not None and actual_peak is not None and actual_peak > 0:
+        drawdown_pct = round(max(0.0, 1.0 - paper_equity / actual_peak), 6)
+
+    reduce_limit = float(policy.get("drawdown_reduce", 0.08))
+    liquidate_limit = float(policy.get("drawdown_liquidate", 0.09))
+    buffer_reduce = round(reduce_limit - drawdown_pct, 6) if drawdown_pct is not None else None
+    buffer_liquidate = (
+        round(liquidate_limit - drawdown_pct, 6) if drawdown_pct is not None else None
+    )
+    planned_notional = round(
+        sum(
+            float((item.get("suggested") or {}).get("notional") or 0.0)  # type: ignore[union-attr]
+            for item in target_entries
+        ),
+        2,
+    )
+    projected_exposure = round(planned_notional / capital, 6) if capital > 0 else 0.0
+    return {
+        "paper_equity": paper_equity,
+        "paper_cash": paper_cash,
+        "actual_peak": actual_peak,
+        "drawdown_pct": drawdown_pct,
+        "drawdown_reduce_limit": reduce_limit,
+        "drawdown_liquidate_limit": liquidate_limit,
+        "buffer_to_reduce_pct": buffer_reduce,
+        "buffer_to_liquidate_pct": buffer_liquidate,
+        "planned_buy_notional": planned_notional,
+        "projected_exposure_pct": projected_exposure,
     }
 
 
@@ -264,9 +335,11 @@ def _scoring_v2_snapshot(
 
 def evaluate_auction(
     brief: Mapping[str, object],
-    quotes: Sequence[Mapping[str, str]],
+    quotes: Sequence[Mapping[str, object]],
     near_limit_pct: float = 0.01,
     large_gap_pct: float = 0.05,
+    *,
+    benchmark_gap_pct: float | None = None,
 ) -> dict[str, object]:
     """Flag 09:25 auction prices against the brief's limit levels."""
     by_symbol = {str(row["symbol"]): row for row in quotes}
@@ -280,9 +353,9 @@ def evaluate_auction(
         symbol = str(item["symbol"])
         quote = by_symbol.get(symbol)
         check: dict[str, object] = {"symbol": symbol, "category": item["category"], "flags": []}
-        price = float(quote["price"]) if quote and str(quote.get("price", "")).strip() else 0.0
+        price = _opt_float(quote.get("price")) if quote else None
         previous_close = item.get("previous_close")
-        if price <= 0 or previous_close is None:
+        if price is None or price <= 0 or previous_close is None:
             check["flags"].append("no_auction_quote")
             checks.append(check)
             continue
@@ -299,12 +372,49 @@ def evaluate_auction(
             check["flags"].append("at_limit_down")
         elif gap <= -large_gap_pct:
             check["flags"].append("large_gap_down")
+
+        # Optional enrichments: only computed when optional inputs are provided.
+        auction_turnover = _opt_float(quote.get("auction_turnover")) if quote else None
+        avg_turnover_20d = (
+            _opt_float(quote.get("avg_turnover_20d")) if quote else None
+        ) or _opt_float(item.get("avg_turnover_20d"))
+        if (
+            auction_turnover is not None
+            and avg_turnover_20d is not None
+            and auction_turnover >= 0
+            and avg_turnover_20d > 0
+        ):
+            ratio = round(auction_turnover / avg_turnover_20d, 4)
+            check["auction_volume_ratio"] = ratio
+            if ratio >= AUCTION_VOLUME_SURGE_RATIO:
+                check["flags"].append("auction_volume_surge")
+            elif ratio < AUCTION_THIN_LIQUIDITY_RATIO:
+                check["flags"].append("auction_thin_liquidity")
+
+        if benchmark_gap_pct is not None:
+            rel_gap = round(gap - float(benchmark_gap_pct), 6)
+            check["relative_gap_pct"] = rel_gap
+            if rel_gap <= AUCTION_WEAK_VS_INDEX_PCT:
+                check["flags"].append("weak_vs_index")
+            elif rel_gap >= AUCTION_STRONG_VS_INDEX_PCT:
+                check["flags"].append("strong_vs_index")
+
+        luk_setup = item.get("luk_setup") if isinstance(item.get("luk_setup"), Mapping) else None
+        stop_price = _opt_float(luk_setup.get("stop_price")) if luk_setup else None
+        if stop_price is not None and stop_price > 0:
+            stop_dist = round((price - stop_price) / price, 6)
+            check["stop_distance_at_auction_pct"] = stop_dist
+            if price <= stop_price:
+                check["flags"].append("below_luk_stop")
+            elif stop_dist > AUCTION_STOP_TOO_WIDE_PCT:
+                check["flags"].append("stop_too_wide")
+
         if item["category"] == "target":
             check["suggested_at_auction"] = suggested_lot_quantity(
                 capital, float(item["target_weight"]), price, symbol, cost_model
             )
         checks.append(check)
-    return {
+    result: dict[str, object] = {
         "schema_version": BRIEF_SCHEMA_VERSION,
         "kind": "premarket_auction_check",
         "signal_date": brief["signal_date"],
@@ -313,6 +423,9 @@ def evaluate_auction(
         "counts_toward_paper_evidence": False,
         "checks": checks,
     }
+    if benchmark_gap_pct is not None:
+        result["benchmark_gap_pct"] = float(benchmark_gap_pct)
+    return result
 
 
 def write_once(path: Path, text: str) -> None:
@@ -339,7 +452,10 @@ def dumps(payload: Mapping[str, object]) -> str:
 
 
 def render_brief_html(
-    brief: Mapping[str, object], auction: Mapping[str, object] | None = None
+    brief: Mapping[str, object],
+    auction: Mapping[str, object] | None = None,
+    *,
+    nav_visible: bool = False,
 ) -> str:
     checks = {c["symbol"]: c for c in auction["checks"]} if auction else {}
     sections = []
@@ -350,38 +466,31 @@ def render_brief_html(
     ):
         rows = "".join(_html_row(item, checks.get(item["symbol"])) for item in items)
         sections.append(
-            f"<h2>{_e(title)} ({len(items)})</h2>"
+            f"<section class='panel section-pad table-section'><h2>{_e(title)} ({len(items)})</h2>"
             + (
-                "<div class='scroll'><table><tr><th>Symbol</th><th>Score</th>"
-                "<th>v2 research</th><th>Prev close</th>"
+                "<div class='table-wrap'><table class='brief-table'><thead><tr>"
+                "<th>Symbol</th><th>Score</th><th>v2 research</th><th>Prev close</th>"
                 "<th>Limit down / up</th><th>Suggested shares</th><th>Auction</th>"
-                "<th>Risk flags</th><th>Overnight announcements</th></tr>"
-                f"{rows}</table></div>"
+                "<th>Risk flags</th><th>Overnight announcements</th></tr></thead>"
+                f"<tbody>{rows}</tbody></table></div>"
                 if items
-                else "<p>None.</p>"
+                else "<p class='empty-table'>None.</p>"
             )
+            + "</section>"
         )
-    systemic = brief.get("systemic_risk") or {}
-    title = f"Pre-market brief — signal {brief['signal_date']}"
+    signal_date = str(brief["signal_date"])
+    title = f"盘前指挥台 · Pre-market brief · {signal_date}"
+    payload = json.dumps(
+        {"brief": brief, "auction": auction}, ensure_ascii=False, separators=(",", ":")
+    ).replace("<", "\\u003c")
+    template = TEMPLATE_PATH.read_text(encoding="utf-8")
     return (
-        "<!doctype html><html lang='zh-CN'><head><meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        f"<title>{_e(title)}</title><style>{_CSS}</style></head><body>"
-        f"<h1>{_e(title)}</h1>"
-        f"<p class='note'>Research only. Orders are placed by a human at the next session open. "
-        f"Capital {brief['capital']:,.0f}; buy threshold {brief['policy']['buy_threshold']}; "
-        f"min confidence {brief['policy']['minimum_score_confidence']}. "
-        f"Systemic warnings: {_e(json.dumps(systemic.get('by_rule', {}), ensure_ascii=False))}. "
-        "This brief and the human ledger never count toward V2 paper evidence.</p>"
-        + f"<p class='note'>{_e(_v2_note(brief.get('scoring_v2') or {}))}</p>"
-        + (
-            f"<p class='note'>Auction check applied (near limit {auction['near_limit_pct']:.0%}, "
-            f"large gap {auction['large_gap_pct']:.0%}).</p>"
-            if auction
-            else ""
-        )
-        + "".join(sections)
-        + "</body></html>\n"
+        template.replace("__PREMARKET_TITLE__", _e(title))
+        .replace("__PREMARKET_SIGNAL_DATE__", _e(signal_date))
+        .replace("__PREMARKET_NAV_HIDDEN__", "" if nav_visible else " hidden")
+        .replace("__PREMARKET_V2_NOTE__", _e(_v2_note(brief.get("scoring_v2") or {})))
+        .replace("__PREMARKET_SSR_TABLES__", "".join(sections))
+        .replace("__PREMARKET_DATA__", payload)
     )
 
 
@@ -531,11 +640,13 @@ def _e(value: object) -> str:
     return html.escape(str(value))
 
 
-_CSS = """
-body{font:14px/1.5 -apple-system,system-ui,sans-serif;margin:16px;color:#1d1d1f;background:#fff}
-table{border-collapse:collapse;width:100%;margin-bottom:24px}.scroll{overflow-x:auto}
-th,td{border:1px solid #d2d2d7;padding:6px 8px;vertical-align:top;text-align:left}
-td:nth-child(2){min-width:280px}th{background:#f5f5f7}.note{color:#555}.flag{color:#b3261e;font-weight:600}
-@media (prefers-color-scheme:dark){body{background:#111;color:#eee}th{background:#222}
-th,td{border-color:#444}.note{color:#aaa}.flag{color:#ff8a80}}
-"""
+def _opt_float(value: object) -> float | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None

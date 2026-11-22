@@ -22,6 +22,7 @@ if str(SRC) not in sys.path:
 from fintech_quant.reports.demo_fixtures import (  # noqa: E402
     build_demo_workspace,
     demo_jev_payload,
+    demo_premarket_bundle,
     demo_research_payload,
 )
 from fintech_quant.reports.desk import build_desk_snapshot, render_desk_html  # noqa: E402
@@ -31,6 +32,7 @@ from fintech_quant.reports.picker import (  # noqa: E402
     stock_payload,
     universe_payload,
 )
+from fintech_quant.reports.premarket_brief import render_brief_html  # noqa: E402
 
 PICKER_TEMPLATE = SRC / "fintech_quant" / "reports" / "picker_template.html"
 
@@ -48,18 +50,29 @@ DEMO_BANNER_HTML = (
 
 DESK_NAV_OLD = (
     '<nav class="nav" id="nav" hidden><a href="/" aria-current="page">交易桌</a>'
-    '<a href="/picks">选股</a></nav>'
+    '<a href="/picks">选股</a><a href="/premarket">盘前</a></nav>'
 )
 DESK_NAV_NEW = (
     '<nav class="nav" id="nav"><a href="./index.html" aria-current="page">交易桌</a>'
-    '<a href="./picks.html">选股</a></nav>'
+    '<a href="./picks.html">选股</a><a href="./premarket.html">盘前</a></nav>'
 )
 PICKER_NAV_OLD = (
-    '<nav class="nav"><a href="/">交易桌</a><a href="/picks" aria-current="page">选股</a></nav>'
+    '<nav class="nav"><a href="/">交易桌</a><a href="/picks" aria-current="page">选股</a>'
+    '<a href="/premarket">盘前</a></nav>'
 )
 PICKER_NAV_NEW = (
     '<nav class="nav"><a href="./index.html">交易桌</a>'
-    '<a href="./picks.html" aria-current="page">选股</a></nav>'
+    '<a href="./picks.html" aria-current="page">选股</a>'
+    '<a href="./premarket.html">盘前</a></nav>'
+)
+PREMARKET_NAV_OLD = (
+    '<nav class="nav" id="nav"><a href="/">交易桌</a><a href="/picks">选股</a>'
+    '<a href="/premarket" aria-current="page">盘前</a></nav>'
+)
+PREMARKET_NAV_NEW = (
+    '<nav class="nav" id="nav"><a href="./index.html">交易桌</a>'
+    '<a href="./picks.html">选股</a>'
+    '<a href="./premarket.html" aria-current="page">盘前</a></nav>'
 )
 
 
@@ -118,7 +131,7 @@ def _static_fetch_shim(bundle: dict[str, object]) -> str:
 
 
 def build_demo_pages(output_dir: Path) -> list[Path]:
-    """Generate ``index.html``, ``picks.html`` and ``.nojekyll`` into ``output_dir``."""
+    """Generate ``index.html``, ``picks.html``, ``premarket.html`` and ``.nojekyll``."""
     output_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="vibe-trading-pages-") as tmp:
         demo = build_demo_workspace(Path(tmp))
@@ -169,13 +182,28 @@ def build_demo_pages(output_dir: Path) -> list[Path]:
             picker_html, "</head>", f"{_static_fetch_shim(bundle)}\n</head>", label="picker head"
         )
 
+        premarket_bundle = demo_premarket_bundle(demo, picker_data)
+        premarket_html = render_brief_html(
+            premarket_bundle["brief"],  # type: ignore[arg-type]
+            premarket_bundle.get("auction"),  # type: ignore[arg-type]
+            nav_visible=True,
+        )
+        premarket_html = _replace_required(
+            premarket_html, PREMARKET_NAV_OLD, PREMARKET_NAV_NEW, label="premarket nav"
+        )
+        premarket_html = _replace_required(
+            premarket_html, "<body>", f"<body>\n{DEMO_BANNER_HTML}", label="premarket body"
+        )
+
     index_path = output_dir / "index.html"
     picks_path = output_dir / "picks.html"
+    premarket_path = output_dir / "premarket.html"
     nojekyll_path = output_dir / ".nojekyll"
     index_path.write_text(desk_html, encoding="utf-8")
     picks_path.write_text(picker_html, encoding="utf-8")
+    premarket_path.write_text(premarket_html, encoding="utf-8")
     nojekyll_path.write_text("", encoding="utf-8")
-    return [index_path, picks_path, nojekyll_path]
+    return [index_path, picks_path, premarket_path, nojekyll_path]
 
 
 def main() -> int:

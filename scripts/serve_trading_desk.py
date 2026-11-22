@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import queue
@@ -21,8 +22,10 @@ if str(SRC) not in sys.path:
 
 from fintech_quant.information.stock_intel import prune_daily_cache  # noqa: E402
 from fintech_quant.reports.demo_fixtures import (  # noqa: E402
+    DemoPaths,
     build_demo_workspace,
     demo_jev_payload,
+    demo_premarket_bundle,
     demo_research_payload,
 )
 from fintech_quant.reports.desk import (  # noqa: E402
@@ -44,6 +47,11 @@ from fintech_quant.reports.picker import (  # noqa: E402
     stock_payload,
     universe_payload,
 )
+from fintech_quant.reports.premarket_brief import (  # noqa: E402
+    build_brief,
+    latest_complete_cycle as latest_premarket_cycle,
+    render_brief_html,
+)
 
 
 PICKER_TEMPLATE = SRC / "fintech_quant" / "reports" / "picker_template.html"
@@ -58,6 +66,8 @@ class DeskState:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.demo = bool(getattr(args, "demo", False))
+        self.demo_paths: DemoPaths | None = getattr(args, "_demo_paths", None)
+        self._demo_premarket_cache: dict[str, object] | None = None
         self.lock = threading.Lock()
         self.subscribers: list[queue.Queue[str]] = []
         self.quotes: list[dict[str, object]] = []
@@ -171,6 +181,38 @@ class DeskState:
         path = self.args.scoring_v2
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
+    def premarket_bundle(self) -> dict[str, object]:
+        """Latest pre-market brief and optional 09:25 auction check."""
+        if self.demo and self.demo_paths is not None:
+            if self._demo_premarket_cache is None:
+                self._demo_premarket_cache = demo_premarket_bundle(self.demo_paths, self.picker())
+            return self._demo_premarket_cache
+
+        root = self.args.premarket_root
+        if root is not None and root.exists():
+            briefs = sorted(root.glob("*/brief.json"))
+            if briefs:
+                latest = briefs[-1]
+                brief = json.loads(latest.read_text(encoding="utf-8"))
+                auction_path = latest.with_name("auction.json")
+                auction = (
+                    json.loads(auction_path.read_text(encoding="utf-8"))
+                    if auction_path.exists()
+                    else None
+                )
+                return {"brief": brief, "auction": auction}
+
+        try:
+            cycle_dir = latest_premarket_cycle(self.args.cycle_root)
+            brief = build_brief(
+                cycle_dir,
+                float(self.args.capital),
+                scoring_v2_path=self.args.scoring_v2,
+            )
+            return {"brief": brief, "auction": None}
+        except (FileNotFoundError, KeyError, ValueError) as exc:
+            return {"brief": None, "auction": None, "error": str(exc)}
+
     def subscribe(self) -> queue.Queue[str]:
         subscriber: queue.Queue[str] = queue.Queue()
         with self.lock:
@@ -204,6 +246,26 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                     "__PICKER_TITLE__", f"选股 · CSI 300 · {as_of}"
                 )
                 self._send(body.encode("utf-8"), "text/html; charset=utf-8")
+            elif path == "/premarket":
+                bundle = state.premarket_bundle()
+                if bundle.get("brief") is not None:
+                    html_body = render_brief_html(
+                        bundle["brief"],  # type: ignore[arg-type]
+                        bundle.get("auction"),  # type: ignore[arg-type]
+                        nav_visible=True,
+                    )
+                else:
+                    msg = html.escape(str(bundle.get("error") or "尚未生成盘前简报"))
+                    html_body = (
+                        "<!doctype html><html lang='zh-CN'><meta charset='utf-8'>"
+                        "<title>盘前指挥台</title><body style='font:14px/1.6 system-ui;"
+                        "background:#0e0f13;color:#f0efec;padding:24px'>"
+                        "<p><a href='/' style='color:#e87ba4'>← 返回交易桌</a></p>"
+                        f"<h2>盘前简报不可用</h2><p>{msg}</p></body></html>"
+                    )
+                self._send(html_body.encode("utf-8"), "text/html; charset=utf-8")
+            elif path == "/api/premarket":
+                self._json(state.premarket_bundle())
             elif path == "/api/universe":
                 self._json(universe_payload(state.picker(), state.live))
             elif path == "/api/picks":
@@ -378,6 +440,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--intel-cache", type=Path, default=ROOT / "outputs/research_cache")
     parser.add_argument("--jev-records", type=Path, default=ROOT / "outputs/jev")
+    parser.add_argument(
+        "--premarket-root",
+        type=Path,
+        default=ROOT / "outputs/premarket",
+        help="Directory holding pre-market briefs (<date>/brief.json and optional auction.json).",
+    )
+    parser.add_argument(
+        "--capital",
+        type=float,
+        default=100_000.0,
+        help="Reference capital used when building a pre-market brief on the fly.",
+    )
     parser.add_argument("--quotes", type=Path, default=None, help="Realtime quote CSV to watch.")
     parser.add_argument("--live-quotes", action="store_true", help="Poll AkShare spot quotes.")
     parser.add_argument("--quote-interval", type=float, default=30.0)
@@ -397,6 +471,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _apply_demo_paths(args: argparse.Namespace, demo_root: Path) -> None:
     demo = build_demo_workspace(demo_root)
+    args._demo_paths = demo
     args.cycle_root = demo.cycle_root
     args.pnl_curve = demo.pnl_curve
     args.state = demo.state
@@ -406,6 +481,7 @@ def _apply_demo_paths(args: argparse.Namespace, demo_root: Path) -> None:
     args.scoring_v2 = demo.scoring_v2
     args.intel_cache = demo.intel_cache
     args.jev_records = demo.jev_records
+    args.premarket_root = demo.root / "premarket"
     args.quotes = None
     args.live_quotes = False
 
@@ -443,10 +519,10 @@ def main() -> int:
         threading.Thread(target=watch, args=(state, args.poll, stop), daemon=True).start()
         server = ThreadingHTTPServer((args.host, args.port), make_handler(state))
         server.daemon_threads = True
-        mode_tag = " [DEMO · synthetic data]" if args.demo else ""
+        mode_tag = " [DEMO]" if args.demo else ""
         print(
             f"trading desk on http://{args.host}:{args.port} "
-            f"(picker at /picks) as_of={state.snapshot.get('as_of')}{mode_tag}",
+            f"(picker at /picks, premarket at /premarket) as_of={state.snapshot.get('as_of')}{mode_tag}",
             flush=True,
         )
         try:

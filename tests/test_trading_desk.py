@@ -333,7 +333,7 @@ def test_desk_defaults_resolve_from_project_root_not_cwd(tmp_path, monkeypatch) 
 
     for name in (
         "cycle_root", "pnl_curve", "state", "pool_root", "pool_v2_root",
-        "scoring_v2", "intel_cache", "jev_records",
+        "scoring_v2", "intel_cache", "jev_records", "premarket_root",
     ):
         path = getattr(args, name)
         assert path.is_absolute() and path.is_relative_to(SCRIPT_ROOT), name

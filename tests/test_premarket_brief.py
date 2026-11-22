@@ -118,6 +118,49 @@ class AuctionCheckTest(unittest.TestCase):
         self.assertEqual(checks["600005.SH"]["flags"], [])
         self.assertNotIn("suggested_at_auction", checks["600005.SH"])
 
+    def test_optional_auction_enrichments_compute_ratio_relative_gap_and_stop_distance(self) -> None:
+        item_a = _item("600001.SH", "target", 10.0)
+        item_a["luk_setup"] = {"state": "trigger", "stop_price": 9.8, "stop_pct": 0.02}
+        item_b = _item("600002.SH", "target", 10.0)
+        item_b["luk_setup"] = {"state": "setup", "stop_price": 9.5, "stop_pct": 0.05}
+        brief = {
+            "signal_date": "2026-07-21",
+            "capital": 100_000.0,
+            "policy": POLICY,
+            "targets": [item_a, item_b],
+            "near_miss": [],
+        }
+        quotes = [
+            {
+                "symbol": "600001.SH",
+                "price": "9.70",
+                "auction_turnover": 1_000_000.0,
+                "avg_turnover_20d": 500_000_000.0,
+            },
+            {
+                "symbol": "600002.SH",
+                "price": "10.45",
+                "auction_turnover": 80_000_000.0,
+                "avg_turnover_20d": 400_000_000.0,
+            },
+        ]
+        result = evaluate_auction(brief, quotes, benchmark_gap_pct=0.01)
+        self.assertEqual(result["benchmark_gap_pct"], 0.01)
+        checks = {c["symbol"]: c for c in result["checks"]}
+        self.assertEqual(checks["600001.SH"]["auction_volume_ratio"], 0.002)
+        self.assertAlmostEqual(checks["600001.SH"]["relative_gap_pct"], -0.04, places=4)
+        self.assertLess(checks["600001.SH"]["stop_distance_at_auction_pct"], 0.0)
+        self.assertIn("auction_thin_liquidity", checks["600001.SH"]["flags"])
+        self.assertIn("weak_vs_index", checks["600001.SH"]["flags"])
+        self.assertIn("below_luk_stop", checks["600001.SH"]["flags"])
+
+        self.assertEqual(checks["600002.SH"]["auction_volume_ratio"], 0.2)
+        self.assertAlmostEqual(checks["600002.SH"]["relative_gap_pct"], 0.035, places=4)
+        self.assertGreater(checks["600002.SH"]["stop_distance_at_auction_pct"], 0.08)
+        self.assertIn("auction_volume_surge", checks["600002.SH"]["flags"])
+        self.assertIn("strong_vs_index", checks["600002.SH"]["flags"])
+        self.assertIn("stop_too_wide", checks["600002.SH"]["flags"])
+
 
 class EvidenceUntouchedTest(unittest.TestCase):
     def test_brief_auction_and_ledger_never_modify_evidence(self) -> None:
@@ -328,6 +371,11 @@ class ScoringV2DisplayTest(unittest.TestCase):
         self.assertIn("<b>99.0</b> pct", html_text)
         self.assertIn("not scored", html_text)
         self.assertIn("inverted (lower ranks higher): roe.", html_text)
+        self.assertIn("portfolio_summary", shown)
+        self.assertEqual(shown["portfolio_summary"]["drawdown_reduce_limit"], 0.08)
+        self.assertEqual(shown["portfolio_summary"]["drawdown_liquidate_limit"], 0.09)
+        self.assertGreater(shown["portfolio_summary"]["planned_buy_notional"], 0.0)
+        self.assertNotIn("__PREMARKET_", html_text)
 
 
 def build_fixture(cycle_root: Path, paper_root: Path) -> None:

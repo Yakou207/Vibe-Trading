@@ -423,6 +423,9 @@ def build_demo_workspace(root: Path) -> DemoPaths:
         "buy_threshold": 70.0,
         "minimum_score_confidence": 0.8,
         "maximum_position_weight": 0.08,
+        "commission_rate": 0.0003,
+        "minimum_commission": 5.0,
+        "slippage_rate": 0.0005,
         "drawdown_reduce": 0.08,
         "drawdown_liquidate": 0.09,
         "drawdown_validation_limit": 0.1,
@@ -477,7 +480,7 @@ def build_demo_workspace(root: Path) -> DemoPaths:
             cdir / "paper_report.json",
             {
                 "account": {
-                    "cash": round(cur_equity - 15740.0, 2),
+                    "cash": round(cur_equity - 21950.0, 2),
                     "positions": {
                         "999001.SH": {
                             "shares": 100,
@@ -489,6 +492,11 @@ def build_demo_workspace(root: Path) -> DemoPaths:
                             "cost_basis": 12.1,
                             "last_buy_date": cycle_days[min(1, idx)],
                         },
+                        "999009.SH": {
+                            "shares": 100,
+                            "cost_basis": 42.5,
+                            "last_buy_date": cycle_days[0],
+                        },
                     },
                     "drawdown_control_state": {
                         "actual_peak": max(equity_path[: idx + 1]),
@@ -496,6 +504,11 @@ def build_demo_workspace(root: Path) -> DemoPaths:
                         "transitions": [],
                     },
                     "pending_signal_date": day,
+                    "pending_targets": {
+                        "999001.SH": 0.08,
+                        "999002.SH": 0.08,
+                        "999003.SH": 0.08,
+                    },
                     "nav_history": nav_history,
                     "shadow_nav_history": nav_history,
                 },
@@ -562,9 +575,18 @@ def build_demo_workspace(root: Path) -> DemoPaths:
             manifest_path,
             {
                 "schema_version": 2,
+                "kind": "paper_trading_cycle",
                 "as_of": day,
                 "git_sha": "demo-snapshot",
                 "policy": policy,
+                "artifacts": {
+                    "targets": _file_ref(cdir / "targets.csv"),
+                    "paper_report": _file_ref(cdir / "paper_report.json"),
+                },
+                "inputs": {
+                    "execution_prices": _file_ref(daily_csv),
+                    "current_universe": _file_ref(cdir / "current_universe.csv"),
+                },
                 "evidence_parent": {"sha256": parent_sha} if parent_sha else None,
             },
         )
@@ -885,3 +907,252 @@ def demo_jev_payload(data: PickerData, query: str) -> dict[str, object]:
         ],
         "cost_usd": 0.0,
     }
+
+
+def _spark(end: float, change_pct: float, drift: float, amp: float, phase: float) -> list[float]:
+    start = end / (1.0 + drift)
+    pts: list[float] = []
+    for i in range(19):
+        t = i / 19.0
+        val = start + (end - start) * t + end * amp * math.sin(t * 2.4 * math.pi + phase)
+        pts.append(round(val, 2))
+    prev = round(end / (1.0 + change_pct), 2)
+    pts[-1] = prev
+    pts.append(round(end, 2))
+    return pts
+
+
+def demo_premarket_bundle(
+    demo: DemoPaths, picker_data: PickerData | None = None
+) -> dict[str, object]:
+    """Build a rich, offline pre-market brief + sample auction check for demo mode."""
+    from fintech_quant.reports.premarket_brief import build_brief, evaluate_auction
+
+    market_pulse: dict[str, object] = {
+        "status": "ok",
+        "regime": "risk_on",
+        "regime_note": "主要宽基站上 20/50 日均线，两市成交温和放大，风险偏好偏积极",
+        "indices": [
+            {
+                "symbol": "000001.SH",
+                "name": "上证指数",
+                "close": 3386.42,
+                "change_pct": 0.0068,
+                "sparkline": _spark(3386.42, 0.0068, 0.024, 0.006, 0.2),
+                "above_ma20": True,
+                "above_ma50": True,
+                "above_ma250": True,
+            },
+            {
+                "symbol": "399001.SZ",
+                "name": "深证成指",
+                "close": 10842.15,
+                "change_pct": 0.0112,
+                "sparkline": _spark(10842.15, 0.0112, 0.036, 0.009, 0.7),
+                "above_ma20": True,
+                "above_ma50": True,
+                "above_ma250": True,
+            },
+            {
+                "symbol": "399006.SZ",
+                "name": "创业板指",
+                "close": 2248.60,
+                "change_pct": 0.0165,
+                "sparkline": _spark(2248.60, 0.0165, 0.048, 0.012, 1.1),
+                "above_ma20": True,
+                "above_ma50": True,
+                "above_ma250": True,
+            },
+            {
+                "symbol": "000300.SH",
+                "name": "沪深300",
+                "close": 3962.00,
+                "change_pct": 0.0041,
+                "sparkline": _spark(3962.00, 0.0041, 0.018, 0.005, 0.4),
+                "above_ma20": True,
+                "above_ma50": True,
+                "above_ma250": True,
+            },
+            {
+                "symbol": "000905.SH",
+                "name": "中证500",
+                "close": 5918.30,
+                "change_pct": 0.0094,
+                "sparkline": _spark(5918.30, 0.0094, 0.031, 0.008, 1.5),
+                "above_ma20": True,
+                "above_ma50": True,
+                "above_ma250": False,
+            },
+            {
+                "symbol": "000688.SH",
+                "name": "科创50",
+                "close": 1012.85,
+                "change_pct": -0.0038,
+                "sparkline": _spark(1012.85, -0.0038, -0.009, 0.011, 2.0),
+                "above_ma20": False,
+                "above_ma50": True,
+                "above_ma250": True,
+            },
+        ],
+        "breadth": {
+            "advancers": 3180,
+            "decliners": 1790,
+            "unchanged": 172,
+            "limit_up_count": 64,
+            "limit_down_count": 6,
+            "turnover_cny_bn": 1465.8,
+            "turnover_vs_5d_pct": 0.118,
+            "csi300_above_ma20_pct": 0.67,
+            "csi300_above_ma50_pct": 0.58,
+            "csi300_above_ma250_pct": 0.63,
+        },
+        "overseas": [
+            {"symbol": "FTSE.A50", "name": "富时A50", "value": 13482.5, "change_pct": 0.0042},
+            {"symbol": "NDX", "name": "纳斯达克", "value": 19120.4, "change_pct": 0.0068},
+            {"symbol": "SPX", "name": "标普500", "value": 5942.1, "change_pct": 0.0045},
+            {"symbol": "HXC", "name": "纳斯达克金龙", "value": 7128.0, "change_pct": 0.0115},
+            {"symbol": "USDCNH", "name": "离岸人民币", "value": 7.184, "change_pct": -0.0014},
+        ],
+        "sector_alerts": [
+            {
+                "industry": "电力设备",
+                "peer": "海外新能源指数",
+                "change_pct": 0.021,
+                "note": "隔夜海外新能源板块走强，观察早盘竞价承接",
+            },
+            {
+                "industry": "有色金属",
+                "peer": "伦铜主力合约",
+                "change_pct": 0.013,
+                "note": "工业金属夜盘小幅收涨",
+            },
+        ],
+    }
+
+    pitfall_calendar: dict[str, object] = {
+        "status": "ok",
+        "alerts": [
+            {
+                "symbol": "999003.SH",
+                "name": "明川汽车",
+                "kind": "earnings",
+                "severity": "medium",
+                "date": "2026-11-06",
+                "title": "业绩说明会窗口",
+                "detail": "拟于次一交易日盘后召开三季报业绩说明会，留意早盘竞价及盘中波动扩大。",
+            },
+            {
+                "symbol": "999009.SH",
+                "name": "青梧生物",
+                "kind": "unlock",
+                "severity": "high",
+                "date": "2026-11-09",
+                "title": "限售股解禁提示",
+                "detail": "约占总股本 4.2% 的限售股将于下周初上市流通，该标的已进入纸面退出名单。",
+            },
+        ],
+    }
+
+    brief = build_brief(
+        demo.cycle_root / DEMO_AS_OF,
+        100_000.0,
+        near_miss_floor=60.0,
+        scoring_v2_path=demo.scoring_v2,
+        market_pulse=market_pulse,
+        pitfall_calendar=pitfall_calendar,
+    )
+
+    spec_map = {str(spec["symbol"]): spec for spec in DEMO_STOCKS}
+    screen_map = (
+        picker_data.screen_results
+        if picker_data is not None and hasattr(picker_data, "screen_results")
+        else {}
+    )
+    luk_notes = {
+        "trigger": "EMA9/21 多头排列，放量收复整理平台中枢",
+        "setup": "强势趋势内缩量盘整，等待突破确认",
+        "leader_no_base": "中期动量较强但缺乏紧凑整理平台",
+        "sideways": "箱体震荡区间内，趋势方向尚不明确",
+        "downtrend": "位于关键均线下方，保持观望或执行退出",
+    }
+
+    for group_key in ("targets", "near_miss", "paper_exits"):
+        for item in brief[group_key]:  # type: ignore[index]
+            sym = str(item["symbol"])
+            spec = spec_map.get(sym, {})
+            prev = float(item["previous_close"]) if item.get("previous_close") else None
+            profile = str(spec.get("profile", "sideways"))
+            state = profile if profile in {"trigger", "setup", "leader_no_base"} else "avoid"
+            stop_pct = 0.048 if state == "trigger" else 0.056 if state == "setup" else 0.075
+            screen_row = screen_map.get(sym) if isinstance(screen_map, Mapping) else None
+            if screen_row is not None and getattr(screen_row, "state", None):
+                state = str(screen_row.state)
+            item["luk_setup"] = {
+                "state": state,
+                "stop_price": round(prev * (1.0 - stop_pct), 2) if prev else None,
+                "stop_pct": stop_pct,
+                "confluence": 3 if state == "trigger" else 2 if state == "setup" else 0,
+                "reward_r": 2.6 if state == "trigger" else 2.1 if state == "setup" else None,
+                "base_days": 28 if state in {"trigger", "setup"} else None,
+                "trigger_note": luk_notes.get(profile, ""),
+            }
+            name = str(item.get("name", ""))
+            rev_yoy = spec.get("rev_yoy", 0.0)
+            prof_yoy = spec.get("profit_yoy", 0.0)
+            if sym == "999009.SH":
+                item["overnight_announcements"] = {
+                    "status": "alert",
+                    "items": [
+                        {
+                            "title": f"{name}关于部分限售股份上市流通的提示性公告",
+                            "published_at": f"{DEMO_AS_OF} 19:20",
+                            "source": "cninfo_notice",
+                            "polarity": "negative",
+                            "url": "",
+                            "summary": "本次解除限售股份占总股本约 4.2%，上市流通日为下一周首个交易日。",
+                        }
+                    ],
+                }
+            elif sym in {"999001.SH", "999002.SH", "999003.SH"}:
+                item["overnight_announcements"] = {
+                    "status": "ok",
+                    "items": [
+                        {
+                            "title": f"{name}三季报要点跟踪：营收同比 +{rev_yoy}%，净利同比 +{prof_yoy}%",
+                            "published_at": f"{DEMO_AS_OF} 18:15",
+                            "source": "cninfo_notice",
+                            "polarity": "positive",
+                            "url": "",
+                            "summary": "毛利率与经营性现金流保持平稳，未见监管问询或重大减持提示。",
+                        }
+                    ],
+                }
+            else:
+                item["overnight_announcements"] = {"status": "clear", "items": []}
+
+    # Sample 09:25 call auction quotes illustrating normal, strong volume, and weak relative gap
+    sample_multipliers = {
+        "999001.SH": (1.012, 68_000_000.0, 420_000_000.0),  # +1.2% gap, volume surge (16.2%)
+        "999002.SH": (1.006, 22_000_000.0, 310_000_000.0),  # +0.6% clean normal open
+        "999003.SH": (0.982, 18_000_000.0, 290_000_000.0),  # -1.8% gap, weak_vs_index (-2.22%)
+        "999007.SH": (1.003, 9_500_000.0, 180_000_000.0),   # near miss normal
+        "999008.SH": (1.008, 12_000_000.0, 210_000_000.0),  # near miss normal
+    }
+    sample_quotes: list[dict[str, object]] = []
+    for item in [*brief["targets"], *brief["near_miss"]]:  # type: ignore[index]
+        sym = str(item["symbol"])
+        prev = item.get("previous_close")
+        if prev is None or sym not in sample_multipliers:
+            continue
+        mult, auc_to, avg_to = sample_multipliers[sym]
+        sample_quotes.append(
+            {
+                "symbol": sym,
+                "price": f"{round(float(prev) * mult, 2):.2f}",
+                "auction_turnover": auc_to,
+                "avg_turnover_20d": avg_to,
+            }
+        )
+
+    auction = evaluate_auction(brief, sample_quotes, benchmark_gap_pct=0.0042)
+    return {"brief": brief, "auction": auction}
