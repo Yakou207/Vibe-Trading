@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__PICKER_TITLE__</title>
+<script>
+(function(){try{var t=localStorage.getItem("vibe_theme")||localStorage.getItem("vibe-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(_){}})();
+</script>
 <style>
 :root {
   color-scheme: dark;
@@ -40,7 +43,7 @@
     --surface-hover: #eae8e1;
     --border: #d9d7cf;
     --grid: #e8e6df;
-    --shadow: 0 1px 2px rgba(15, 15, 15, .04), 0 0 0 1px var(--border);
+    --shadow: 0 1px 2px rgba(15, 15, 15, .04);
     --text-primary: #0b0b0b;
     --text-secondary: #52514e;
     --text-muted: #7a7972;
@@ -64,7 +67,7 @@
   --surface-hover: #eae8e1;
   --border: #d9d7cf;
   --grid: #e8e6df;
-  --shadow: 0 1px 2px rgba(15, 15, 15, .04), 0 0 0 1px var(--border);
+  --shadow: 0 1px 2px rgba(15, 15, 15, .04);
   --text-primary: #0b0b0b;
   --text-secondary: #52514e;
   --text-muted: #7a7972;
@@ -89,7 +92,7 @@ body {
   font: 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
-.wrap { max-width: 1440px; margin: 0 auto; padding: 14px 18px 36px; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 16px 20px 40px; }
 .panel {
   background: var(--surface-1);
   border: 1px solid var(--border);
@@ -120,12 +123,12 @@ h2 {
 .brand span { color: var(--accent); }
 .nav { display: flex; gap: 6px; }
 .nav a {
-  font: 600 11.5px var(--mono);
+  font: 600 11.5px/1 var(--mono);
   color: var(--text-secondary);
   text-decoration: none;
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 5px 11px;
+  padding: 6px 12px;
   transition: border-color .15s, color .15s, background .15s;
 }
 .nav a:hover { color: var(--text-primary); border-color: var(--text-muted); }
@@ -183,6 +186,9 @@ h2 {
 .pm-note { font: 11px var(--mono); color: var(--text-muted); }
 .pm-toggle {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font: 600 11px/1 var(--mono);
   padding: 5px 10px;
   border-radius: 6px;
@@ -190,8 +196,11 @@ h2 {
   background: var(--surface-2);
   color: var(--text-secondary);
   cursor: pointer;
+  transition: border-color .15s, color .15s;
 }
-.pm-toggle:hover { color: var(--text-primary); border-color: var(--accent); }
+.pm-toggle + .pm-toggle { margin-left: 0; }
+.pm-toggle:hover:not([disabled]) { color: var(--text-primary); border-color: var(--accent); }
+.pm-toggle[disabled] { opacity: .65; cursor: wait; }
 .pm-body { margin-top: 12px; }
 .pm-body[hidden] { display: none; }
 .pm-unavail {
@@ -346,6 +355,11 @@ h2 {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .search button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 82px;
   font: 600 13px var(--mono);
   padding: 10px 18px;
   border-radius: 8px;
@@ -353,10 +367,94 @@ h2 {
   background: var(--accent);
   color: #0b0b0b;
   cursor: pointer;
-  transition: filter .15s, transform .1s;
+  transition: filter .15s, transform .1s, opacity .15s;
 }
-.search button:hover { filter: brightness(1.06); }
-.search button:active { transform: translateY(1px); }
+.search button:hover:not([disabled]) { filter: brightness(1.06); }
+.search button:active:not([disabled]) { transform: translateY(1px); }
+.search button[disabled] { opacity: .75; cursor: wait; }
+
+/* Loading spinners & shimmer skeletons */
+@keyframes vibe-spin { to { transform: rotate(360deg); } }
+@keyframes vibe-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.btn-spin {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: vibe-spin .7s linear infinite;
+  flex: none;
+}
+.load-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  margin-bottom: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.load-spin {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: vibe-spin .75s linear infinite;
+  flex: none;
+}
+.load-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.load-title { font: 600 12.5px/1.3 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: var(--text-primary); }
+.load-stage { font: 11px/1.35 var(--mono); color: var(--text-muted); }
+.load-timer {
+  margin-left: auto;
+  font: 600 11px/1 var(--mono);
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sk {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-hover) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: vibe-shimmer 1.4s ease-in-out infinite;
+}
+.sk-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.sk-verdict {
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  border-left: 3.5px solid var(--accent);
+  background: var(--surface-2);
+  margin-bottom: 12px;
+  display: grid;
+  gap: 8px;
+}
+.sk-chart {
+  height: 260px;
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.sk-rows { display: grid; gap: 8px; }
+.sk-row { height: 34px; border-radius: 7px; }
+.inline-load {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 28px 16px;
+  color: var(--text-muted);
+  font: 12px var(--mono);
+}
 
 /* Main Layout */
 .grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 14px; }
@@ -554,6 +652,9 @@ tr.click:hover td { background: var(--surface-hover); }
 .flags li.n1::before { content: "▼"; color: var(--down); }
 .flags li.z0::before { content: "●"; color: var(--text-muted); }
 .jev-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font: 600 12.5px var(--mono);
   padding: 8px 15px;
   border-radius: 7px;
@@ -563,7 +664,7 @@ tr.click:hover td { background: var(--surface-hover); }
   cursor: pointer;
 }
 .jev-btn:hover:not([disabled]) { background: var(--accent-soft); }
-.jev-btn[disabled] { opacity: .5; cursor: not-allowed; }
+.jev-btn[disabled] { opacity: .6; cursor: not-allowed; }
 .judgment { font: 700 15px var(--mono); margin: 8px 0; }
 .judgment.support::before { content: "● "; color: var(--good); }
 .judgment.neutral::before { content: "◐ "; color: var(--warning); }
@@ -584,6 +685,10 @@ tr.click:hover td { background: var(--surface-hover); }
 .cost .k { color: var(--text-muted); margin-right: 4px; }
 .sub-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
 
+@media (prefers-reduced-motion: reduce) {
+  .btn-spin, .load-spin, .sk { animation: none; }
+  .nav a, .theme-btn, .pm-toggle, .radar-chip, .search input, .search button, tr.click { transition: none; }
+}
 @media (max-width: 1120px) { .idx-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 1000px) {
   .sub-grid, .grid { grid-template-columns: minmax(0, 1fr); }
@@ -615,7 +720,7 @@ tr.click:hover td { background: var(--surface-hover); }
   <form class="panel search" id="search-form" autocomplete="off">
     <input id="query" list="universe" placeholder="搜索任意 A 股代码或名称，例如 601398、工商银行、300624" aria-label="股票代码或名称">
     <datalist id="universe"></datalist>
-    <button type="submit">分析</button>
+    <button type="submit" id="analyze-btn">分析</button>
     <span class="muted mono" style="font-size:11px">Martin Luk 四步：强势股 → 整理平台 → 平台内强度 → 支撑共振急跌收复</span>
   </form>
 
@@ -688,29 +793,45 @@ tr.click:hover td { background: var(--surface-hover); }
   let chart = null, intraday = null, current = null, view = "daily", intradayTimer = null;
   let premarketCtx = null, latestPicks = null;
 
-  /* Theme toggle with persistence */
+  /* Theme toggle with persistence & cross-tab sync (shared with /) */
+  const THEME_KEY = "vibe_theme";
   const rootEl = document.documentElement;
   const themeBtn = $("theme-toggle");
   function currentTheme() {
-    const explicit = rootEl.getAttribute("data-theme");
+    const explicit = rootEl.dataset.theme;
     if (explicit === "light" || explicit === "dark") return explicit;
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   }
   function syncThemeLabel() {
-    themeBtn.textContent = currentTheme() === "dark" ? "☀ 浅色" : "☾ 深色";
+    if (themeBtn) themeBtn.textContent = currentTheme() === "dark" ? "☀ 浅色" : "☾ 深色";
   }
-  try {
-    const saved = localStorage.getItem("vibe_theme");
-    if (saved === "light" || saved === "dark") rootEl.setAttribute("data-theme", saved);
-  } catch (_) {}
-  syncThemeLabel();
-  themeBtn.addEventListener("click", () => {
-    const next = currentTheme() === "dark" ? "light" : "dark";
-    rootEl.setAttribute("data-theme", next);
-    try { localStorage.setItem("vibe_theme", next); } catch (_) {}
+  function applyTheme(next, persist) {
+    rootEl.dataset.theme = next;
+    if (persist) {
+      try { localStorage.setItem(THEME_KEY, next); } catch (_) {}
+    }
     syncThemeLabel();
     if (current) setView(view);
+  }
+  syncThemeLabel();
+  if (themeBtn) {
+    themeBtn.addEventListener("click", () => {
+      applyTheme(currentTheme() === "dark" ? "light" : "dark", true);
+    });
+  }
+  window.addEventListener("storage", (ev) => {
+    if ((ev.key === THEME_KEY || ev.key === "vibe-theme") && (ev.newValue === "light" || ev.newValue === "dark")) {
+      applyTheme(ev.newValue, false);
+    }
   });
+  if (window.matchMedia) {
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    if (mq.addEventListener) {
+      mq.addEventListener("change", () => {
+        if (!rootEl.dataset.theme) { syncThemeLabel(); if (current) setView(view); }
+      });
+    }
+  }
 
   async function getJSON(url) { const r = await fetch(url); if (!r.ok) throw new Error(`${r.status}`); return r.json(); }
 
@@ -868,7 +989,7 @@ tr.click:hover td { background: var(--surface-hover); }
       ${alerts.length ? `<span class="pm-pill" style="border-color:rgba(250,178,25,.45)">▲ ${alerts.length} 条排雷提示</span>` : (pc.status === "ok" ? '<span class="pm-pill risk_on">排雷全通过</span>' : "")}
       <span class="pm-note">${esc(mp.regime_note || "")}</span>
       ${liveNote(ctx)}
-      ${ctx.live ? `<button type="button" class="pm-toggle" id="pm-refresh-btn" title="重新抓取外盘与隔夜公告">${ctx.live.refreshing ? "抓取中…" : "刷新"}</button>` : ""}
+      ${ctx.live ? `<button type="button" class="pm-toggle" id="pm-refresh-btn" title="重新抓取外盘与隔夜公告"${ctx.live.refreshing ? " disabled" : ""}>${ctx.live.refreshing ? '<span class="btn-spin" aria-hidden="true"></span>抓取中…' : "刷新"}</button>` : ""}
       <button type="button" class="pm-toggle" id="pm-toggle-btn">${collapsed ? "展开 ▾" : "收起 ▴"}</button>
     </div>
     <div class="pm-body" id="pm-body"${collapsed ? " hidden" : ""}>
@@ -888,7 +1009,11 @@ tr.click:hover td { background: var(--surface-hover); }
       btn.addEventListener("click", () => load(btn.dataset.symbol));
     });
     const refreshBtn = $("pm-refresh-btn");
-    if (refreshBtn) refreshBtn.addEventListener("click", () => loadPremarket(true));
+    if (refreshBtn) refreshBtn.addEventListener("click", () => {
+      refreshBtn.disabled = true;
+      refreshBtn.innerHTML = '<span class="btn-spin" aria-hidden="true"></span>抓取中…';
+      loadPremarket(true);
+    });
   }
 
   function liveNote(ctx) {
@@ -1079,7 +1204,7 @@ tr.click:hover td { background: var(--surface-hover); }
     if (v === "daily") { $("chart-note").textContent = ""; drawChart(current); }
     else {
       if (chart) { chart.remove(); chart = null; intraday = null; }
-      $("chart").innerHTML = '<div class="empty">正在抓取分时…</div>';
+      $("chart").innerHTML = '<div class="inline-load"><span class="load-spin" aria-hidden="true"></span><span>正在抓取盘中分时行情…</span></div>';
       loadIntraday(current.symbol, false);
     }
   }
@@ -1177,13 +1302,45 @@ tr.click:hover td { background: var(--surface-hover); }
   const JEV_LABELS = { negative_event_risk: "负面事件风险", earnings_support: "财报支撑", catalyst_quality: "催化剂质量", crowding: "拥挤度", setup_consistency: "形态与基本面一致" };
   const KIND = { news: "新闻", notice: "公告", research: "研报", qa: "互动易", global: "全球" };
 
+  let researchTimer = null;
+  let researchSeq = 0;
+
   async function loadResearch(symbol) {
+    const seq = ++researchSeq;
+    clearInterval(researchTimer);
     const el = $("research");
     el.hidden = false;
-    el.innerHTML = '<div class="empty">正在汇总新闻、公告、研报、互动问答和财报…</div>';
+    const t0 = performance.now();
+    el.innerHTML = `
+      <div class="section-head"><h2>全平台信息 · NLP</h2><span class="right">多源并行汇总中</span></div>
+      <div class="load-banner">
+        <span class="load-spin" aria-hidden="true"></span>
+        <div class="load-copy">
+          <div class="load-title">正在汇总 ${esc(symbol)} 全平台信息</div>
+          <div class="load-stage">并行抓取新闻、公告、研报、互动易、财报与全球快讯…</div>
+        </div>
+        <span class="load-timer" id="research-load-timer">0.0s</span>
+      </div>
+      <div class="sk-rows">
+        <div class="sk sk-row" style="width:94%"></div>
+        <div class="sk sk-row" style="width:82%"></div>
+        <div class="sk sk-row" style="width:88%"></div>
+      </div>`;
+    researchTimer = setInterval(() => {
+      const badge = $("research-load-timer");
+      if (badge) badge.textContent = `${((performance.now() - t0) / 1000).toFixed(1)}s`;
+    }, 100);
     $("jev-panel").hidden = true;
-    try { renderResearch(await getJSON(`/api/research?q=${encodeURIComponent(symbol)}`)); }
-    catch (e) { el.innerHTML = `<div class="empty">信息汇总失败：${esc(e.message)}</div>`; }
+    try {
+      const data = await getJSON(`/api/research?q=${encodeURIComponent(symbol)}`);
+      if (seq !== researchSeq) return;
+      renderResearch(data);
+    } catch (e) {
+      if (seq !== researchSeq) return;
+      el.innerHTML = `<div class="empty">信息汇总失败：${esc(e.message)}</div>`;
+    } finally {
+      if (seq === researchSeq) clearInterval(researchTimer);
+    }
   }
 
   function renderResearch(r) {
@@ -1242,7 +1399,7 @@ tr.click:hover td { background: var(--surface-hover); }
         <div class="note">${ok ? `${esc(r.events_llm.model)} 只给关键词规则没覆盖的条目打标签；规则结果不变，两种情绪并排显示。` : esc(r.events_llm ? r.events_llm.reason : "")}</div>${costBar(null, r.events_llm_spend)}`;
       const btn = $("events-llm-run");
       if (btn && ok) btn.addEventListener("click", async () => {
-        btn.disabled = true; btn.textContent = "LLM 判定中…";
+        btn.disabled = true; btn.innerHTML = '<span class="btn-spin" aria-hidden="true"></span>LLM 判定中…';
         try {
           const res = await fetch(`/api/events_llm?q=${encodeURIComponent(r.symbol)}`, { method: "POST" });
           const data = await res.json();
@@ -1292,7 +1449,7 @@ tr.click:hover td { background: var(--surface-hover); }
         <div class="note">${ok ? `${esc(r.jev.provider)} · ${esc(r.jev.model)}` : `Jev 未配置：${esc(r.jev ? r.jev.reason : "")}。`}</div>${costBar(null, r.jev_spend)}`;
       const btn = $("jev-run");
       if (btn && ok) btn.addEventListener("click", async () => {
-        btn.disabled = true; btn.textContent = "Jev 思考中…";
+        btn.disabled = true; btn.innerHTML = '<span class="btn-spin" aria-hidden="true"></span>Jev 思考中…';
         try {
           const res = await fetch(`/api/jev?q=${encodeURIComponent(r.symbol)}`, { method: "POST" });
           const data = await res.json();
@@ -1314,21 +1471,87 @@ tr.click:hover td { background: var(--surface-hover); }
       ${costBar(record, record.jev_spend || r.jev_spend)}`;
   }
 
+  let stockLoadTimer = null;
+  let loadSeq = 0;
+
+  function renderStockSkeleton(query) {
+    $("stock").innerHTML = `
+      <div class="load-banner" role="status" aria-live="polite">
+        <span class="load-spin" aria-hidden="true"></span>
+        <div class="load-copy">
+          <div class="load-title">分析中 · ${esc(query)}</div>
+          <div class="load-stage" id="stock-load-stage">正在获取前复权日线、估值与财务数据…</div>
+        </div>
+        <span class="load-timer" id="stock-load-timer">0.0s</span>
+      </div>
+      <div class="sk-head">
+        <div class="sk" style="width:140px;height:26px"></div>
+        <div class="sk" style="width:82px;height:20px"></div>
+        <div class="sk" style="width:70px;height:24px"></div>
+        <div class="sk" style="width:190px;height:18px;border-radius:999px"></div>
+      </div>
+      <div class="sk-verdict">
+        <div class="sk" style="width:46%;height:16px"></div>
+        <div class="sk" style="width:88%;height:12px"></div>
+        <div class="sk" style="width:72%;height:12px"></div>
+      </div>
+      <div class="sk sk-chart"></div>
+      <div class="sk-rows">
+        <div class="sk sk-row"></div>
+        <div class="sk sk-row" style="width:92%"></div>
+      </div>`;
+  }
+
+  function setAnalyzeBusy(busy) {
+    const btn = $("analyze-btn");
+    if (!btn) return;
+    btn.disabled = busy;
+    if (busy) {
+      btn.innerHTML = '<span class="btn-spin" aria-hidden="true"></span>分析中';
+    } else {
+      btn.textContent = "分析";
+    }
+  }
+
   async function load(query) {
     if (!query) return;
+    const seq = ++loadSeq;
     clearTimeout(intradayTimer);
+    clearInterval(stockLoadTimer);
+    clearInterval(researchTimer);
+    researchSeq++;
     current = null;
     $("query").value = query;
     history.replaceState(null, "", `#${encodeURIComponent(query)}`);
-    $("stock").innerHTML = '<div class="empty">分析中…</div>';
+    setAnalyzeBusy(true);
+    renderStockSkeleton(query);
     $("research").hidden = true;
     $("jev-panel").hidden = true;
+    const t0 = performance.now();
+    stockLoadTimer = setInterval(() => {
+      const elapsed = (performance.now() - t0) / 1000;
+      const timerEl = $("stock-load-timer");
+      if (timerEl) timerEl.textContent = `${elapsed.toFixed(1)}s`;
+      const stageEl = $("stock-load-stage");
+      if (stageEl) {
+        if (elapsed >= 6.0) stageEl.textContent = "跨境网络延迟较高，正在等待备用源响应或超时回退…";
+        else if (elapsed >= 2.5) stageEl.textContent = "正在并行同步实时 K 线、多因子评分与财务摘要…";
+      }
+    }, 100);
     try {
       const stock = await getJSON(`/api/stock?q=${encodeURIComponent(query)}`);
+      if (seq !== loadSeq) return;
       renderStock(stock);
       if (!stock.error) loadResearch(stock.symbol);
+    } catch (e) {
+      if (seq !== loadSeq) return;
+      $("stock").innerHTML = `<div class="empty">请求失败：${esc(e.message)}</div>`;
+    } finally {
+      if (seq === loadSeq) {
+        clearInterval(stockLoadTimer);
+        setAnalyzeBusy(false);
+      }
     }
-    catch (e) { $("stock").innerHTML = `<div class="empty">请求失败：${esc(e.message)}</div>`; }
   }
 
   $("search-form").addEventListener("submit", (e) => { e.preventDefault(); const q = $("query").value.split(" ")[0]; load(q); });

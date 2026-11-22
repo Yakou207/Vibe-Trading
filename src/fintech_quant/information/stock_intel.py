@@ -14,11 +14,11 @@ import importlib
 import json
 import re
 import shutil
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeout
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Mapping
+
+from fintech_quant.data.net_adaptive import adaptive_timeout, run_parallel_with_deadline
 
 Fetcher = Callable[[str], object]
 SOURCE_LABELS = {
@@ -77,33 +77,56 @@ def collect_stock_intel(
 
     sources: dict[str, dict[str, object]] = {}
     raw: dict[str, list[dict[str, object]]] = {}
-    pool = ThreadPoolExecutor(max_workers=len(active) or 1)
-    futures = {name: pool.submit(fetch, code) for name, fetch in active.items()}
-    try:
-        for name, future in futures.items():
-            try:
-                rows = _rows(future.result(timeout=timeout))
-                raw[name] = rows
-                sources[name] = {
-                    "label": SOURCE_LABELS.get(name, name),
-                    "status": "ok" if rows else "empty",
-                    "count": len(rows),
-                }
-            except FutureTimeout:
+    is_live = fetchers is None
+    effective_timeout = (
+        adaptive_timeout(
+            "stock_intel",
+            timeout,
+            min_timeout=min(timeout, 12.0),
+            max_timeout=max(timeout, 30.0),
+        )
+        if is_live
+        else timeout
+    )
+    tasks = {name: (lambda fn=fetch: fn(code)) for name, fetch in active.items()}
+    values, errors = run_parallel_with_deadline(
+        tasks,
+        effective_timeout,
+        max_workers=len(active) or 1,
+        provider_prefix="intel" if is_live else None,
+    )
+    for name in active:
+        if name in errors:
+            exc = errors[name]
+            if isinstance(exc, TimeoutError):
                 sources[name] = {
                     "label": SOURCE_LABELS.get(name, name),
                     "status": "timeout",
                     "count": 0,
                 }
-            except Exception as exc:  # each provider fails independently
+            else:
                 sources[name] = {
                     "label": SOURCE_LABELS.get(name, name),
                     "status": "failed",
                     "count": 0,
                     "error": f"{type(exc).__name__}: {str(exc)[:160]}",
                 }
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)  # a hung provider must not block the page
+            continue
+        try:
+            rows = _rows(values.get(name))
+            raw[name] = rows
+            sources[name] = {
+                "label": SOURCE_LABELS.get(name, name),
+                "status": "ok" if rows else "empty",
+                "count": len(rows),
+            }
+        except Exception as exc:  # each provider fails independently
+            sources[name] = {
+                "label": SOURCE_LABELS.get(name, name),
+                "status": "failed",
+                "count": 0,
+                "error": f"{type(exc).__name__}: {str(exc)[:160]}",
+            }
 
     items = (
         [_news_item(row) for row in raw.get("news", [])]

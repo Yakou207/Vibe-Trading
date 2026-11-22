@@ -23,7 +23,10 @@ from __future__ import annotations
 import importlib
 import json
 import threading
+import time
 from bisect import bisect_left
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -31,6 +34,13 @@ from typing import Callable, Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from fintech_quant.data.js_runtime import js_call
+from fintech_quant.data.net_adaptive import (
+    adaptive_timeout,
+    call_with_timeout,
+    ordered_providers,
+    remaining_timeout,
+    run_parallel_with_deadline,
+)
 from fintech_quant.data.price_volume_flow import materialize_price_volume_flow_proxy
 from fintech_quant.data.symbols import normalize_a_share_symbol
 from fintech_quant.features.factors import ScoreInput, score_stock
@@ -41,8 +51,16 @@ from fintech_quant.research.momentum_setup import Bar, SetupConfig, SymbolSeries
 SHANGHAI = ZoneInfo("Asia/Shanghai")  # A-share clock, whatever time zone the Mac is in
 HISTORY_DAYS = 430
 VALUATION_HISTORY_SESSIONS = 30
+BAR_TIMEOUT = 15.0
+FUNDAMENTALS_TIMEOUT = 15.0
 INTRADAY_TIMEOUT = 12.0
+FetchKey = tuple[str, ...]
 Fetcher = Callable[..., object]
+
+
+def _is_adaptive(context: LiveContext, names: Sequence[str]) -> bool:
+    """Use adaptive ordering/timeouts only for real network fetchers, not injected test mocks."""
+    return not any(name in context.fetchers for name in names)
 
 
 @dataclass
@@ -109,16 +127,27 @@ def _bar_payload(context: LiveContext, symbol: str, *, fresh: bool = False) -> d
         start = end - timedelta(days=HISTORY_DAYS)
         exchange, code = symbol.split(".")[1].lower(), symbol.split(".")[0]
         errors = []
-        for source in ("sina", "tencent"):
+        adaptive = _is_adaptive(context, ("sina", "tencent"))
+        sources = ordered_providers(("sina", "tencent")) if adaptive else ["sina", "tencent"]
+        for source in sources:
+            kwargs = {
+                "symbol": f"{exchange}{code}",
+                "start_date": start.strftime("%Y%m%d"),
+                "end_date": end.strftime("%Y%m%d"),
+            }
             try:
-                rows = _records(
-                    context._call(
-                        source,
-                        symbol=f"{exchange}{code}",
-                        start_date=start.strftime("%Y%m%d"),
-                        end_date=end.strftime("%Y%m%d"),
+                if adaptive:
+                    timeout = adaptive_timeout(
+                        f"bars:{source}", BAR_TIMEOUT, min_timeout=10.0, max_timeout=28.0
                     )
-                )
+                    raw = call_with_timeout(
+                        lambda s=source, k=kwargs: context._call(s, **k),
+                        timeout,
+                        provider=f"bars:{source}",
+                    )
+                else:
+                    raw = context._call(source, **kwargs)
+                rows = _records(raw)
             except Exception as exc:  # fall through to the next provider
                 errors.append(f"{source}: {type(exc).__name__}")
                 continue
@@ -148,32 +177,62 @@ def live_fundamentals(context: LiveContext, symbol: str) -> dict[str, object]:
             "period": None,
             "valuation_history": [],
         }
-        try:
-            valuation = sorted(_records(context._call("value", symbol=code)),
-                               key=lambda r: str(r.get("数据日期")))
-            latest = valuation[-1]
-            result["pe"] = _number(latest.get("PE(TTM)"))
-            result["pb"] = _number(latest.get("市净率"))
-            result["valuation_date"] = str(latest.get("数据日期"))[:10]
-            result["valuation_history"] = [  # enough sessions for v2's 20-day turnover
-                {"date": str(r.get("数据日期"))[:10], "pe": _number(r.get("PE(TTM)")),
-                 "pb": _number(r.get("市净率")), "mcap": _number(r.get("总市值")),
-                 "float_mcap": _number(r.get("流通市值"))}
-                for r in valuation[-VALUATION_HISTORY_SESSIONS:]
-            ]
-        except Exception as exc:
-            result["valuation_error"] = type(exc).__name__
-        try:
-            periods = parse_financial_abstract(_records(context._call("financials", symbol=code)))
-            if periods:
-                latest = periods[0]
-                months = int(str(latest["period"])[5:7] or 12)
-                roe = latest.get("roe")
-                result["roe"] = None if roe is None else float(roe) * 12 / months
-                result["growth"] = latest.get("revenue_yoy")
-                result["period"] = latest["period"]
-        except Exception as exc:
-            result["financials_error"] = type(exc).__name__
+        adaptive = _is_adaptive(context, ("value", "financials"))
+        deadline_seconds = (
+            adaptive_timeout(
+                "fundamentals", FUNDAMENTALS_TIMEOUT, min_timeout=10.0, max_timeout=25.0
+            )
+            if adaptive
+            else FUNDAMENTALS_TIMEOUT
+        )
+        values, errors = run_parallel_with_deadline(
+            {
+                "value": lambda: context._call("value", symbol=code),
+                "financials": lambda: context._call("financials", symbol=code),
+            },
+            deadline_seconds,
+            max_workers=2,
+            provider_prefix="fundamentals" if adaptive else None,
+        )
+        if "value" in errors:
+            result["valuation_error"] = type(errors["value"]).__name__
+        else:
+            try:
+                valuation = sorted(
+                    _records(values.get("value")),
+                    key=lambda r: str(r.get("数据日期")),
+                )
+                latest = valuation[-1]
+                result["pe"] = _number(latest.get("PE(TTM)"))
+                result["pb"] = _number(latest.get("市净率"))
+                result["valuation_date"] = str(latest.get("数据日期"))[:10]
+                result["valuation_history"] = [  # enough sessions for v2's 20-day turnover
+                    {
+                        "date": str(r.get("数据日期"))[:10],
+                        "pe": _number(r.get("PE(TTM)")),
+                        "pb": _number(r.get("市净率")),
+                        "mcap": _number(r.get("总市值")),
+                        "float_mcap": _number(r.get("流通市值")),
+                    }
+                    for r in valuation[-VALUATION_HISTORY_SESSIONS:]
+                ]
+            except Exception as exc:
+                result["valuation_error"] = type(exc).__name__
+
+        if "financials" in errors:
+            result["financials_error"] = type(errors["financials"]).__name__
+        else:
+            try:
+                periods = parse_financial_abstract(_records(values.get("financials")))
+                if periods:
+                    latest = periods[0]
+                    months = int(str(latest["period"])[5:7] or 12)
+                    roe = latest.get("roe")
+                    result["roe"] = None if roe is None else float(roe) * 12 / months
+                    result["growth"] = latest.get("revenue_yoy")
+                    result["period"] = latest["period"]
+            except Exception as exc:
+                result["financials_error"] = type(exc).__name__
         return result
 
     cached = _cached(context, "fundamentals", symbol, fetch)
@@ -330,20 +389,52 @@ def analyze_live(
 ) -> dict[str, object]:
     """Analyse one stock on data fetched now. With ``fresh`` the daily bars are refetched and,
     during or after a session the daily source has not published yet, today's minutes are merged
-    in as a provisional bar."""
-    payload = _bar_payload(context, symbol, fresh=fresh)
-    bars, source = _bars(payload)
-    provisional = False
-    if fresh:
+    in as a provisional bar. Independent fetches (bars, fundamentals, intraday) run concurrently
+    under a shared deadline so cross-region latency does not stack."""
+    started = time.monotonic()
+    adaptive = _is_adaptive(context, ("sina", "tencent", "value", "financials"))
+    overall_budget = (
+        adaptive_timeout("analyze_live", 24.0, min_timeout=18.0, max_timeout=40.0)
+        if adaptive
+        else 30.0
+    )
+    deadline = started + overall_budget
+
+    pool = ThreadPoolExecutor(max_workers=3 if fresh else 2, thread_name_prefix="analyze-live")
+    bars_fut = pool.submit(_bar_payload, context, symbol, fresh=fresh)
+    fund_fut = pool.submit(live_fundamentals, context, symbol)
+    intraday_fut = pool.submit(live_intraday, context, symbol) if fresh else None
+    try:
+        payload = bars_fut.result(timeout=max(1.0, remaining_timeout(deadline)))
+        bars, source = _bars(payload)
+        provisional = False
+        if intraday_fut is not None:
+            try:
+                intraday_data = intraday_fut.result(timeout=remaining_timeout(deadline))
+                bars, provisional = with_session_bar(bars, intraday_data)
+            except Exception:  # no minutes (pre-market, provider down): the last close is the latest
+                pass
         try:
-            bars, provisional = with_session_bar(bars, live_intraday(context, symbol))
-        except Exception:  # no minutes (pre-market, provider down): the last close is the latest
-            pass
+            fundamentals = fund_fut.result(timeout=remaining_timeout(deadline))
+        except (FutureTimeout, TimeoutError, Exception) as exc:
+            fundamentals = {
+                "pe": None,
+                "pb": None,
+                "roe": None,
+                "growth": None,
+                "period": None,
+                "valuation_history": [],
+                "valuation_error": type(exc).__name__,
+                "financials_error": type(exc).__name__,
+            }
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
     item = SymbolSeries(symbol, bars)
     momentum = reference_momentum(item, reference)
     as_of = bars[-1].trade_date
     analysis = analyze_at(item, as_of, momentum)
-    fundamentals = live_fundamentals(context, symbol)
+    fetch_ms = round((time.monotonic() - started) * 1000)
     return {
         "item": item,
         "as_of": as_of,
@@ -354,6 +445,7 @@ def analyze_live(
         "source": source,
         "provisional": provisional,
         "fetched_at": datetime.now(SHANGHAI).isoformat(timespec="seconds"),
+        "fetch_ms": fetch_ms,
     }
 
 
@@ -367,12 +459,34 @@ def live_intraday(
     """
     exchange, code = symbol.split(".")[1].lower(), symbol.split(".")[0]
     errors = []
-    for source, kwargs in (
-        ("minute_em", {"symbol": code}),
-        ("minute_sina", {"symbol": f"{exchange}{code}"}),
-    ):
+    adaptive = _is_adaptive(context, ("minute_em", "minute_sina"))
+    provider_map = {
+        "minute_em": {"symbol": code},
+        "minute_sina": {"symbol": f"{exchange}{code}"},
+    }
+    order = (
+        ordered_providers(("minute_em", "minute_sina"))
+        if adaptive
+        else ["minute_em", "minute_sina"]
+    )
+    for source in order:
+        kwargs = provider_map[source]
+        per_timeout = (
+            adaptive_timeout(
+                f"intraday:{source}",
+                timeout,
+                min_timeout=min(timeout, 8.0),
+                max_timeout=max(timeout, 22.0),
+            )
+            if adaptive
+            else timeout
+        )
         try:
-            result = _with_timeout(lambda s=source, k=kwargs: context._call(s, **k), timeout)
+            result = call_with_timeout(
+                lambda s=source, k=kwargs: context._call(s, **k),
+                per_timeout,
+                provider=f"intraday:{source}" if adaptive else None,
+            )
             rows = [_minute_row(r, source) for r in _records(result)]
         except Exception as exc:  # fall through to the next provider
             errors.append(f"{source}: {type(exc).__name__}")
@@ -439,22 +553,7 @@ def _minute_row(row: Mapping[str, object], source: str) -> dict[str, object]:
 
 def _with_timeout(fn: Callable[[], object], seconds: float) -> object:
     """Run fn in a daemon thread so a hung provider cannot block the request past `seconds`."""
-    result: dict[str, object] = {}
-
-    def run() -> None:
-        try:
-            result["value"] = fn()
-        except BaseException as exc:  # re-raised in the caller's thread
-            result["error"] = exc
-
-    worker = threading.Thread(target=run, daemon=True)
-    worker.start()
-    worker.join(seconds)
-    if worker.is_alive():
-        raise TimeoutError(f"no response within {seconds:g}s")
-    if "error" in result:
-        raise result["error"]  # type: ignore[misc]
-    return result.get("value")
+    return call_with_timeout(fn, seconds)
 
 
 def _cached(
