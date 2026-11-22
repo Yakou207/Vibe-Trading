@@ -63,6 +63,27 @@ system for fintech graduate-school portfolio work.
 
 ## Current Implementation Status
 
+### 2026-11-22 provider-stall fix and late catch-up of 2026-11-18..11-20 (not a strategy change)
+
+- From the 2026-11-18 run the local proxy stalled connections. AkShare's Eastmoney index call and
+  Sina statement call use `requests.get` with no timeout, so stages hung until the 1800s limit.
+  All 20 attempts for 11-18 failed closed. After that the wrapper blocked on the evidence gap, as
+  designed, and launchd reported exit 1 every hour. The real logs are in
+  `outputs/automation/csi300_post_close/`; the `~/Library/Logs/VibeTrading/launchd.*.log` files are
+  empty.
+- `fe5be5d` gives each index call a 120s deadline. It also makes the CSIndex fallback fetch the
+  full history, so its benchmark is byte-identical to Eastmoney's. Before, the fallback had no MA250
+  warm-up and came out 249 rows short.
+- `cf7f34a` gives each statement request a 120s deadline, so a stall fails one scope and resumes,
+  instead of the run being killed and losing every finished scope. No threshold, weight, risk,
+  cost or factor value changed.
+- 11-18 and 11-19 were caught up manually and 11-20 by the launchd job. All three are `COLLECTING`,
+  with `valid_sessions=25` after 11-20: paper -3.98% against CSI 300 -5.18%, maximum drawdown
+  4.93%. The account is all cash.
+- These cycles ran two to four days late and record `git_sha=9191dbf`, which exists only on local
+  `main` until it is pushed. Whether late catch-up counts toward the window is an open decision for
+  the final review; see `handoff.md`.
+
 ### 2026-11-05 late financial-statement fix (data collection, not a strategy change)
 
 - On 2026-11-04 only 23 of 300 members had all three Q3 (2026-09-30) statements in the chain. 40

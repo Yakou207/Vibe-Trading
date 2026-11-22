@@ -198,6 +198,65 @@ with the fix is 2026-11-05; its dry run captured 766 Q3 rows and left no member 
 growth (`688981.SH` stays on the half-year report until Sina publishes its Q3). Regression tests are the two lookback tests in
 `tests/test_collect_point_in_time_factors_script.py`.
 
+## 2026-11-18 provider stalls and late catch-up (2026-11-18..11-20)
+
+From the 2026-11-18 16:30 run the local proxy (`127.0.0.1:1082`) was degraded: tunnel 503s,
+connection resets and stalled connections. All 20 wrapper attempts for 11-18 failed closed with
+the account unchanged. The first five failed at mixed stages (factor collection timeout, CSIndex
+universe 503, universe timeout). The other 15 failed in `fetch_market_state.py`: AkShare's
+`stock_zh_index_daily_em` calls `requests.get` with no timeout, so a stalled request ran into the
+1800s stage limit and the CSIndex fallback never ran. From the 11-19 16:30 fire the wrapper
+targeted only the newest session and blocked on the evidence gap, by design, so launchd reported
+`last exit code = 1` every hour.
+
+The wrapper's own log is `outputs/automation/csi300_post_close/<timestamp>.log` plus `runs.jsonl`
+in the main checkout. The plist's `~/Library/Logs/VibeTrading/launchd.*.log` receive only the
+wrapper process's stdout/stderr and stay empty.
+
+Code fixes (no threshold, weight, risk, cost, or factor-value change):
+
+- `fe5be5d`: each index call in `fetch_market_state.py` gives up after 120s. The CSIndex fallback
+  now fetches the full history from 2005. Before, it fetched only from `--start`, so the MA250 had
+  no warm-up and the benchmark came out 249 rows short. Live fallback output was byte-identical to
+  the Eastmoney file on all 1,568 rows of the 11-17 benchmark.
+- `cf7f34a`: each Sina financial-statement request gives up after 120s. On the 11-19 catch-up, three
+  of 600 statement scopes (`600893.SH`, `600900.SH`, `688271.SH`) stalled and the stage was killed
+  at 1800s. The 597 finished scopes were lost because a killed run writes no manifest. A stall now
+  fails one scope, and the next attempt resumes only the missing scopes. The shared helper is
+  `fintech_quant.data.deadline.call_with_deadline`.
+- Regression tests: the stall and fallback-equality tests in
+  `tests/test_fetch_market_state_script.py`, and the stalled-statement test in
+  `tests/test_information_repository.py`.
+
+Catch-up: run manually from the main checkout one session at a time, holding the wrapper's
+`.lock`, with the same post-close and audit commands as the wrapper (`runs.jsonl` lines with
+`"mode": "manual_catchup"`). Each date was the next CSI 300 session after the active parent.
+
+| Session | Run (Asia/Shanghai) | Attempts | Audit | Cycle manifest SHA-256 |
+|---|---|---|---|---|
+| 2026-11-18 | 2026-11-22 02:43–03:12 | 2 (the first, on `57bac8a`, hung on Eastmoney and was stopped before any account write) | `COLLECTING`, 23 | `c4e79100e74c57c912cabbcb50abf343c8063d71d8b5191995bc106fceea3e1d` |
+| 2026-11-19 | 2026-11-22 04:17–04:44 | 3 (Tencent failure on `688183.SH`; statement stall killed the factor stage; accepted) | `COLLECTING`, 24 | `9e2c3f56aaaf5f337924d0a1f1478f13814f336b65ea993da664007dc2e36513` |
+| 2026-11-20 | 2026-11-22 05:30–06:22 | 1, run by the launchd wrapper itself once the state reached 11-19 | `COLLECTING`, 25 | `0c34462b30af99fb86299b1cda3793a2be71f619a98184fc0392f40d1ddb8d41` |
+
+- The account was all cash at 11-18 with 14 targets queued (8% each, 112% raw). The 11-19 open
+  bought 12 of them. `300750.SZ` and `002920.SZ` were not bought because one board lot cost more
+  than the 8% target (23,993 and 7,920 against 7,769), and no blocked order was recorded.
+- On 11-19 and 11-20 the broad-market rule (`broad_market_drop_gt_3pct_count`) emitted `reduce`
+  for all 300 members, so neither queued targets. The 11-20 open sold all 12 positions.
+- Canonical account after 11-20: NAV 96,017.03, all cash, nothing queued. The root audit is
+  `COLLECTING` with 25 sessions: paper -3.98% against CSI 300 -5.18%, excess +1.20%, maximum
+  drawdown 4.93% (sha256 `f4d358d1e98d1a36039b46e3968e00a3a58a87b5bee996ead998fbc65976e108`).
+- All three cycles record `git_sha=9191dbf`. Another session merged `origin/main` (PR #1 demo and
+  Pages work) into local `main` during the 11-18 run. `9191dbf` has the same pipeline code as
+  `fe5be5d`; the merges changed only demo, Pages, README and LICENSE files. The 11-20 run started
+  before `cf7f34a` reached local `main`. Push local `main` so these SHAs exist on the remote.
+
+Open review decision: these three cycles ran two to four days after their session close. Item 1
+under "Known boundaries" treats delayed catch-up as repair evidence, not fresh continuous
+validation. The auditor has no timing check and accepted all three. The final review must decide
+whether 2026-11-18..11-20 count toward the 40-session window. Excluding them leaves a gap, so the
+epoch would then need supersession.
+
 ## Scheduled automation (launchd)
 
 Added 2026-10-17. Missed post-close runs were the operational cause of the failed audit: as of
