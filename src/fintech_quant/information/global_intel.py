@@ -19,11 +19,10 @@ from __future__ import annotations
 import importlib
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Callable, Mapping, Sequence
 
 from fintech_quant.data.js_runtime import js_call
+from fintech_quant.data.net_adaptive import adaptive_timeout, run_parallel_with_deadline
 from fintech_quant.information.event_nlp import MACRO_TAGS, tag_text
 
 Fetcher = Callable[..., object]
@@ -140,7 +139,7 @@ def collect_global_intel(
         jobs[ticker] = (label, lambda t=ticker: _cached("us_index", t, lambda: active["us_index"](t)))
     for ticker in profile["us"]:
         jobs[ticker] = (ticker, lambda t=ticker: _cached("us_stock", t, lambda: active["us_stock"](t)))
-    results, sources = _run_all(jobs)
+    results, sources = _run_all(jobs, live=fetchers is None)
 
     news = []
     for key in ("news_em", "news_sina", "news_ths"):
@@ -259,24 +258,45 @@ def _news_item(row: Mapping[str, object], source: str) -> dict[str, object]:
 
 def _run_all(
     jobs: Mapping[str, tuple[str, Callable[[], object]]],
+    *,
+    live: bool = False,
 ) -> tuple[dict[str, object], dict[str, dict[str, object]]]:
     results: dict[str, object] = {}
     sources: dict[str, dict[str, object]] = {}
-    pool = ThreadPoolExecutor(max_workers=8)
-    futures = {key: pool.submit(job) for key, (_, job) in jobs.items()}
-    deadline = time.monotonic() + SOURCE_TIMEOUT
-    for key, future in futures.items():
-        label = jobs[key][0]
-        try:
-            results[key] = future.result(timeout=max(0.1, deadline - time.monotonic()))
-            is_news = key.startswith("news_")  # a quote history's length means nothing to show
-            count = len(_rows(results[key])) if is_news else None
-            sources[key] = {"label": label, "status": "ok", "count": count}
-        except FutureTimeout:
-            sources[key] = {"label": label, "status": "timeout", "count": 0}
-        except Exception as exc:  # one source failing must not hide the others
-            sources[key] = {"label": label, "status": "error", "count": 0, "error": type(exc).__name__}
-    pool.shutdown(wait=False, cancel_futures=True)
+    deadline_seconds = (
+        adaptive_timeout(
+            "global_intel",
+            SOURCE_TIMEOUT,
+            min_timeout=10.0,
+            max_timeout=25.0,
+        )
+        if live
+        else SOURCE_TIMEOUT
+    )
+    tasks = {key: job for key, (_, job) in jobs.items()}
+    values, errors = run_parallel_with_deadline(
+        tasks,
+        deadline_seconds,
+        max_workers=8,
+        provider_prefix="global" if live else None,
+    )
+    for key, (label, _) in jobs.items():
+        if key in errors:
+            exc = errors[key]
+            if isinstance(exc, TimeoutError):
+                sources[key] = {"label": label, "status": "timeout", "count": 0}
+            else:
+                sources[key] = {
+                    "label": label,
+                    "status": "error",
+                    "count": 0,
+                    "error": type(exc).__name__,
+                }
+            continue
+        results[key] = values.get(key)
+        is_news = key.startswith("news_")  # a quote history's length means nothing to show
+        count = len(_rows(results[key])) if is_news else None
+        sources[key] = {"label": label, "status": "ok", "count": count}
     return results, sources
 
 

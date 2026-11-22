@@ -281,6 +281,7 @@ def live_stock_payload(
         **base,
         "as_of": result["as_of"],
         "fetched_at": result["fetched_at"],
+        "fetch_ms": result.get("fetch_ms"),
         "provisional": result["provisional"],
         "csi300": member,
         "price_scale": "qfq",

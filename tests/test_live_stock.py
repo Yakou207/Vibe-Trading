@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import threading
+import time
 from datetime import date
 from pathlib import Path
 
 import pytest
 
+from fintech_quant.data import net_adaptive
+from fintech_quant.reports import live_stock
 from fintech_quant.reports.live_stock import (
     LiveContext,
     intraday_payload,
     live_bars,
+    live_fundamentals,
     live_intraday,
     reference_momentum,
     resolve_any,
@@ -113,6 +117,43 @@ def test_history_fails_when_both_sources_fail(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="no price history"):
         live_bars(live, "300624.SZ")
+
+
+def test_bars_try_a_source_in_failure_cooldown_last(tmp_path: Path, monkeypatch) -> None:
+    tracker = net_adaptive.ProviderHealthTracker()
+    tracker.record_failure("bars:sina", 20.0, timed_out=True)
+    monkeypatch.setattr(net_adaptive, "DEFAULT_TRACKER", tracker)
+    sina = Counting(_sina_rows)
+    tencent = [{"date": "2026-10-19", "open": 10.0, "high": 10.5, "low": 9.8, "close": 10.2, "amount": 1.0}]
+    real = {"sina": sina, "tencent": lambda **kw: tencent}
+    monkeypatch.setattr(live_stock, "_default_fetcher", lambda name: real[name])
+
+    _, source = live_bars(LiveContext(cache_dir=tmp_path, today=TODAY), "300624.SZ")
+
+    assert source == "tencent" and sina.calls == 0
+
+
+def test_a_timed_out_fundamentals_fetch_is_retried_instead_of_cached(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(live_stock, "FUNDAMENTALS_TIMEOUT", 0.2)
+    calls = []
+
+    def value(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            time.sleep(0.5)  # the provider is slow once, then recovers
+        return [{"数据日期": "2026-10-19", "PE(TTM)": 15.0, "市净率": 2.0}]
+
+    live = LiveContext(cache_dir=tmp_path, fetchers=_fetchers(value=value), today=TODAY)
+
+    first = live_fundamentals(live, "300624.SZ")
+    second = live_fundamentals(live, "300624.SZ")
+    third = live_fundamentals(live, "300624.SZ")
+
+    assert first["pe"] is None and first["valuation_error"] == "TimeoutError"
+    assert second["pe"] == 15.0 and third["pe"] == 15.0
+    assert len(calls) == 2  # the good result is cached for the day
 
 
 def test_reference_momentum_ranks_against_csi300_cross_section() -> None:
