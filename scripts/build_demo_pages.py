@@ -22,6 +22,7 @@ if str(SRC) not in sys.path:
 from fintech_quant.reports.demo_fixtures import (  # noqa: E402
     build_demo_workspace,
     demo_jev_payload,
+    demo_premarket_context,
     demo_research_payload,
 )
 from fintech_quant.reports.desk import build_desk_snapshot, render_desk_html  # noqa: E402
@@ -103,6 +104,7 @@ def _static_fetch_shim(bundle: dict[str, object]) -> str:
         "    const q = u.searchParams.get('q') || '';\n"
         "    if (p === '/api/universe') return jsonResp(B.universe);\n"
         "    if (p === '/api/picks') return jsonResp(B.picks);\n"
+        "    if (p === '/api/premarket-context') return jsonResp(B.premarket_context);\n"
         "    if (p === '/api/intraday-monitor') return jsonResp(null);\n"
         "    if (p === '/api/intraday') return jsonResp({error: '静态 Demo 不包含盘中分时行情'});\n"
         "    if (p === '/api/events_llm') return jsonResp({error: '静态 Demo 不调用外部 LLM API'});\n"
@@ -151,6 +153,7 @@ def build_demo_pages(output_dir: Path) -> list[Path]:
         bundle: dict[str, object] = {
             "universe": universe_payload(picker_data, live=None),
             "picks": picks_payload(picker_data, pool_state, pool_v2_state),
+            "premarket_context": demo_premarket_context(demo, picker_data),
             "stocks": stocks_map,
             "research": research_map,
             "jev": jev_map,

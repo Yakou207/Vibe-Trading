@@ -1,0 +1,1414 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__PREMARKET_TITLE__</title>
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0e0f13;
+  --surface-1: #17181d;
+  --surface-2: #1f2027;
+  --surface-hover: #252630;
+  --border: #2c2d36;
+  --grid: #23242c;
+  --text-primary: #f0efec;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8a897f;
+  --accent: #e87ba4;
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s7: #9085e9;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --serious: #ec835a;
+  --critical: #d03b3b;
+  --up: #e66767;
+  --down: #199e70;
+  --up-bg: rgba(230, 103, 103, 0.12);
+  --down-bg: rgba(25, 158, 112, 0.12);
+  --good-bg: rgba(12, 163, 12, 0.10);
+  --warn-bg: rgba(250, 178, 25, 0.11);
+  --crit-bg: rgba(208, 59, 59, 0.12);
+  --info-bg: rgba(57, 135, 229, 0.11);
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #eceae4;
+    --surface-1: #fcfcfb;
+    --surface-2: #f3f2ee;
+    --surface-hover: #eae8e1;
+    --border: #d9d7cf;
+    --grid: #e7e5df;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #7a7972;
+    --s1: #2a78d6;
+    --s2: #eb6834;
+    --s3: #1baf7a;
+    --s4: #eda100;
+    --s7: #6250d6;
+    --up: #d03b3b;
+    --down: #008300;
+    --up-bg: rgba(208, 59, 59, 0.09);
+    --down-bg: rgba(0, 131, 0, 0.09);
+    --good-bg: rgba(12, 163, 12, 0.08);
+    --warn-bg: rgba(201, 133, 0, 0.10);
+    --crit-bg: rgba(208, 59, 59, 0.09);
+    --info-bg: rgba(42, 120, 214, 0.09);
+  }
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eceae4;
+  --surface-1: #fcfcfb;
+  --surface-2: #f3f2ee;
+  --surface-hover: #eae8e1;
+  --border: #d9d7cf;
+  --grid: #e7e5df;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7972;
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s7: #6250d6;
+  --up: #d03b3b;
+  --down: #008300;
+  --up-bg: rgba(208, 59, 59, 0.09);
+  --down-bg: rgba(0, 131, 0, 0.09);
+  --good-bg: rgba(12, 163, 12, 0.08);
+  --warn-bg: rgba(201, 133, 0, 0.10);
+  --crit-bg: rgba(208, 59, 59, 0.09);
+  --info-bg: rgba(42, 120, 214, 0.09);
+}
+:root[data-theme="dark"] { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1440px; margin: 0 auto; padding: 14px 18px 40px; }
+.mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--text-muted); }
+.up { color: var(--up); }
+.down { color: var(--down); }
+
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.section-gap { margin-bottom: 18px; }
+.section-pad { padding: 14px 16px; }
+.section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+h2 {
+  font: 600 11px/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 0;
+  color: var(--text-secondary);
+}
+.section-head .right {
+  margin-left: auto;
+  font: 11px var(--mono);
+  color: var(--text-muted);
+}
+
+/* Topbar */
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  align-items: center;
+  padding: 11px 16px;
+  margin-bottom: 18px;
+}
+.brand { font: 800 18px/1 var(--mono); letter-spacing: 0.02em; }
+.brand span { color: var(--accent); }
+.sub {
+  font: 10.5px var(--mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+}
+.nav { display: flex; gap: 4px; }
+.nav[hidden] { display: none; }
+.nav a {
+  font: 600 11px var(--mono);
+  color: var(--text-secondary);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 10px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.nav a:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.nav a[aria-current="page"] { color: var(--text-primary); border-color: var(--accent); }
+
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 10.5px/1 var(--mono);
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.pill.risk_on { border-color: rgba(12, 163, 12, 0.4); color: var(--text-primary); }
+.pill.risk_on::before { content: "●"; color: var(--good); }
+.pill.neutral { border-color: rgba(250, 178, 25, 0.4); color: var(--text-primary); }
+.pill.neutral::before { content: "◐"; color: var(--warning); }
+.pill.risk_off { border-color: rgba(208, 59, 59, 0.45); color: var(--text-primary); }
+.pill.risk_off::before { content: "▲"; color: var(--critical); }
+.pill.unknown::before { content: "○"; color: var(--text-muted); }
+
+.theme-btn {
+  font: 600 11px/1 var(--mono);
+  padding: 5px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.theme-btn:hover { color: var(--text-primary); border-color: var(--accent); }
+
+/* Market Pulse Strip */
+.pulse-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 11.5px var(--mono);
+  color: var(--text-muted);
+  padding: 6px 2px;
+}
+.index-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.idx-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 11px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.idx-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+.idx-name { font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: var(--text-primary); }
+.idx-code { font: 10px var(--mono); color: var(--text-muted); }
+.idx-price-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+}
+.idx-close { font: 700 15px/1.1 var(--mono); font-variant-numeric: tabular-nums; }
+.idx-chg {
+  font: 600 11px/1 var(--mono);
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.idx-chg.up { background: var(--up-bg); color: var(--up); }
+.idx-chg.down { background: var(--down-bg); color: var(--down); }
+.idx-spark { width: 100%; height: 30px; display: block; }
+.ma-dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font: 10px var(--mono);
+  color: var(--text-muted);
+}
+.ma-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.ma-dot i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+.ma-dot.above i { background: var(--good); border-color: var(--good); }
+.ma-dot.above { color: var(--text-secondary); }
+.ma-dot.below i { background: transparent; border-color: var(--text-muted); }
+
+/* Breadth & Turnover bar */
+.breadth-bar {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-bottom: 10px;
+}
+.breadth-seg-wrap { flex: 1 1 240px; min-width: 200px; }
+.breadth-labels {
+  display: flex;
+  justify-content: space-between;
+  font: 11px var(--mono);
+  margin-bottom: 4px;
+}
+.breadth-track {
+  display: flex;
+  height: 7px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border);
+  gap: 1px;
+}
+.breadth-track .seg-up { background: var(--up); }
+.breadth-track .seg-flat { background: var(--text-muted); opacity: 0.45; }
+.breadth-track .seg-down { background: var(--down); }
+
+.breadth-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  align-items: center;
+  font: 11.5px var(--mono);
+}
+.metric-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+}
+.metric-chip b { color: var(--text-primary); font-weight: 700; }
+.ma-breadth {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.ma-mini {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 10.5px var(--mono);
+  color: var(--text-secondary);
+}
+.ma-mini .track {
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.ma-mini .track i { display: block; height: 100%; background: var(--s1); border-radius: 3px; }
+
+/* Overseas & Sector Alerts */
+.overseas-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.overseas-label {
+  font: 600 10.5px var(--mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 4px;
+}
+.ov-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font: 11px var(--mono);
+}
+.ov-pill .n { color: var(--text-secondary); }
+.ov-pill .v { color: var(--text-primary); font-weight: 600; }
+.sector-alerts {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--grid);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font: 11.5px/1.4 var(--mono);
+  color: var(--text-secondary);
+}
+.sector-alert-item { display: inline-flex; align-items: center; gap: 6px; }
+.sector-tag {
+  font: 600 10px var(--mono);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+/* Radar + Portfolio 2-col row */
+.dual-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+/* Pitfall Radar */
+.radar-quiet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font: 12px/1.45 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+.radar-quiet.pass {
+  background: var(--good-bg);
+  border: 1px solid rgba(12, 163, 12, 0.28);
+  color: var(--text-primary);
+}
+.radar-quiet.pass::before { content: "●"; color: var(--good); font-size: 11px; }
+.radar-quiet.unchecked {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.radar-quiet.unchecked::before { content: "☐"; font-family: var(--mono); }
+
+.alert-list { display: flex; flex-direction: column; gap: 8px; }
+.alert-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--warning);
+  border-radius: 5px;
+  padding: 9px 12px;
+}
+.alert-card.high { border-left-color: var(--critical); background: var(--crit-bg); }
+.alert-card.medium { border-left-color: var(--warning); background: var(--warn-bg); }
+.alert-card.info { border-left-color: var(--s1); background: var(--info-bg); }
+.alert-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+.kind-tag {
+  font: 600 10px var(--mono);
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+.alert-sym { font: 700 12px var(--mono); color: var(--text-primary); }
+.alert-title { font: 600 12.5px -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: var(--text-primary); }
+.alert-date { margin-left: auto; font: 10.5px var(--mono); color: var(--text-muted); }
+.alert-detail { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+
+/* Portfolio & Drawdown Buffer */
+.pf-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pf-kpi {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.pf-kpi .k { font: 10.5px var(--mono); color: var(--text-muted); margin-bottom: 2px; }
+.pf-kpi .v { font: 700 15px/1.2 var(--mono); font-variant-numeric: tabular-nums; color: var(--text-primary); }
+
+.dd-gauge-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.dd-gauge-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font: 11px var(--mono);
+  margin-bottom: 8px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dd-track {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--border);
+  overflow: visible;
+  margin-bottom: 8px;
+}
+.dd-fill {
+  height: 100%;
+  border-radius: 5px;
+  transition: width 0.25s;
+}
+.dd-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  border-radius: 1px;
+}
+.dd-marker.reduce { background: var(--warning); }
+.dd-marker.liquidate { background: var(--critical); }
+.dd-legend {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font: 10.5px var(--mono);
+  color: var(--text-muted);
+}
+.policy-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font: 11px var(--mono);
+  color: var(--text-muted);
+}
+.policy-strip b { color: var(--text-secondary); font-weight: 600; }
+
+/* Tables Toolbar & v2 Note */
+.tables-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.count-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.count-pill {
+  font: 600 11px var(--mono);
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+.count-pill b { color: var(--text-primary); }
+.ghost-btn {
+  margin-left: auto;
+  font: 600 11px var(--mono);
+  padding: 5px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.ghost-btn:hover { color: var(--text-primary); border-color: var(--accent); }
+
+.v2-note-bar {
+  font: 11px/1.55 var(--mono);
+  color: var(--text-muted);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+}
+
+/* Scannable 7-column tables */
+.table-section { margin-bottom: 18px; }
+.table-wrap { overflow-x: auto; }
+table.brief-table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px/1.45 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+table.brief-table th {
+  text-align: left;
+  font: 600 10.5px/1.2 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+table.brief-table th.num, table.brief-table td.num { text-align: right; }
+table.brief-table tr.main-row {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+table.brief-table tr.main-row:hover td { background: var(--surface-hover); }
+table.brief-table tr.main-row td {
+  padding: 10px 10px;
+  border-bottom: 1px solid var(--grid);
+  vertical-align: middle;
+}
+table.brief-table tr.main-row.open td {
+  background: var(--surface-2);
+  border-bottom-color: transparent;
+}
+.sym-cell { display: flex; align-items: center; gap: 8px; }
+.chev {
+  font: 700 11px var(--mono);
+  color: var(--text-muted);
+  width: 12px;
+  flex: none;
+  transition: transform 0.15s;
+}
+tr.main-row.open .chev { color: var(--accent); transform: rotate(90deg); }
+.sym-code { font: 700 12.5px var(--mono); color: var(--text-primary); }
+.sym-name { font-size: 12px; color: var(--text-secondary); }
+
+/* Dual score bars */
+.score-pair { display: flex; flex-direction: column; gap: 5px; min-width: 148px; }
+.score-line {
+  display: grid;
+  grid-template-columns: 24px 36px 1fr;
+  gap: 6px;
+  align-items: center;
+  font: 11px var(--mono);
+}
+.score-line .tag { color: var(--text-muted); font-size: 10px; }
+.score-line .val { color: var(--text-primary); font-weight: 700; text-align: right; }
+.score-track {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--grid);
+  overflow: hidden;
+}
+tr.main-row.open .score-track { background: var(--surface-1); }
+.score-track i { display: block; height: 100%; border-radius: 3px; }
+.score-track i.v1 { background: var(--s1); }
+.score-track i.v2 { background: var(--accent); }
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 600 10.5px/1.1 var(--mono);
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.badge.good { border-color: rgba(12, 163, 12, 0.45); background: var(--good-bg); color: var(--text-primary); }
+.badge.good::before { content: "●"; color: var(--good); font-size: 9px; }
+.badge.warn { border-color: rgba(250, 178, 25, 0.45); background: var(--warn-bg); color: var(--text-primary); }
+.badge.warn::before { content: "◐"; color: var(--warning); font-size: 9px; }
+.badge.bad { border-color: rgba(208, 59, 59, 0.5); background: var(--crit-bg); color: var(--text-primary); }
+.badge.bad::before { content: "✕"; color: var(--critical); font-size: 9px; }
+.badge.info { border-color: rgba(57, 135, 229, 0.4); background: var(--info-bg); color: var(--text-primary); }
+.badge.muted { color: var(--text-muted); background: var(--surface-2); }
+
+.sub-meta { font: 10.5px var(--mono); color: var(--text-muted); margin-top: 2px; }
+.shares-main { font: 700 13px var(--mono); color: var(--text-primary); }
+
+/* Expandable Detail Row */
+tr.detail-row[hidden] { display: none; }
+tr.detail-row td {
+  padding: 0 12px 14px 30px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
+.detail-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.detail-card h3 {
+  font: 600 10.5px/1 var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+.factor-row { margin-bottom: 7px; }
+.factor-row:last-child { margin-bottom: 0; }
+.factor-top {
+  display: flex;
+  justify-content: space-between;
+  font: 11px var(--mono);
+  color: var(--text-secondary);
+  margin-bottom: 3px;
+}
+.factor-top b { color: var(--text-primary); }
+.factor-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: hidden;
+  margin-bottom: 3px;
+}
+.factor-bar i { display: block; height: 100%; background: var(--s1); border-radius: 2px; }
+.factor-bar i.v2 { background: var(--accent); }
+.factor-reason { font-size: 11.5px; color: var(--text-muted); line-height: 1.4; }
+
+.kv-list { display: flex; flex-direction: column; gap: 5px; font: 11.5px var(--mono); }
+.kv-item { display: flex; justify-content: space-between; gap: 8px; color: var(--text-secondary); }
+.kv-item b { color: var(--text-primary); font-weight: 600; text-align: right; }
+
+.notice-list { display: flex; flex-direction: column; gap: 7px; }
+.notice-item {
+  padding-bottom: 6px;
+  border-bottom: 1px dashed var(--grid);
+}
+.notice-item:last-child { padding-bottom: 0; border-bottom: 0; }
+.notice-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 10.5px var(--mono);
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.notice-title { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.notice-summary { font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; }
+
+.flag-chip {
+  display: inline-block;
+  font: 600 10.5px var(--mono);
+  padding: 2px 6px;
+  margin: 2px 4px 2px 0;
+  border-radius: 3px;
+  background: var(--crit-bg);
+  color: var(--up);
+  border: 1px solid rgba(208, 59, 59, 0.35);
+}
+.empty-table {
+  padding: 14px 4px 4px;
+  font: 12px var(--mono);
+  color: var(--text-muted);
+}
+
+footer.foot {
+  margin-top: 10px;
+  padding: 10px 2px 0;
+  font: 11px/1.6 var(--mono);
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 1120px) {
+  .index-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .dual-grid { grid-template-columns: minmax(0, 1fr); }
+  .pf-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .wrap { padding: 10px 12px 28px; }
+  .index-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .detail-grid { grid-template-columns: minmax(0, 1fr); }
+  .top-right { margin-left: 0; }
+  tr.detail-row td { padding: 0 8px 12px 10px; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="panel topbar">
+    <div>
+      <div class="brand">VIBE<span>·</span>TRADING</div>
+      <div class="sub">盘前指挥台 · PRE-MARKET BRIEF</div>
+    </div>
+    <nav class="nav" id="nav"__PREMARKET_NAV_HIDDEN__><a href="/">交易桌</a><a href="/picks">选股</a></nav>
+    <div class="top-right">
+      <span class="pill" id="signal-pill">信号日 __PREMARKET_SIGNAL_DATE__</span>
+      <span class="pill unknown" id="regime-pill">市场状态未接入</span>
+      <span class="pill">仅研究参考 · 人工下单</span>
+      <button type="button" class="theme-btn" id="theme-toggle" title="切换深色/浅色主题">☀ 浅色</button>
+    </div>
+  </header>
+
+  <section class="panel section-pad section-gap" id="market-pulse-section" aria-label="Market pulse"></section>
+
+  <div class="dual-grid">
+    <section class="panel section-pad" id="pitfall-section" aria-label="Pitfall radar"></section>
+    <section class="panel section-pad" id="portfolio-section" aria-label="Portfolio drawdown buffer"></section>
+  </div>
+
+  <div class="tables-toolbar">
+    <div class="count-pills" id="count-pills"></div>
+    <button type="button" class="ghost-btn" id="expand-all-btn">展开全部明细</button>
+  </div>
+
+  <div class="v2-note-bar" id="v2-note">__PREMARKET_V2_NOTE__</div>
+
+  <main id="tables-root">__PREMARKET_SSR_TABLES__</main>
+
+  <footer class="foot" id="footer-note">
+    <span>Research only. Orders are placed by a human at the next session open. This brief and the human ledger never count toward V2 paper evidence.</span>
+    <span id="auction-foot"></span>
+  </footer>
+</div>
+
+<script type="application/json" id="premarket-data">__PREMARKET_DATA__</script>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  /* Theme toggle with persistence */
+  const rootEl = document.documentElement;
+  const themeBtn = $("theme-toggle");
+  function currentTheme() {
+    const explicit = rootEl.getAttribute("data-theme");
+    if (explicit === "light" || explicit === "dark") return explicit;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
+  function syncThemeLabel() {
+    const t = currentTheme();
+    themeBtn.textContent = t === "dark" ? "☀ 浅色" : "☾ 深色";
+  }
+  try {
+    const saved = localStorage.getItem("vibe_premarket_theme");
+    if (saved === "light" || saved === "dark") rootEl.setAttribute("data-theme", saved);
+  } catch (_) {}
+  syncThemeLabel();
+  themeBtn.addEventListener("click", () => {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    rootEl.setAttribute("data-theme", next);
+    try { localStorage.setItem("vibe_premarket_theme", next); } catch (_) {}
+    syncThemeLabel();
+  });
+
+  const payloadEl = $("premarket-data");
+  if (!payloadEl) return;
+  const DATA = JSON.parse(payloadEl.textContent || "{}");
+  const BRIEF = DATA.brief || {};
+  const AUCTION = DATA.auction || null;
+
+  const fmtPct = (v, d = 2, signed = false) => {
+    if (v == null || Number.isNaN(Number(v))) return "—";
+    const n = Number(v) * 100;
+    const prefix = signed && n > 0 ? "+" : "";
+    return `${prefix}${n.toFixed(d)}%`;
+  };
+  const fmtNum = (v, d = 2) => (v == null || Number.isNaN(Number(v)) ? "—" : Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }));
+  const fmtCny = (v) => (v == null || Number.isNaN(Number(v)) ? "—" : `¥${Math.round(Number(v)).toLocaleString("en-US")}`);
+  const fmtTurnover = (bn) => {
+    if (bn == null || Number.isNaN(Number(bn))) return "—";
+    const n = Number(bn);
+    return n >= 1000 ? `¥${(n / 1000).toFixed(2)}万亿` : `¥${Math.round(n * 10).toLocaleString("en-US")}亿`;
+  };
+
+  const REGIME_LABELS = {
+    risk_on: "偏多 Risk-On",
+    neutral: "中性震荡 Neutral",
+    risk_off: "防御收缩 Risk-Off",
+    unknown: "市场状态未接入",
+  };
+  const KIND_LABELS = {
+    ex_dividend: "除权除息",
+    unlock: "限售解禁",
+    earnings: "财报窗口",
+    overnight_negative: "隔夜利空",
+    suspension: "停牌提示",
+  };
+  const LUK_LABELS = {
+    trigger: { text: "触发", cls: "good" },
+    setup: { text: "观察", cls: "warn" },
+    leader_weak_base: { text: "强势·弱平台", cls: "info" },
+    leader_no_base: { text: "强势·无平台", cls: "muted" },
+    avoid: { text: "回避", cls: "muted" },
+  };
+  const FLAG_LABELS = {
+    at_limit_up_cannot_buy: "涨停无法买入",
+    near_limit_up: "接近涨停",
+    large_gap_up: "大幅高开",
+    at_limit_down: "跌停",
+    large_gap_down: "大幅低开",
+    no_auction_quote: "无竞价报价",
+    auction_volume_surge: "竞价显著放量",
+    auction_thin_liquidity: "竞价流动性偏薄",
+    weak_vs_index: "弱于指数",
+    strong_vs_index: "强于指数",
+    below_luk_stop: "跌破止损位",
+    stop_too_wide: "止损空间偏宽",
+  };
+  const V2_CATS = [
+    ["value", "估值 Value"],
+    ["quality_growth", "质量成长 Quality/Growth"],
+    ["low_risk", "低波 Low Risk"],
+    ["liquidity", "低换手 Liquidity"],
+    ["reversal", "反转 Reversal"],
+    ["momentum", "动量 12-1 Momentum"],
+  ];
+  const COMP_LABELS = {
+    fundamental: "基本面 Fundamental",
+    technical: "技术面 Technical",
+    capital_flow: "资金流 Capital Flow",
+    sentiment: "事件情感 Sentiment",
+  };
+
+  /* 1. Regime Pill */
+  const mp = BRIEF.market_pulse;
+  const regimePill = $("regime-pill");
+  if (mp && mp.status && mp.status !== "unavailable") {
+    const r = mp.regime || "unknown";
+    regimePill.className = `pill ${esc(r)}`;
+    regimePill.textContent = REGIME_LABELS[r] || r;
+  }
+
+  /* 2. Market Pulse Strip */
+  function sparklineSvg(points, isUp, uid) {
+    if (!Array.isArray(points) || points.length < 2) {
+      return '<svg class="idx-spark" viewBox="0 0 120 30"></svg>';
+    }
+    const vals = points.map(Number);
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const span = max - min || 1;
+    const w = 120, h = 30, padY = 4;
+    const coords = vals.map((v, i) => {
+      const x = (i / (vals.length - 1)) * (w - 4) + 2;
+      const y = h - padY - ((v - min) / span) * (h - padY * 2);
+      return [Number(x.toFixed(1)), Number(y.toFixed(1))];
+    });
+    const line = coords.map(([x, y]) => `${x},${y}`).join(" ");
+    const area = `${coords[0][0]},${h} ${line} ${coords[coords.length - 1][0]},${h}`;
+    const stroke = isUp ? "var(--up)" : "var(--down)";
+    const last = coords[coords.length - 1];
+    return `<svg class="idx-spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="${uid}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${stroke}" stop-opacity="0.28"/>
+          <stop offset="100%" stop-color="${stroke}" stop-opacity="0.0"/>
+        </linearGradient>
+      </defs>
+      <polygon points="${area}" fill="url(#${uid})"/>
+      <polyline points="${line}" fill="none" stroke="${stroke}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${last[0]}" cy="${last[1]}" r="2.2" fill="${stroke}"/>
+    </svg>`;
+  }
+
+  function maDot(label, val) {
+    const cls = val === true ? "above" : val === false ? "below" : "";
+    const title = val === true ? `站上 MA${label}` : val === false ? `位于 MA${label} 下方` : `MA${label} 未知`;
+    return `<span class="ma-dot ${cls}" title="${title}"><i></i>${label}</span>`;
+  }
+
+  function renderMarketPulse() {
+    const el = $("market-pulse-section");
+    if (!mp || mp.status === "unavailable") {
+      el.innerHTML = `<div class="section-head" style="margin-bottom:4px">
+        <h2>市场脉搏 · MARKET PULSE</h2>
+        <span class="right">可选模块 market_pulse</span>
+      </div>
+      <div class="pulse-empty">○ 实时市场脉搏数据尚未接入（接入 AkShare 指数、涨跌宽度与海外隔夜数据后自动展示）。</div>`;
+      return;
+    }
+    const indices = Array.isArray(mp.indices) ? mp.indices : [];
+    const cardsHtml = indices.map((idx, i) => {
+      const chg = Number(idx.change_pct || 0);
+      const isUp = chg >= 0;
+      return `<div class="idx-card">
+        <div class="idx-head">
+          <span class="idx-name">${esc(idx.name)}</span>
+          <span class="idx-code">${esc(idx.symbol)}</span>
+        </div>
+        <div class="idx-price-row">
+          <span class="idx-close">${fmtNum(idx.close, 2)}</span>
+          <span class="idx-chg ${isUp ? "up" : "down"}">${fmtPct(chg, 2, true)}</span>
+        </div>
+        ${sparklineSvg(idx.sparkline, isUp, `sp-${i}`)}
+        <div class="ma-dots">
+          <span style="margin-right:2px">MA</span>
+          ${maDot("20", idx.above_ma20)}
+          ${maDot("50", idx.above_ma50)}
+          ${maDot("250", idx.above_ma250)}
+        </div>
+      </div>`;
+    }).join("");
+
+    let breadthHtml = "";
+    const b = mp.breadth;
+    if (b) {
+      const adv = Number(b.advancers || 0);
+      const flat = Number(b.unchanged || 0);
+      const dec = Number(b.decliners || 0);
+      const tot = adv + flat + dec || 1;
+      const vs5 = b.turnover_vs_5d_pct;
+      const vsCls = vs5 != null ? (Number(vs5) >= 0 ? "up" : "down") : "muted";
+      const maMini = (label, v) => {
+        if (v == null) return "";
+        const p = Math.max(0, Math.min(100, Number(v) * 100));
+        return `<div class="ma-mini"><span>${label}</span><span class="track"><i style="width:${p.toFixed(0)}%"></i></span><b>${p.toFixed(0)}%</b></div>`;
+      };
+      breadthHtml = `<div class="breadth-bar">
+        <div class="breadth-seg-wrap">
+          <div class="breadth-labels">
+            <span class="up">涨 ${adv.toLocaleString("en-US")}</span>
+            <span class="muted">平 ${flat.toLocaleString("en-US")}</span>
+            <span class="down">跌 ${dec.toLocaleString("en-US")}</span>
+          </div>
+          <div class="breadth-track" title="全市场涨跌分布">
+            <span class="seg-up" style="width:${(adv / tot * 100).toFixed(2)}%"></span>
+            <span class="seg-flat" style="width:${(flat / tot * 100).toFixed(2)}%"></span>
+            <span class="seg-down" style="width:${(dec / tot * 100).toFixed(2)}%"></span>
+          </div>
+        </div>
+        <div class="breadth-metrics">
+          <span class="metric-chip">涨停 <b class="up">${b.limit_up_count ?? "—"}</b></span>
+          <span class="metric-chip">跌停 <b class="down">${b.limit_down_count ?? "—"}</b></span>
+          <span class="metric-chip">成交 <b>${fmtTurnover(b.turnover_cny_bn)}</b>${vs5 != null ? ` <span class="${vsCls}">(${fmtPct(vs5, 1, true)} vs 5D)</span>` : ""}</span>
+        </div>
+        <div class="ma-breadth" title="沪深300成分股站上均线比例">
+          <span class="muted mono" style="font-size:10px">CSI300</span>
+          ${maMini("MA20", b.csi300_above_ma20_pct)}
+          ${maMini("MA50", b.csi300_above_ma50_pct)}
+          ${maMini("MA250", b.csi300_above_ma250_pct)}
+        </div>
+      </div>`;
+    }
+
+    const overseas = Array.isArray(mp.overseas) ? mp.overseas : [];
+    const ovHtml = overseas.length ? `<div class="overseas-row">
+      <span class="overseas-label">隔夜外盘</span>
+      ${overseas.map((o) => {
+        const chg = Number(o.change_pct || 0);
+        const cls = chg >= 0 ? "up" : "down";
+        const decs = Number(o.value) < 20 ? 3 : 1;
+        return `<span class="ov-pill"><span class="n">${esc(o.name)}</span><span class="v">${fmtNum(o.value, decs)}</span><span class="${cls}">${fmtPct(chg, 2, true)}</span></span>`;
+      }).join("")}
+    </div>` : "";
+
+    const sa = Array.isArray(mp.sector_alerts) ? mp.sector_alerts : [];
+    const saHtml = sa.length ? `<div class="sector-alerts">
+      <span class="overseas-label">海外联动</span>
+      ${sa.map((s) => {
+        const chg = Number(s.change_pct || 0);
+        return `<span class="sector-alert-item"><span class="sector-tag">${esc(s.industry)}</span><span>${esc(s.peer)}</span><b class="${chg >= 0 ? "up" : "down"}">${fmtPct(chg, 2, true)}</b><span class="muted">${esc(s.note || "")}</span></span>`;
+      }).join("")}
+    </div>` : "";
+
+    el.innerHTML = `<div class="section-head">
+      <h2>市场脉搏 · MARKET PULSE</h2>
+      <span class="right">${esc(mp.regime_note || (mp.status === "partial" ? "部分指标已接入" : ""))}</span>
+    </div>
+    ${cardsHtml ? `<div class="index-grid">${cardsHtml}</div>` : ""}
+    ${breadthHtml}
+    ${ovHtml}
+    ${saHtml}`;
+  }
+
+  /* 3. Quiet-by-Default Pitfall Radar */
+  function renderPitfallRadar() {
+    const el = $("pitfall-section");
+    const pc = BRIEF.pitfall_calendar;
+    const alerts = pc && Array.isArray(pc.alerts) ? pc.alerts : [];
+    const status = pc ? pc.status : "not_checked";
+    let body = "";
+    if (!pc || status === "not_checked") {
+      body = `<div class="radar-quiet unchecked">盘前排雷日历未校验（除权除息 / 限售解禁 / 财报窗口 / 隔夜利空 / 停牌）。</div>`;
+    } else if (alerts.length === 0) {
+      body = `<div class="radar-quiet pass">盘前排雷全通过 — 标的池无除权、限售解禁、财报冲突或隔夜重大利空。</div>`;
+    } else {
+      body = `<div class="alert-list">${alerts.map((a) => {
+        const sev = a.severity || "medium";
+        return `<div class="alert-card ${esc(sev)}">
+          <div class="alert-top">
+            <span class="kind-tag">${esc(KIND_LABELS[a.kind] || a.kind || "提示")}</span>
+            <span class="alert-sym">${esc(a.symbol)} ${esc(a.name || "")}</span>
+            <span class="alert-title">${esc(a.title || "")}</span>
+            <span class="alert-date">${esc(a.date || "")}</span>
+          </div>
+          ${a.detail ? `<div class="alert-detail">${esc(a.detail)}</div>` : ""}
+        </div>`;
+      }).join("")}</div>`;
+    }
+    el.innerHTML = `<div class="section-head">
+      <h2>排雷雷达 · PITFALL RADAR</h2>
+      <span class="right">${status === "not_checked" ? "未校验" : `${alerts.length} 条提示`}</span>
+    </div>${body}`;
+  }
+
+  /* 4. Portfolio & Drawdown Buffer */
+  function renderPortfolio() {
+    const el = $("portfolio-section");
+    const pf = BRIEF.portfolio_summary || {};
+    const policy = BRIEF.policy || {};
+    const dd = pf.drawdown_pct;
+    const red = pf.drawdown_reduce_limit ?? policy.drawdown_reduce ?? 0.08;
+    const liq = pf.drawdown_liquidate_limit ?? policy.drawdown_liquidate ?? 0.09;
+    const maxScale = Math.max(0.10, liq + 0.01);
+    const ddRatio = dd != null ? Math.min(100, (Number(dd) / maxScale) * 100) : 0;
+    const redPos = Math.min(100, (Number(red) / maxScale) * 100);
+    const liqPos = Math.min(100, (Number(liq) / maxScale) * 100);
+    const fillColor = dd == null ? "var(--text-muted)" : dd >= red * 0.85 ? "var(--critical)" : dd >= red * 0.5 ? "var(--warning)" : "var(--good)";
+    const systemic = (BRIEF.systemic_risk && BRIEF.systemic_risk.by_rule) ? Object.entries(BRIEF.systemic_risk.by_rule).map(([k, v]) => `${k}:${v}`).join(", ") : "";
+
+    el.innerHTML = `<div class="section-head">
+      <h2>组合风控与回撤缓冲 · PORTFOLIO & DRAWDOWN</h2>
+      <span class="right">资金基数 ${fmtCny(BRIEF.capital)}</span>
+    </div>
+    <div class="pf-kpis">
+      <div class="pf-kpi"><div class="k">纸面权益</div><div class="v">${pf.paper_equity != null ? fmtCny(pf.paper_equity) : "—"}</div></div>
+      <div class="pf-kpi"><div class="k">当前回撤</div><div class="v" style="color:${dd != null && dd >= red * 0.5 ? fillColor : "var(--text-primary)"}">${dd != null ? fmtPct(dd, 2) : "—"}</div></div>
+      <div class="pf-kpi"><div class="k">计划买入</div><div class="v">${fmtCny(pf.planned_buy_notional ?? 0)}</div></div>
+      <div class="pf-kpi"><div class="k">预计目标仓位</div><div class="v">${fmtPct(pf.projected_exposure_pct, 1)}</div></div>
+    </div>
+    <div class="dd-gauge-box">
+      <div class="dd-gauge-head">
+        <span class="muted">回撤缓冲刻度 (0% – ${(maxScale * 100).toFixed(0)}%)</span>
+        <span>${pf.buffer_to_reduce_pct != null ? `距降仓线 <b style="color:var(--good)">+${fmtPct(pf.buffer_to_reduce_pct, 2)}</b> · 距清仓线 <b>+${fmtPct(pf.buffer_to_liquidate_pct, 2)}</b>` : '<span class="muted">纸面净值未提供</span>'}</span>
+      </div>
+      <div class="dd-track">
+        <div class="dd-fill" style="width:${ddRatio.toFixed(1)}%;background:${fillColor}"></div>
+        <div class="dd-marker reduce" style="left:${redPos.toFixed(1)}%" title="降仓线 ${(red * 100).toFixed(1)}%"></div>
+        <div class="dd-marker liquidate" style="left:${liqPos.toFixed(1)}%" title="清仓线 ${(liq * 100).toFixed(1)}%"></div>
+      </div>
+      <div class="dd-legend">
+        <span>高点 ${pf.actual_peak != null ? fmtCny(pf.actual_peak) : "—"} · 现金 ${pf.paper_cash != null ? fmtCny(pf.paper_cash) : "—"}</span>
+        <span><span style="color:var(--warning)">▏</span>降仓 ${(red * 100).toFixed(0)}% &nbsp; <span style="color:var(--critical)">▏</span>清仓 ${(liq * 100).toFixed(0)}%</span>
+      </div>
+    </div>
+    <div class="policy-strip">
+      <span>买入阈值 <b>${esc(policy.buy_threshold ?? "—")}</b></span>
+      <span>最低置信度 <b>${esc(policy.minimum_score_confidence ?? "—")}</b></span>
+      <span>单票上限 <b>${policy.maximum_position_weight != null ? fmtPct(policy.maximum_position_weight, 0) : "—"}</b></span>
+      <span>系统性预警 <b>${esc(systemic || "无")}</b></span>
+    </div>`;
+  }
+
+  /* 5. Scannable 7-column Expandable Tables */
+  const checksBySymbol = {};
+  if (AUCTION && Array.isArray(AUCTION.checks)) {
+    for (const c of AUCTION.checks) checksBySymbol[c.symbol] = c;
+  }
+
+  function renderScoreCell(item) {
+    const s = item.score || {};
+    const v1 = s.total != null ? Number(s.total) : null;
+    const conf = s.confidence != null ? Number(s.confidence) : null;
+    const v2 = item.scoring_v2;
+    const v1Pct = v1 != null ? Math.max(0, Math.min(100, v1)) : 0;
+
+    let v2Row = "";
+    if (item.category === "paper_exit") {
+      v2Row = `<div class="score-line"><span class="tag">v2</span><span class="val muted">—</span><span class="muted" style="font-size:10px">退出标的</span></div>`;
+    } else if (!v2) {
+      v2Row = `<div class="score-line"><span class="tag">v2</span><span class="val muted">—</span><span class="muted" style="font-size:10px">未加载</span></div>`;
+    } else if (v2.score == null) {
+      v2Row = `<div class="score-line"><span class="tag">v2</span><span class="val muted">—</span><span class="muted" style="font-size:10px">not scored</span></div>`;
+    } else {
+      const v2Val = Number(v2.score);
+      v2Row = `<div class="score-line"><span class="tag">v2</span><span class="val"><b>${v2Val.toFixed(1)}</b></span><div class="score-track"><i class="v2" style="width:${Math.max(0, Math.min(100, v2Val)).toFixed(1)}%"></i></div></div>`;
+    }
+
+    return `<div class="score-pair">
+      <div class="score-line"><span class="tag">v1</span><span class="val">${v1 != null ? v1.toFixed(1) : "—"}</span><div class="score-track"><i class="v1" style="width:${v1Pct.toFixed(1)}%"></i></div></div>
+      ${v2Row}
+      <div class="sub-meta">置信度 ${conf != null ? (conf * 100).toFixed(0) + "%" : "—"}${v2 && v2.score != null ? ` · v2 <b>${Number(v2.score).toFixed(1)}</b> pct` : ""}</div>
+    </div>`;
+  }
+
+  function renderLukCell(item) {
+    const luk = item.luk_setup;
+    if (!luk) return '<span class="muted mono">—</span>';
+    const meta = LUK_LABELS[luk.state] || { text: luk.state || "—", cls: "muted" };
+    const stop = luk.stop_pct != null ? `止损 -${(Number(luk.stop_pct) * 100).toFixed(1)}%` : "";
+    const rr = luk.reward_r != null ? `${Number(luk.reward_r).toFixed(1)}R` : "";
+    return `<div><span class="badge ${meta.cls}">${esc(meta.text)}</span></div>
+      <div class="sub-meta">${esc([stop, rr].filter(Boolean).join(" · ") || "—")}</div>`;
+  }
+
+  function renderSharesCell(item) {
+    if (item.category === "paper_exit") {
+      const held = Number(item.paper_position_shares || 0);
+      return `<div class="shares-main">${held > 0 ? `卖 ${held.toLocaleString("en-US")} 股` : "0 股"}</div>
+        <div class="sub-meta">纸面目标权重 0%</div>`;
+    }
+    const sug = item.suggested || item.hypothetical_at_max_weight || {};
+    const shares = sug.shares != null ? Number(sug.shares) : null;
+    const isHypo = Boolean(item.hypothetical_at_max_weight && !item.suggested);
+    const notional = sug.notional != null && Number(sug.notional) > 0 ? fmtCny(sug.notional) : "";
+    const label = shares != null ? `${shares.toLocaleString("en-US")} 股` : "—";
+    const meta = isHypo ? `假设上限 ${notional}` : (sug.reason ? sug.reason : notional);
+    return `<div class="shares-main">${isHypo ? `<span class="muted">${label}</span>` : label}</div>
+      <div class="sub-meta">${esc(meta || "—")}</div>`;
+  }
+
+  function renderAuctionCell(item, check) {
+    if (!check) return '<span class="badge muted">待 09:25 竞价</span>';
+    const flags = Array.isArray(check.flags) ? check.flags : [];
+    const severe = flags.some((f) => ["at_limit_up_cannot_buy", "at_limit_down", "large_gap_down", "below_luk_stop", "no_auction_quote"].includes(f));
+    const warn = flags.some((f) => ["near_limit_up", "large_gap_up", "stop_too_wide", "weak_vs_index", "auction_thin_liquidity"].includes(f));
+    const badgeCls = severe ? "bad" : warn ? "warn" : "good";
+    const badgeText = flags.length ? (FLAG_LABELS[flags[0]] || flags[0]) : "竞价正常";
+    const pricePart = check.auction_price != null ? `${fmtNum(check.auction_price, 2)} <span class="${Number(check.gap_pct || 0) >= 0 ? "up" : "down"}">${fmtPct(check.gap_pct, 2, true)}</span>` : "无报价";
+    const extras = [];
+    if (check.relative_gap_pct != null) extras.push(`相对 ${fmtPct(check.relative_gap_pct, 2, true)}`);
+    if (check.auction_volume_ratio != null) extras.push(`量比 ${(Number(check.auction_volume_ratio) * 100).toFixed(1)}%`);
+    return `<div><span class="badge ${badgeCls}">${esc(badgeText)}</span></div>
+      <div class="sub-meta">${pricePart}${extras.length ? ` · ${extras.join(" · ")}` : ""}</div>`;
+  }
+
+  function renderOvernightCell(item) {
+    const flags = Array.isArray(item.risk_flags) ? item.risk_flags : [];
+    const oa = item.overnight_announcements || { status: "not_checked", items: [] };
+    const items = Array.isArray(oa.items) ? oa.items : [];
+    const hasNeg = oa.status === "alert" || items.some((x) => x.polarity === "negative");
+
+    let statusPill = "";
+    if (hasNeg) statusPill = `<span class="badge bad">隔夜利空 (${items.length})</span>`;
+    else if (oa.status === "ok" || oa.status === "clear") statusPill = `<span class="badge good">${items.length ? `公告 ${items.length} 条` : "隔夜无异常"}</span>`;
+    else statusPill = `<span class="badge muted">☐ 未检查</span>`;
+
+    const riskMeta = flags.length ? `<div class="sub-meta up">▲ ${flags.length} 项风控提示</div>` : `<div class="sub-meta">无风控预警</div>`;
+    return `<div>${statusPill}</div>${riskMeta}`;
+  }
+
+  function renderDetailPanel(item, check) {
+    /* Col 1: v1 4-factor breakdown */
+    const comps = (item.score && item.score.components) ? item.score.components : {};
+    const compKeys = Object.keys(comps).sort();
+    const v1Html = compKeys.length ? compKeys.map((k) => {
+      const c = comps[k] || {};
+      const sc = Number(c.score || 0), mx = Number(c.max_score || 1);
+      const pct = Math.max(0, Math.min(100, (sc / (mx || 1)) * 100));
+      const reasons = Array.isArray(c.reasons) ? c.reasons.join("；") : "";
+      return `<div class="factor-row">
+        <div class="factor-top"><span>${esc(COMP_LABELS[k] || k)}</span><b>${sc.toFixed(1)} / ${mx.toFixed(0)}</b></div>
+        <div class="factor-bar"><i style="width:${pct.toFixed(1)}%"></i></div>
+        ${reasons ? `<div class="factor-reason">${esc(reasons)}</div>` : ""}
+      </div>`;
+    }).join("") : '<div class="muted mono">无因子明细</div>';
+
+    /* Col 2: v2 category percentiles + Luk setup */
+    const v2 = item.scoring_v2;
+    let v2Html = '<div class="muted mono">未加载 v2 分位明细</div>';
+    if (v2 && v2.score != null && v2.categories) {
+      v2Html = V2_CATS.filter(([k]) => v2.categories[k]).map(([k, label]) => {
+        const cat = v2.categories[k];
+        const p = Math.max(0, Math.min(100, Number(cat.percentile || 0)));
+        const w = cat.weight != null ? `w ${(Number(cat.weight) * 100).toFixed(0)}%` : "";
+        return `<div class="factor-row">
+          <div class="factor-top"><span>${esc(label)}</span><b>${p.toFixed(0)} pct <span class="muted">${w}</span></b></div>
+          <div class="factor-bar"><i class="v2" style="width:${p.toFixed(1)}%"></i></div>
+        </div>`;
+      }).join("");
+    } else if (v2 && v2.score == null) {
+      v2Html = '<div class="muted mono">not scored</div>';
+    }
+
+    const luk = item.luk_setup;
+    const lukHtml = luk ? `<div class="kv-list" style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--grid)">
+      <div class="kv-item"><span>Luk 状态</span><b>${esc((LUK_LABELS[luk.state] || {}).text || luk.state)}</b></div>
+      <div class="kv-item"><span>止损参考位</span><b>${luk.stop_price != null ? fmtNum(luk.stop_price, 2) : "—"} (${luk.stop_pct != null ? `-${(Number(luk.stop_pct) * 100).toFixed(1)}%` : "—"})</b></div>
+      <div class="kv-item"><span>支撑共振 / 盈亏比</span><b>${luk.confluence ?? "—"} 处 · ${luk.reward_r != null ? `${Number(luk.reward_r).toFixed(1)}R` : "—"}</b></div>
+      ${luk.base_days != null ? `<div class="kv-item"><span>平台周期</span><b>${luk.base_days} 日</b></div>` : ""}
+      ${luk.trigger_note ? `<div class="factor-reason" style="margin-top:2px">${esc(luk.trigger_note)}</div>` : ""}
+    </div>` : "";
+
+    /* Col 3: Auction + Risk Flags + Overnight Announcements */
+    let aucHtml = "";
+    if (check) {
+      const sugA = check.suggested_at_auction;
+      aucHtml = `<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px dashed var(--grid)">
+        <h3>09:25 竞价检验</h3>
+        <div class="kv-list">
+          <div class="kv-item"><span>竞价价 / 跳空</span><b>${check.auction_price != null ? fmtNum(check.auction_price, 2) : "—"} (${fmtPct(check.gap_pct, 2, true)})</b></div>
+          ${check.relative_gap_pct != null ? `<div class="kv-item"><span>相对指数跳空</span><b>${fmtPct(check.relative_gap_pct, 2, true)}</b></div>` : ""}
+          ${check.auction_volume_ratio != null ? `<div class="kv-item"><span>竞价额 / 20日均额</span><b>${(Number(check.auction_volume_ratio) * 100).toFixed(2)}%</b></div>` : ""}
+          ${check.stop_distance_at_auction_pct != null ? `<div class="kv-item"><span>竞价距止损位</span><b>${fmtPct(check.stop_distance_at_auction_pct, 2)}</b></div>` : ""}
+          ${sugA ? `<div class="kv-item"><span>按竞价价建议手数</span><b>${sugA.shares} 股 (${fmtCny(sugA.notional)})</b></div>` : ""}
+        </div>
+        ${(check.flags || []).length ? `<div style="margin-top:6px">${check.flags.map((f) => `<span class="flag-chip">${esc(FLAG_LABELS[f] || f)}</span>`).join("")}</div>` : ""}
+      </div>`;
+    }
+
+    const rFlags = Array.isArray(item.risk_flags) ? item.risk_flags : [];
+    const rfHtml = rFlags.length ? `<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px dashed var(--grid)">
+      <h3>风控标记</h3>
+      <div>${rFlags.map((f) => `<span class="flag-chip">${esc(f.rule)}${f.message ? `: ${esc(f.message)}` : ""}</span>`).join("")}</div>
+    </div>` : "";
+
+    const oa = item.overnight_announcements || { status: "not_checked", items: [] };
+    const oaItems = Array.isArray(oa.items) ? oa.items : [];
+    const oaHtml = oaItems.length ? `<div class="notice-list">${oaItems.map((n) => {
+      const pCls = n.polarity === "positive" ? "up" : n.polarity === "negative" ? "down" : "muted";
+      const pText = n.polarity === "positive" ? "偏正面" : n.polarity === "negative" ? "偏负面" : "中性";
+      return `<div class="notice-item">
+        <div class="notice-head"><span>${esc(n.published_at || "")}</span><span>${esc(n.source || "")}</span><span class="${pCls}">${pText}</span></div>
+        <div class="notice-title">${esc(n.title || "")}</div>
+        ${n.summary ? `<div class="notice-summary">${esc(n.summary)}</div>` : ""}
+      </div>`;
+    }).join("")}</div>` : `<div class="muted mono">${oa.status === "not_checked" ? "☐ 尚未检查隔夜公告" : "无新增隔夜公告"}</div>`;
+
+    return `<div class="detail-grid">
+      <div class="detail-card"><h3>v1 计数评分明细</h3>${v1Html}</div>
+      <div class="detail-card"><h3>v2 截面分位 & Luk 结构</h3>${v2Html}${lukHtml}</div>
+      <div class="detail-card">${aucHtml}${rfHtml}<h3>隔夜公告与事件</h3>${oaHtml}</div>
+    </div>`;
+  }
+
+  function renderTables() {
+    const groups = [
+      { key: "targets", title: "目标标的 · Paper Targets", items: BRIEF.targets || [] },
+      { key: "near_miss", title: "次优观察 · Near Misses (watch only, not targets)", items: BRIEF.near_miss || [] },
+      { key: "paper_exits", title: "纸面退出 · Paper Exits", items: BRIEF.paper_exits || [] },
+    ];
+    $("count-pills").innerHTML = groups.map((g) => `<span class="count-pill">${esc(g.title.split(" · ")[0])} <b>${g.items.length}</b></span>`).join("");
+
+    let rowIdx = 0;
+    const html = groups.map((g) => {
+      if (!g.items.length) {
+        return `<section class="panel section-pad table-section">
+          <div class="section-head" style="margin-bottom:0"><h2>${esc(g.title)} (0)</h2></div>
+          <div class="empty-table">None.</div>
+        </section>`;
+      }
+      const rowsHtml = g.items.map((item) => {
+        const id = `row-${rowIdx++}`;
+        const check = checksBySymbol[item.symbol] || null;
+        const rateStr = item.limit_rate != null ? `±${Math.round(Number(item.limit_rate) * 100)}%` : "";
+        return `<tr class="main-row" data-detail="${id}" tabindex="0" role="button" aria-expanded="false">
+          <td>
+            <div class="sym-cell">
+              <span class="chev">▸</span>
+              <div>
+                <div class="sym-code">${esc(item.symbol)}</div>
+                <div class="sym-name">${esc(item.name || "")}</div>
+              </div>
+            </div>
+          </td>
+          <td>${renderScoreCell(item)}</td>
+          <td>${renderLukCell(item)}</td>
+          <td class="num">
+            <div class="mono" style="font-weight:700;color:var(--text-primary)">${item.previous_close != null ? fmtNum(item.previous_close, 2) : "—"}</div>
+            <div class="sub-meta">${item.limit_down != null ? `${fmtNum(item.limit_down, 2)} / ${fmtNum(item.limit_up, 2)}` : "—"} ${rateStr}</div>
+          </td>
+          <td class="num">${renderSharesCell(item)}</td>
+          <td>${renderAuctionCell(item, check)}</td>
+          <td>${renderOvernightCell(item)}</td>
+        </tr>
+        <tr class="detail-row" id="${id}" hidden><td colspan="7">${renderDetailPanel(item, check)}</td></tr>`;
+      }).join("");
+
+      return `<section class="panel section-pad table-section">
+        <div class="section-head">
+          <h2>${esc(g.title)} (${g.items.length})</h2>
+          <span class="right">点击任意行展开因子、Luk 与公告明细</span>
+        </div>
+        <div class="table-wrap">
+          <table class="brief-table">
+            <thead>
+              <tr>
+                <th>标的</th>
+                <th>v1 / v2 research</th>
+                <th>Luk 结构</th>
+                <th class="num">昨收 / 涨跌停</th>
+                <th class="num">建议手数</th>
+                <th>09:25 竞价</th>
+                <th>隔夜与风控</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </section>`;
+    }).join("");
+
+    const root = $("tables-root");
+    root.innerHTML = html;
+
+    function toggleRow(tr, forceOpen) {
+      const detail = $(tr.getAttribute("data-detail"));
+      if (!detail) return;
+      const next = forceOpen !== undefined ? forceOpen : detail.hidden;
+      detail.hidden = !next;
+      tr.classList.toggle("open", next);
+      tr.setAttribute("aria-expanded", next ? "true" : "false");
+    }
+
+    root.querySelectorAll("tr.main-row").forEach((tr) => {
+      tr.addEventListener("click", () => toggleRow(tr));
+      tr.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          toggleRow(tr);
+        }
+      });
+    });
+
+    let allExpanded = false;
+    const expandBtn = $("expand-all-btn");
+    expandBtn.onclick = () => {
+      allExpanded = !allExpanded;
+      root.querySelectorAll("tr.main-row").forEach((tr) => toggleRow(tr, allExpanded));
+      expandBtn.textContent = allExpanded ? "收起全部明细" : "展开全部明细";
+    };
+  }
+
+  if (AUCTION) {
+    const bm = AUCTION.benchmark_gap_pct != null ? ` · benchmark gap ${fmtPct(AUCTION.benchmark_gap_pct, 2, true)}` : "";
+    $("auction-foot").textContent = `Auction check applied (near limit ${fmtPct(AUCTION.near_limit_pct, 0)}, large gap ${fmtPct(AUCTION.large_gap_pct, 0)}${bm}).`;
+  }
+
+  renderMarketPulse();
+  renderPitfallRadar();
+  renderPortfolio();
+  renderTables();
+})();
+</script>
+</body>
+</html>

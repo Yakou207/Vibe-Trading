@@ -14,6 +14,8 @@ from fintech_quant.reports.demo_fixtures import (
     DEMO_STOCKS,
     build_demo_workspace,
     demo_jev_payload,
+    demo_premarket_bundle,
+    demo_premarket_context,
     demo_research_payload,
 )
 from fintech_quant.reports.desk import build_desk_snapshot
@@ -96,6 +98,37 @@ def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: P
     assert research["jev_record"]["verdict"] == "support"
     assert demo_jev_payload(picker, "999009")["verdict"] == "veto"
 
+    pm = demo_premarket_bundle(demo, picker)
+    brief = pm["brief"]
+    auction = pm["auction"]
+    assert brief["signal_date"] == DEMO_AS_OF
+    assert brief["counts_toward_paper_evidence"] is False
+    assert brief["market_pulse"]["status"] == "ok"
+    assert len(brief["market_pulse"]["indices"]) == 6
+    assert brief["pitfall_calendar"]["status"] == "ok"
+    assert len(brief["pitfall_calendar"]["alerts"]) >= 1
+    assert brief["portfolio_summary"]["drawdown_reduce_limit"] == 0.08
+    assert brief["portfolio_summary"]["drawdown_liquidate_limit"] == 0.09
+    assert len(brief["targets"]) == 3
+    assert len(brief["near_miss"]) >= 1
+    assert len(brief["paper_exits"]) == 1
+    assert auction["benchmark_gap_pct"] is not None
+    pm_blob = json.dumps(pm, ensure_ascii=False)
+    for company in REAL_COMPANY_BLOCKLIST:
+        assert company not in pm_blob, f"real company {company!r} leaked into demo premarket"
+    for term in BROKER_RATING_TERMS:
+        assert term not in pm_blob, f"broker rating term {term!r} leaked into demo premarket"
+    for clutter in ("虚构", "合成", "Fictional", "synthetic"):
+        assert clutter not in pm_blob, f"clutter term {clutter!r} in demo premarket payload"
+
+
+    pm_ctx = demo_premarket_context(demo, picker)
+    assert pm_ctx["status"] == "ok"
+    assert pm_ctx["signal_date"] == DEMO_AS_OF
+    assert len(pm_ctx["market_pulse"]["indices"]) == 6
+    assert pm_ctx["pitfall_calendar"]["status"] == "ok"
+    assert "999001.SH" in pm_ctx["auction"]["by_symbol"]
+
 
 def test_build_demo_pages_writes_self_contained_static_site(tmp_path: Path) -> None:
     written = build_demo_pages(tmp_path)
@@ -110,8 +143,12 @@ def test_build_demo_pages_writes_self_contained_static_site(tmp_path: Path) -> N
     assert "Fictional data for UI demo only. Not investment advice." in desk_html
     assert "虚构数据，仅供界面演示，不构成任何投资建议" in picks_html
     assert "static-demo-bundle" in picks_html
+    assert "/api/premarket-context" in picks_html
+    assert "premarket-panel" in picks_html
     assert "./picks.html" in desk_html
     assert "./index.html" in picks_html
+    assert "./premarket.html" not in desk_html
+    assert "./premarket.html" not in picks_html
 
 
 def test_serve_trading_desk_demo_mode_serves_all_endpoints_offline() -> None:
@@ -136,7 +173,16 @@ def test_serve_trading_desk_demo_mode_serves_all_endpoints_offline() -> None:
         assert snapshot["quotes_status"] == "demo"
 
         assert "CSI 300 Desk" in _get(f"http://127.0.0.1:{port}/")
-        assert "选股 · CSI 300" in _get(f"http://127.0.0.1:{port}/picks")
+        picks_html = _get(f"http://127.0.0.1:{port}/picks")
+        assert "选股 · CSI 300" in picks_html
+        assert "premarket-panel" in picks_html
+
+        pm_ctx = json.loads(_get(f"http://127.0.0.1:{port}/api/premarket-context"))
+        assert pm_ctx["status"] == "ok"
+        assert pm_ctx["signal_date"] == DEMO_AS_OF
+        assert len(pm_ctx["market_pulse"]["indices"]) == 6
+        assert pm_ctx["pitfall_calendar"]["status"] == "ok"
+        assert "999001.SH" in pm_ctx["auction"]["by_symbol"]
 
         stock = json.loads(_get(f"http://127.0.0.1:{port}/api/stock?q=999001"))
         assert stock["verdict"]["level"] == "entry"
