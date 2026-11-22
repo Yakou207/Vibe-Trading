@@ -128,7 +128,11 @@ def _bar_payload(context: LiveContext, symbol: str, *, fresh: bool = False) -> d
         exchange, code = symbol.split(".")[1].lower(), symbol.split(".")[0]
         errors = []
         adaptive = _is_adaptive(context, ("sina", "tencent"))
-        sources = ordered_providers(("sina", "tencent")) if adaptive else ["sina", "tencent"]
+        sources = (
+            [name.split(":", 1)[1] for name in ordered_providers(("bars:sina", "bars:tencent"))]
+            if adaptive
+            else ["sina", "tencent"]
+        )
         for source in sources:
             kwargs = {
                 "symbol": f"{exchange}{code}",
@@ -235,10 +239,25 @@ def live_fundamentals(context: LiveContext, symbol: str) -> dict[str, object]:
                 result["financials_error"] = type(exc).__name__
         return result
 
-    cached = _cached(context, "fundamentals", symbol, fetch)
-    if "valuation_history" not in cached:  # written today before the history was kept
-        cached = _cached(context, "fundamentals", symbol, fetch, fresh=True)
+    def cacheable() -> dict[str, object]:
+        result = fetch()
+        if "TimeoutError" in (result.get("valuation_error"), result.get("financials_error")):
+            raise _NotCached(result)  # a slow provider is retried on the next request
+        return result
+
+    try:
+        cached = _cached(context, "fundamentals", symbol, cacheable)
+        if "valuation_history" not in cached:  # written today before the history was kept
+            cached = _cached(context, "fundamentals", symbol, cacheable, fresh=True)
+    except _NotCached as skipped:
+        return skipped.result
     return cached
+
+
+class _NotCached(Exception):
+    def __init__(self, result: dict[str, object]) -> None:
+        super().__init__("transient result")
+        self.result = result
 
 
 def v2_inputs(
@@ -465,7 +484,10 @@ def live_intraday(
         "minute_sina": {"symbol": f"{exchange}{code}"},
     }
     order = (
-        ordered_providers(("minute_em", "minute_sina"))
+        [
+            name.split(":", 1)[1]
+            for name in ordered_providers(("intraday:minute_em", "intraday:minute_sina"))
+        ]
         if adaptive
         else ["minute_em", "minute_sina"]
     )
