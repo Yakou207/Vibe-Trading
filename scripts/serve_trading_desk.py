@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import os
 import queue
@@ -25,7 +24,7 @@ from fintech_quant.reports.demo_fixtures import (  # noqa: E402
     DemoPaths,
     build_demo_workspace,
     demo_jev_payload,
-    demo_premarket_bundle,
+    demo_premarket_context,
     demo_research_payload,
 )
 from fintech_quant.reports.desk import (  # noqa: E402
@@ -46,11 +45,6 @@ from fintech_quant.reports.picker import (  # noqa: E402
     research_payload,
     stock_payload,
     universe_payload,
-)
-from fintech_quant.reports.premarket_brief import (  # noqa: E402
-    build_brief,
-    latest_complete_cycle as latest_premarket_cycle,
-    render_brief_html,
 )
 
 
@@ -181,37 +175,69 @@ class DeskState:
         path = self.args.scoring_v2
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
-    def premarket_bundle(self) -> dict[str, object]:
-        """Latest pre-market brief and optional 09:25 auction check."""
+    def premarket_context(self) -> dict[str, object]:
+        """Read-only pre-market pulse, pitfall calendar and 09:25 auction map for `/picks`."""
         if self.demo and self.demo_paths is not None:
             if self._demo_premarket_cache is None:
-                self._demo_premarket_cache = demo_premarket_bundle(self.demo_paths, self.picker())
+                self._demo_premarket_cache = demo_premarket_context(self.demo_paths, self.picker())
             return self._demo_premarket_cache
 
+        empty: dict[str, object] = {
+            "status": "unavailable",
+            "signal_date": None,
+            "market_pulse": {"status": "unavailable"},
+            "pitfall_calendar": {"status": "not_checked", "alerts": []},
+            "auction": None,
+        }
         root = self.args.premarket_root
-        if root is not None and root.exists():
-            briefs = sorted(root.glob("*/brief.json"))
-            if briefs:
-                latest = briefs[-1]
-                brief = json.loads(latest.read_text(encoding="utf-8"))
-                auction_path = latest.with_name("auction.json")
-                auction = (
-                    json.loads(auction_path.read_text(encoding="utf-8"))
-                    if auction_path.exists()
-                    else None
-                )
-                return {"brief": brief, "auction": auction}
-
+        if root is None or not root.exists():
+            return empty
+        briefs = sorted(root.glob("*/brief.json"))
+        if not briefs:
+            return empty
         try:
-            cycle_dir = latest_premarket_cycle(self.args.cycle_root)
-            brief = build_brief(
-                cycle_dir,
-                float(self.args.capital),
-                scoring_v2_path=self.args.scoring_v2,
+            latest = briefs[-1]
+            brief = json.loads(latest.read_text(encoding="utf-8"))
+            auction_path = latest.with_name("auction.json")
+            raw_auction = (
+                json.loads(auction_path.read_text(encoding="utf-8"))
+                if auction_path.exists()
+                else None
             )
-            return {"brief": brief, "auction": None}
-        except (FileNotFoundError, KeyError, ValueError) as exc:
-            return {"brief": None, "auction": None, "error": str(exc)}
+        except (OSError, ValueError):
+            return empty
+
+        market_pulse = brief.get("market_pulse") or {"status": "unavailable"}
+        pitfall_calendar = brief.get("pitfall_calendar") or {
+            "status": "not_checked",
+            "alerts": [],
+        }
+        auction = None
+        if isinstance(raw_auction, dict):
+            by_symbol = {
+                str(c["symbol"]): c
+                for c in raw_auction.get("checks", [])
+                if isinstance(c, dict) and c.get("symbol")
+            }
+            auction = {
+                "signal_date": raw_auction.get("signal_date"),
+                "benchmark_gap_pct": raw_auction.get("benchmark_gap_pct"),
+                "near_limit_pct": raw_auction.get("near_limit_pct"),
+                "large_gap_pct": raw_auction.get("large_gap_pct"),
+                "by_symbol": by_symbol,
+            }
+        has_data = (
+            market_pulse.get("status") not in (None, "unavailable")
+            or pitfall_calendar.get("status") not in (None, "not_checked")
+            or auction is not None
+        )
+        return {
+            "status": "ok" if has_data else "unavailable",
+            "signal_date": brief.get("signal_date"),
+            "market_pulse": market_pulse,
+            "pitfall_calendar": pitfall_calendar,
+            "auction": auction,
+        }
 
     def subscribe(self) -> queue.Queue[str]:
         subscriber: queue.Queue[str] = queue.Queue()
@@ -246,26 +272,8 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                     "__PICKER_TITLE__", f"选股 · CSI 300 · {as_of}"
                 )
                 self._send(body.encode("utf-8"), "text/html; charset=utf-8")
-            elif path == "/premarket":
-                bundle = state.premarket_bundle()
-                if bundle.get("brief") is not None:
-                    html_body = render_brief_html(
-                        bundle["brief"],  # type: ignore[arg-type]
-                        bundle.get("auction"),  # type: ignore[arg-type]
-                        nav_visible=True,
-                    )
-                else:
-                    msg = html.escape(str(bundle.get("error") or "尚未生成盘前简报"))
-                    html_body = (
-                        "<!doctype html><html lang='zh-CN'><meta charset='utf-8'>"
-                        "<title>盘前指挥台</title><body style='font:14px/1.6 system-ui;"
-                        "background:#0e0f13;color:#f0efec;padding:24px'>"
-                        "<p><a href='/' style='color:#e87ba4'>← 返回交易桌</a></p>"
-                        f"<h2>盘前简报不可用</h2><p>{msg}</p></body></html>"
-                    )
-                self._send(html_body.encode("utf-8"), "text/html; charset=utf-8")
-            elif path == "/api/premarket":
-                self._json(state.premarket_bundle())
+            elif path == "/api/premarket-context":
+                self._json(state.premarket_context())
             elif path == "/api/universe":
                 self._json(universe_payload(state.picker(), state.live))
             elif path == "/api/picks":
@@ -446,12 +454,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=ROOT / "outputs/premarket",
         help="Directory holding pre-market briefs (<date>/brief.json and optional auction.json).",
     )
-    parser.add_argument(
-        "--capital",
-        type=float,
-        default=100_000.0,
-        help="Reference capital used when building a pre-market brief on the fly.",
-    )
     parser.add_argument("--quotes", type=Path, default=None, help="Realtime quote CSV to watch.")
     parser.add_argument("--live-quotes", action="store_true", help="Poll AkShare spot quotes.")
     parser.add_argument("--quote-interval", type=float, default=30.0)
@@ -522,7 +524,7 @@ def main() -> int:
         mode_tag = " [DEMO]" if args.demo else ""
         print(
             f"trading desk on http://{args.host}:{args.port} "
-            f"(picker at /picks, premarket at /premarket) as_of={state.snapshot.get('as_of')}{mode_tag}",
+            f"(picker at /picks) as_of={state.snapshot.get('as_of')}{mode_tag}",
             flush=True,
         )
         try:

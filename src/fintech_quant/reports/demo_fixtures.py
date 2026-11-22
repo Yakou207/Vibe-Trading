@@ -1156,3 +1156,35 @@ def demo_premarket_bundle(
 
     auction = evaluate_auction(brief, sample_quotes, benchmark_gap_pct=0.0042)
     return {"brief": brief, "auction": auction}
+
+
+def demo_premarket_context(
+    demo: DemoPaths, picker_data: PickerData | None = None
+) -> dict[str, object]:
+    """Compact `/api/premarket-context` payload consumed by `/picks` in demo mode."""
+    bundle = demo_premarket_bundle(demo, picker_data)
+    brief = bundle["brief"]
+    auction = bundle.get("auction")
+    by_symbol = (
+        {str(c["symbol"]): c for c in auction.get("checks", [])}  # type: ignore[union-attr]
+        if isinstance(auction, Mapping)
+        else {}
+    )
+    return {
+        "status": "ok",
+        "signal_date": brief["signal_date"],  # type: ignore[index]
+        "market_pulse": brief.get("market_pulse") or {"status": "unavailable"},  # type: ignore[union-attr]
+        "pitfall_calendar": brief.get("pitfall_calendar")  # type: ignore[union-attr]
+        or {"status": "not_checked", "alerts": []},
+        "auction": (
+            {
+                "signal_date": auction.get("signal_date"),
+                "benchmark_gap_pct": auction.get("benchmark_gap_pct"),
+                "near_limit_pct": auction.get("near_limit_pct"),
+                "large_gap_pct": auction.get("large_gap_pct"),
+                "by_symbol": by_symbol,
+            }
+            if isinstance(auction, Mapping)
+            else None
+        ),
+    }

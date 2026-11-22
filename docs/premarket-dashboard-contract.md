@@ -1,10 +1,58 @@
-# Pre-Market Dashboard Data Contract
+# Pre-Market Dashboard & `/picks` Context Data Contract
 
-This document defines the JSON data contract consumed by the flagship Pre-Market Dashboard (`src/fintech_quant/reports/premarket_template.html`, rendered by `fintech_quant.reports.premarket_brief.render_brief_html` and served at `/premarket` & `/api/premarket`).
+This document defines the JSON data contract consumed by **two surfaces**:
 
-All new fields introduced in PR #2 are **strictly optional** and **100% backwards-compatible** with existing `brief.json` and `auction.json` files (`schema_version = 1`). When an optional block is omitted or marked unavailable, the UI degrades gracefully to a quiet placeholder instead of breaking.
+1. **`GET /api/premarket-context`** (served by `scripts/serve_trading_desk.py` and embedded in static `picks.html`) — powers the collapsible Pre-Market Pulse & Pitfall Radar panel, inline pool badges (TOP 5 & Shadow Pool v2), and active stock-card auction/pitfall callouts directly inside **`/picks`** (maintaining the clean 2-page `交易桌 /` + `选股 /picks` architecture).
+2. **Standalone Paper-Trade Brief CLI (`scripts/build_premarket_brief.py`)** — writes `outputs/premarket/<date>/brief.json`, `auction.json`, `brief.html`, and `brief_auction.html` using `src/fintech_quant/reports/premarket_template.html`.
 
-> **Evidence boundary**: Nothing in `brief.json`, `auction.json`, or `/premarket` ever mutates `data/paper/` or `outputs/paper_trading/.../cycles/`, and nothing here counts toward V2 paper-trading evidence (`counts_toward_paper_evidence: false`).
+All new fields introduced in PR #2 are **strictly optional** and **100% backwards-compatible** with existing `brief.json` and `auction.json` files (`schema_version = 1`). When an optional block is omitted or no pre-market file exists yet, `/api/premarket-context` returns a graceful unavailable payload and `/picks` renders a quiet single-line placeholder instead of erroring.
+
+> **Evidence boundary**: Nothing in `/api/premarket-context`, `brief.json`, or `auction.json` ever mutates `data/paper/` or `outputs/paper_trading/.../cycles/`, and nothing here counts toward V2 paper-trading evidence (`counts_toward_paper_evidence: false`).
+
+---
+
+## `/api/premarket-context` Endpoint Response
+
+`scripts/serve_trading_desk.py` reads the latest `outputs/premarket/<date>/brief.json` (plus sibling `auction.json`, if present) under `--premarket-root` and projects it into a compact payload for `/picks`:
+
+```json
+{
+  "status": "ok",
+  "signal_date": "2026-11-05",
+  "market_pulse": { "...": "see section 1 below" },
+  "pitfall_calendar": { "status": "ok", "alerts": [] },
+  "auction": {
+    "signal_date": "2026-11-05",
+    "benchmark_gap_pct": 0.0042,
+    "near_limit_pct": 0.01,
+    "large_gap_pct": 0.05,
+    "by_symbol": {
+      "999001.SH": {
+        "symbol": "999001.SH",
+        "category": "target",
+        "auction_price": 345.12,
+        "gap_pct": 0.012,
+        "auction_volume_ratio": 0.1619,
+        "relative_gap_pct": 0.0078,
+        "stop_distance_at_auction_pct": 0.0593,
+        "flags": ["auction_volume_surge"]
+      }
+    }
+  }
+}
+```
+
+When no brief exists yet (or neither `market_pulse`, `pitfall_calendar`, nor `auction.json` is populated), `/api/premarket-context` returns:
+
+```json
+{
+  "status": "unavailable",
+  "signal_date": null,
+  "market_pulse": { "status": "unavailable" },
+  "pitfall_calendar": { "status": "not_checked", "alerts": [] },
+  "auction": null
+}
+```
 
 ---
 
@@ -243,4 +291,4 @@ To connect live A-share data without touching the frontend template:
 2. **Pitfall Calendar**: Query ex-dividend (`stock_fhps_detail_em`), share unlock (`stock_restricted_release_detail_em`), earnings calendar, suspension list, and `stock_intel` overnight notices for `targets + near_miss + paper_exits`; pass into `build_brief(..., pitfall_calendar=...)` and populate each item's `overnight_announcements`.
 3. **Luk Setup**: Run `momentum_setup.screen` over the cycle's signal prices and attach `item["luk_setup"]` before dumping `brief.json`.
 4. **09:25 Auction Check**: Pass `auction_turnover`, `avg_turnover_20d` in quote rows and `benchmark_gap_pct` (CSI 300 auction gap) into `evaluate_auction(...)`.
-5. **Serving**: `scripts/serve_trading_desk.py` automatically serves the latest `outputs/premarket/<date>/brief.json` (+ sibling `auction.json`) at `/premarket` and `/api/premarket` (or builds a baseline brief on the fly from the latest complete cycle if no saved brief exists yet).
+5. **Serving**: `scripts/serve_trading_desk.py` automatically reads the latest `outputs/premarket/<date>/brief.json` (+ sibling `auction.json`) and serves it at `/api/premarket-context` for `/picks` (keeping the clean 2-page `交易桌 /` + `选股 /picks` UI). Standalone Paper Trade briefs continue to export via `scripts/build_premarket_brief.py` into `outputs/premarket/<date>/brief.html`.

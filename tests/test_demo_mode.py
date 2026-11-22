@@ -15,6 +15,7 @@ from fintech_quant.reports.demo_fixtures import (
     build_demo_workspace,
     demo_jev_payload,
     demo_premarket_bundle,
+    demo_premarket_context,
     demo_research_payload,
 )
 from fintech_quant.reports.desk import build_desk_snapshot
@@ -121,30 +122,33 @@ def test_demo_workspace_passes_hash_verified_desk_and_picker_loaders(tmp_path: P
         assert clutter not in pm_blob, f"clutter term {clutter!r} in demo premarket payload"
 
 
+    pm_ctx = demo_premarket_context(demo, picker)
+    assert pm_ctx["status"] == "ok"
+    assert pm_ctx["signal_date"] == DEMO_AS_OF
+    assert len(pm_ctx["market_pulse"]["indices"]) == 6
+    assert pm_ctx["pitfall_calendar"]["status"] == "ok"
+    assert "999001.SH" in pm_ctx["auction"]["by_symbol"]
+
+
 def test_build_demo_pages_writes_self_contained_static_site(tmp_path: Path) -> None:
     written = build_demo_pages(tmp_path)
     names = {path.name for path in written}
-    assert names == {"index.html", "picks.html", "premarket.html", ".nojekyll"}
+    assert names == {"index.html", "picks.html", ".nojekyll"}
 
     desk_html = (tmp_path / "index.html").read_text(encoding="utf-8")
     picks_html = (tmp_path / "picks.html").read_text(encoding="utf-8")
-    premarket_html = (tmp_path / "premarket.html").read_text(encoding="utf-8")
     assert "__DESK_" not in desk_html
     assert "__PICKER_" not in picks_html
-    assert "__PREMARKET_" not in premarket_html
     assert "虚构数据，仅供界面演示，不构成任何投资建议" in desk_html
     assert "Fictional data for UI demo only. Not investment advice." in desk_html
     assert "虚构数据，仅供界面演示，不构成任何投资建议" in picks_html
-    assert "虚构数据，仅供界面演示，不构成任何投资建议" in premarket_html
     assert "static-demo-bundle" in picks_html
+    assert "/api/premarket-context" in picks_html
+    assert "premarket-panel" in picks_html
     assert "./picks.html" in desk_html
-    assert "./premarket.html" in desk_html
     assert "./index.html" in picks_html
-    assert "./premarket.html" in picks_html
-    assert "./index.html" in premarket_html
-    assert "./picks.html" in premarket_html
-    assert "MARKET PULSE" in premarket_html
-    assert "PITFALL RADAR" in premarket_html
+    assert "./premarket.html" not in desk_html
+    assert "./premarket.html" not in picks_html
 
 
 def test_serve_trading_desk_demo_mode_serves_all_endpoints_offline() -> None:
@@ -169,15 +173,16 @@ def test_serve_trading_desk_demo_mode_serves_all_endpoints_offline() -> None:
         assert snapshot["quotes_status"] == "demo"
 
         assert "CSI 300 Desk" in _get(f"http://127.0.0.1:{port}/")
-        assert "选股 · CSI 300" in _get(f"http://127.0.0.1:{port}/picks")
-        pm_html = _get(f"http://127.0.0.1:{port}/premarket")
-        assert "盘前指挥台" in pm_html
-        assert "__PREMARKET_" not in pm_html
+        picks_html = _get(f"http://127.0.0.1:{port}/picks")
+        assert "选股 · CSI 300" in picks_html
+        assert "premarket-panel" in picks_html
 
-        pm_api = json.loads(_get(f"http://127.0.0.1:{port}/api/premarket"))
-        assert pm_api["brief"]["signal_date"] == DEMO_AS_OF
-        assert len(pm_api["brief"]["market_pulse"]["indices"]) == 6
-        assert pm_api["auction"] is not None
+        pm_ctx = json.loads(_get(f"http://127.0.0.1:{port}/api/premarket-context"))
+        assert pm_ctx["status"] == "ok"
+        assert pm_ctx["signal_date"] == DEMO_AS_OF
+        assert len(pm_ctx["market_pulse"]["indices"]) == 6
+        assert pm_ctx["pitfall_calendar"]["status"] == "ok"
+        assert "999001.SH" in pm_ctx["auction"]["by_symbol"]
 
         stock = json.loads(_get(f"http://127.0.0.1:{port}/api/stock?q=999001"))
         assert stock["verdict"]["level"] == "entry"

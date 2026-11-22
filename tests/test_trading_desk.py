@@ -338,3 +338,48 @@ def test_desk_defaults_resolve_from_project_root_not_cwd(tmp_path, monkeypatch) 
         path = getattr(args, name)
         assert path.is_absolute() and path.is_relative_to(SCRIPT_ROOT), name
     assert args.scoring_v2 == SCRIPT_ROOT / "outputs/research/scoring_v2/latest_scores.json"
+
+
+def test_premarket_context_returns_unavailable_when_missing_and_loads_brief_when_present(
+    tmp_path: Path,
+) -> None:
+    from scripts.serve_trading_desk import DeskState, build_parser
+
+    cycles = _write_cycles(tmp_path)
+    pm_root = tmp_path / "premarket"
+    args = build_parser().parse_args(
+        ["--cycle-root", str(cycles), "--premarket-root", str(pm_root)]
+    )
+    state = DeskState(args)
+
+    empty = state.premarket_context()
+    assert empty["status"] == "unavailable"
+    assert empty["market_pulse"]["status"] == "unavailable"
+    assert empty["pitfall_calendar"] == {"status": "not_checked", "alerts": []}
+    assert empty["auction"] is None
+
+    day_dir = pm_root / "2026-07-16"
+    day_dir.mkdir(parents=True)
+    _write_json(
+        day_dir / "brief.json",
+        {
+            "signal_date": "2026-07-16",
+            "market_pulse": {"status": "ok", "regime": "neutral", "indices": []},
+            "pitfall_calendar": {"status": "ok", "alerts": []},
+        },
+    )
+    _write_json(
+        day_dir / "auction.json",
+        {
+            "signal_date": "2026-07-16",
+            "benchmark_gap_pct": 0.002,
+            "near_limit_pct": 0.01,
+            "large_gap_pct": 0.05,
+            "checks": [{"symbol": "600001.SH", "auction_price": 10.1, "gap_pct": 0.01, "flags": []}],
+        },
+    )
+    loaded = state.premarket_context()
+    assert loaded["status"] == "ok"
+    assert loaded["signal_date"] == "2026-07-16"
+    assert loaded["market_pulse"]["regime"] == "neutral"
+    assert loaded["auction"]["by_symbol"]["600001.SH"]["auction_price"] == 10.1
