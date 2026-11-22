@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import queue
@@ -19,6 +20,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.information.premarket_live import PremarketLive  # noqa: E402
 from fintech_quant.information.stock_intel import prune_daily_cache  # noqa: E402
 from fintech_quant.reports.demo_fixtures import (  # noqa: E402
     DemoPaths,
@@ -62,6 +64,8 @@ class DeskState:
         self.demo = bool(getattr(args, "demo", False))
         self.demo_paths: DemoPaths | None = getattr(args, "_demo_paths", None)
         self._demo_premarket_cache: dict[str, object] | None = None
+        self.premarket_live = PremarketLive(None if self.demo else args.premarket_root)
+        self._turnover_cache: tuple[str, dict[str, float]] = ("", {})
         self.lock = threading.Lock()
         self.subscribers: list[queue.Queue[str]] = []
         self.quotes: list[dict[str, object]] = []
@@ -175,69 +179,131 @@ class DeskState:
         path = self.args.scoring_v2
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
-    def premarket_context(self) -> dict[str, object]:
-        """Read-only pre-market pulse, pitfall calendar and 09:25 auction map for `/picks`."""
+    def premarket_context(self, *, refresh: bool = False, wait: bool = False) -> dict[str, object]:
+        """Pre-market pulse, pitfall radar and 09:25 auction for `/picks`.
+
+        The pulse and the calendar come from the brief the post-close job built for the latest
+        cycle; an older brief is never shown as today's. Overseas quotes, overnight notices and
+        the auction are fetched on demand (see ``premarket_live``)."""
         if self.demo and self.demo_paths is not None:
             if self._demo_premarket_cache is None:
                 self._demo_premarket_cache = demo_premarket_context(self.demo_paths, self.picker())
             return self._demo_premarket_cache
 
-        empty: dict[str, object] = {
-            "status": "unavailable",
-            "signal_date": None,
-            "market_pulse": {"status": "unavailable"},
-            "pitfall_calendar": {"status": "not_checked", "alerts": []},
-            "auction": None,
-        }
-        root = self.args.premarket_root
-        if root is None or not root.exists():
-            return empty
-        briefs = sorted(root.glob("*/brief.json"))
-        if not briefs:
-            return empty
-        try:
-            latest = briefs[-1]
-            brief = json.loads(latest.read_text(encoding="utf-8"))
-            auction_path = latest.with_name("auction.json")
-            raw_auction = (
-                json.loads(auction_path.read_text(encoding="utf-8"))
-                if auction_path.exists()
-                else None
-            )
-        except (OSError, ValueError):
-            return empty
+        with self.lock:
+            signal_date = self.snapshot.get("as_of")
+        brief = self._brief(str(signal_date)) if signal_date else None
+        inputs = self._premarket_inputs(str(signal_date or ""), brief)
+        live = self.premarket_live.snapshot(inputs, refresh=refresh, wait=wait)
+        watched = set(inputs["auction_symbols"])  # type: ignore[arg-type]
 
-        market_pulse = brief.get("market_pulse") or {"status": "unavailable"}
-        pitfall_calendar = brief.get("pitfall_calendar") or {
-            "status": "not_checked",
-            "alerts": [],
-        }
+        market_pulse = dict((brief or {}).get("market_pulse") or {"status": "unavailable"})
+        overseas = live["overseas"] or {}
+        if overseas.get("items"):
+            market_pulse["overseas"] = overseas["items"]
+            if market_pulse.get("status") == "unavailable":
+                market_pulse["status"] = "partial"
+
+        calendar = dict((brief or {}).get("pitfall_calendar") or {"status": "not_checked", "alerts": []})
+        alerts = [a for a in calendar.get("alerts", []) if a.get("symbol") in watched]
+        notices = live["notices"] or {}
+        alerts += notices.get("alerts", [])
+        if calendar.get("status") == "not_checked" and notices.get("status") not in (None, "not_checked"):
+            calendar["status"] = "partial"
+        calendar["alerts"] = alerts
+
         auction = None
-        if isinstance(raw_auction, dict):
-            by_symbol = {
-                str(c["symbol"]): c
-                for c in raw_auction.get("checks", [])
-                if isinstance(c, dict) and c.get("symbol")
-            }
+        raw = live["auction"]
+        if raw and raw.get("signal_date") == signal_date:
             auction = {
-                "signal_date": raw_auction.get("signal_date"),
-                "benchmark_gap_pct": raw_auction.get("benchmark_gap_pct"),
-                "near_limit_pct": raw_auction.get("near_limit_pct"),
-                "large_gap_pct": raw_auction.get("large_gap_pct"),
-                "by_symbol": by_symbol,
+                key: raw.get(key)
+                for key in ("signal_date", "benchmark_gap_pct", "near_limit_pct", "large_gap_pct", "mode", "captured_at")
             }
+            auction["by_symbol"] = {str(c["symbol"]): c for c in raw.get("checks", [])}
+
         has_data = (
-            market_pulse.get("status") not in (None, "unavailable")
-            or pitfall_calendar.get("status") not in (None, "not_checked")
+            market_pulse.get("status") != "unavailable"
+            or calendar.get("status") != "not_checked"
             or auction is not None
         )
         return {
             "status": "ok" if has_data else "unavailable",
-            "signal_date": brief.get("signal_date"),
+            "signal_date": signal_date if brief else None,
             "market_pulse": market_pulse,
-            "pitfall_calendar": pitfall_calendar,
+            "pitfall_calendar": calendar,
             "auction": auction,
+            "live": {
+                "segment": live["segment"],
+                "refreshing": live["refreshing"],
+                "brief": brief is not None,
+                "overseas_fetched_at": overseas.get("fetched_at"),
+                "notices_fetched_at": notices.get("fetched_at"),
+                "notices_status": notices.get("status"),
+                "notices_checked": notices.get("checked"),
+            },
         }
+
+    def _brief(self, signal_date: str) -> dict[str, object] | None:
+        path = self.args.premarket_root / signal_date / "brief.json"
+        try:
+            brief = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        return brief if brief.get("signal_date") == signal_date else None
+
+    def _premarket_inputs(self, signal_date: str, brief: dict[str, object] | None) -> dict[str, object]:
+        """Symbols shown on `/picks` (brief rows, both pools, candidates) and what the auction
+        check needs for them. Picker data is optional: without it only the brief rows count."""
+        groups = {g: [str(i["symbol"]) for i in (brief or {}).get(g, [])] for g in ("targets", "near_miss", "paper_exits")}
+        names = {str(i["symbol"]): str(i.get("name", "")) for g in groups for i in (brief or {}).get(g, [])}
+        pool_symbols: list[str] = []
+        candidates: list[str] = []
+        luk: dict[str, dict[str, object]] = {}
+        try:
+            data = self.picker()
+            picks = picks_payload(data, self.pool_state(), self.pool_v2_state())
+            pool_symbols = _symbols([picks.get("pool"), picks.get("pool_v2")])
+            candidates = _symbols(picks.get("candidates"))
+            names = {**data.names, **names}
+            for row in data.screen_results:
+                ratio = data.price_ratio.get(str(row["symbol"]), 1.0)
+                luk[str(row["symbol"])] = {
+                    "state": row["state"],
+                    "stop_price": round(float(row["stop"]) * ratio, 3),
+                    "stop_pct": row["stop_pct"],
+                }
+        except Exception as exc:  # the panel still works from the brief alone
+            print(f"premarket inputs without picker data: {exc}", file=sys.stderr, flush=True)
+        notice = _dedupe(groups["targets"] + groups["paper_exits"] + pool_symbols + groups["near_miss"])
+        watch = _dedupe(notice + candidates)
+        return {
+            "signal_date": signal_date,
+            "brief": brief,
+            "names": names,
+            "notice_symbols": notice,
+            "auction_symbols": watch,
+            "luk_setup": luk,
+            "avg_turnover_20d": self._avg_turnover(signal_date),
+        }
+
+    def _avg_turnover(self, signal_date: str) -> dict[str, float]:
+        """20-session average turnover per member from the cycle's execution prices (cached per date)."""
+        if self._turnover_cache[0] == signal_date:
+            return self._turnover_cache[1]
+        averages: dict[str, float] = {}
+        try:
+            state = json.loads(self.args.state.read_text(encoding="utf-8"))
+            manifest = Path(state["manifests"]["execution_price"]["processed_manifest"])
+            history: dict[str, list[float]] = {}
+            with (manifest.parent / "daily.csv").open(encoding="utf-8", newline="") as handle:
+                for row in csv.DictReader(handle):
+                    if row["trade_date"] <= signal_date and row["amount"]:
+                        history.setdefault(row["symbol"], []).append(float(row["amount"]))
+            averages = {s: sum(v[-20:]) / len(v[-20:]) for s, v in history.items() if len(v) >= 20}
+        except (OSError, KeyError, ValueError) as exc:
+            print(f"20-day turnover unavailable: {exc}", file=sys.stderr, flush=True)
+        self._turnover_cache = (signal_date, averages)
+        return averages
 
     def subscribe(self) -> queue.Queue[str]:
         subscriber: queue.Queue[str] = queue.Queue()
@@ -250,6 +316,25 @@ class DeskState:
         with self.lock:
             if subscriber in self.subscribers:
                 self.subscribers.remove(subscriber)
+
+
+def _symbols(value: object) -> list[str]:
+    """Every A-share symbol under a ``"symbol"`` key, in order of appearance."""
+    found: list[str] = []
+    if isinstance(value, dict):
+        symbol = value.get("symbol")
+        if isinstance(symbol, str) and symbol[-3:] in (".SH", ".SZ", ".BJ"):
+            found.append(symbol)
+        for child in value.values():
+            found += _symbols(child)
+    elif isinstance(value, list):
+        for child in value:
+            found += _symbols(child)
+    return _dedupe(found)
+
+
+def _dedupe(symbols: list[str]) -> list[str]:
+    return list(dict.fromkeys(symbols))
 
 
 def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
@@ -273,7 +358,8 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                 )
                 self._send(body.encode("utf-8"), "text/html; charset=utf-8")
             elif path == "/api/premarket-context":
-                self._json(state.premarket_context())
+                refresh = parse_qs(urlsplit(self.path).query).get("refresh") == ["1"]
+                self._json(state.premarket_context(refresh=refresh))
             elif path == "/api/universe":
                 self._json(universe_payload(state.picker(), state.live))
             elif path == "/api/picks":

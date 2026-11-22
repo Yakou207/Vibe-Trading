@@ -745,7 +745,7 @@ tr.click:hover td { background: var(--surface-hover); }
       const tip = [
         `竞价 ${num(auc.auction_price, 2)} (${signedPct(auc.gap_pct, 2)})`,
         auc.relative_gap_pct != null ? `相对指数 ${signedPct(auc.relative_gap_pct, 2)}` : "",
-        auc.auction_volume_ratio != null ? `竞价额/20日均额 ${(Number(auc.auction_volume_ratio) * 100).toFixed(1)}%` : "",
+        `竞价额/20日均额 ${auc.auction_volume_ratio != null ? `${(Number(auc.auction_volume_ratio) * 100).toFixed(1)}%` : "—"}`,
       ].filter(Boolean).join(" · ");
       tags.push(`<span class="itag ${cls}" title="${esc(tip)}">竞价 ${signedPct(auc.gap_pct, 1)}${esc(leadFlag)}</span>`);
     }
@@ -788,7 +788,7 @@ tr.click:hover td { background: var(--surface-hover); }
     const hasPulse = mp.status && mp.status !== "unavailable";
 
     if (ctx.status === "unavailable" && !hasPulse && pc.status === "not_checked") {
-      el.innerHTML = `<div class="pm-unavail"><span>○</span><span>盘前脉搏与排雷数据尚未接入（可选 <code>/api/premarket-context</code> — 接入盘前抓取后自动显示）</span></div>`;
+      el.innerHTML = `<div class="pm-unavail"><span>○</span><span>盘前数据未就绪：指数、宽度和排雷日历由盘后任务在审计通过后生成，外盘与竞价在交易日早上打开本页时抓取</span></div>`;
       return;
     }
 
@@ -867,6 +867,8 @@ tr.click:hover td { background: var(--surface-hover); }
       ${ctx.signal_date ? `<span class="pm-pill">信号日 ${esc(ctx.signal_date)}</span>` : ""}
       ${alerts.length ? `<span class="pm-pill" style="border-color:rgba(250,178,25,.45)">▲ ${alerts.length} 条排雷提示</span>` : (pc.status === "ok" ? '<span class="pm-pill risk_on">排雷全通过</span>' : "")}
       <span class="pm-note">${esc(mp.regime_note || "")}</span>
+      ${liveNote(ctx)}
+      ${ctx.live ? `<button type="button" class="pm-toggle" id="pm-refresh-btn" title="重新抓取外盘与隔夜公告">${ctx.live.refreshing ? "抓取中…" : "刷新"}</button>` : ""}
       <button type="button" class="pm-toggle" id="pm-toggle-btn">${collapsed ? "展开 ▾" : "收起 ▴"}</button>
     </div>
     <div class="pm-body" id="pm-body"${collapsed ? " hidden" : ""}>
@@ -885,6 +887,36 @@ tr.click:hover td { background: var(--surface-hover); }
     el.querySelectorAll(".radar-chip[data-symbol]").forEach((btn) => {
       btn.addEventListener("click", () => load(btn.dataset.symbol));
     });
+    const refreshBtn = $("pm-refresh-btn");
+    if (refreshBtn) refreshBtn.addEventListener("click", () => loadPremarket(true));
+  }
+
+  function liveNote(ctx) {
+    const lv = ctx.live;
+    if (!lv) return "";
+    const hm = (t) => t ? String(t).slice(11, 16) : "";
+    const parts = [];
+    if (lv.overseas_fetched_at) parts.push(`外盘 ${hm(lv.overseas_fetched_at)}`);
+    if (lv.notices_fetched_at) parts.push(`公告 ${hm(lv.notices_fetched_at)}${lv.notices_status === "partial" ? "（部分）" : lv.notices_status === "unavailable" ? "（失败）" : ""}`);
+    const auc = ctx.auction;
+    if (auc) parts.push(auc.mode === "open_fallback" ? `竞价按今开计 · ${hm(auc.captured_at)}` : `竞价 ${hm(auc.captured_at)} 锁定`);
+    return parts.length ? `<span class="pm-note mono" title="09:30 后才打开且未在 09:25–09:30 抓到竞价时，跳空按今开计算、竞价量比显示 —">${esc(parts.join(" · "))}</span>` : "";
+  }
+
+  let pmPolls = 0;
+  async function loadPremarket(refresh) {
+    try {
+      const ctx = await getJSON(`/api/premarket-context${refresh ? "?refresh=1" : ""}`);
+      premarketCtx = ctx;
+      renderPremarketPanel(ctx);
+      if (latestPicks) renderPicks(latestPicks);
+      const settled = !(ctx && ctx.live && ctx.live.refreshing);
+      if (current && !current.error && settled) renderStock(current);  // redraw once the fetch settles
+      if (refresh) pmPolls = 0;
+      if (ctx && ctx.live && ctx.live.refreshing && pmPolls++ < 20) setTimeout(() => loadPremarket(false), 3000);
+    } catch (_) {
+      if (!premarketCtx) renderPremarketPanel(null);
+    }
   }
 
   function renderPicks(p) {
@@ -982,7 +1014,7 @@ tr.click:hover td { background: var(--surface-hover); }
       parts.push(`<div class="stock-pm-metrics">
         <span>09:25 竞价 <b>${num(auc.auction_price, 2)}</b> (<b class="${Number(auc.gap_pct || 0) >= 0 ? "up" : "down"}">${signedPct(auc.gap_pct, 2)}</b>)</span>
         ${auc.relative_gap_pct != null ? `<span>相对指数 <b class="${Number(auc.relative_gap_pct) >= 0 ? "up" : "down"}">${signedPct(auc.relative_gap_pct, 2)}</b></span>` : ""}
-        ${auc.auction_volume_ratio != null ? `<span>竞价额/20日均额 <b>${(Number(auc.auction_volume_ratio) * 100).toFixed(1)}%</b></span>` : ""}
+        <span>竞价额/20日均额 <b>${auc.auction_volume_ratio != null ? `${(Number(auc.auction_volume_ratio) * 100).toFixed(1)}%` : "—"}</b></span>
         ${auc.stop_distance_at_auction_pct != null ? `<span>竞价距止损 <b>${pct(auc.stop_distance_at_auction_pct, 2)}</b></span>` : ""}
         ${flagPills}
       </div>`);
@@ -1303,13 +1335,8 @@ tr.click:hover td { background: var(--surface-hover); }
 
   (async () => {
     try {
-      const [universe, picks, pmCtx] = await Promise.all([
-        getJSON("/api/universe"),
-        getJSON("/api/picks"),
-        getJSON("/api/premarket-context").catch(() => null),
-      ]);
-      premarketCtx = pmCtx;
-      renderPremarketPanel(pmCtx);
+      loadPremarket(false);
+      const [universe, picks] = await Promise.all([getJSON("/api/universe"), getJSON("/api/picks")]);
       $("universe").innerHTML = universe.map((u) => `<option value="${esc(u.symbol)} ${esc(u.name)}${u.csi300 ? " · 沪深300" : ""}"></option>`).join("");
       renderPicks(picks);
       loadIntradayMonitor();

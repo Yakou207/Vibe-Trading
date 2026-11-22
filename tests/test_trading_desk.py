@@ -340,46 +340,65 @@ def test_desk_defaults_resolve_from_project_root_not_cwd(tmp_path, monkeypatch) 
     assert args.scoring_v2 == SCRIPT_ROOT / "outputs/research/scoring_v2/latest_scores.json"
 
 
-def test_premarket_context_returns_unavailable_when_missing_and_loads_brief_when_present(
-    tmp_path: Path,
-) -> None:
+class _FakeLive:
+    """Stands in for the on-demand morning fetches: no network in tests."""
+
+    def __init__(self) -> None:
+        self.inputs: dict[str, object] = {}
+
+    def snapshot(self, inputs, refresh=False, wait=False):
+        self.inputs = dict(inputs)
+        alert = {"symbol": "600001.SH", "kind": "overnight_negative", "severity": "high",
+                 "date": inputs["signal_date"], "title": "减持预披露"}
+        return {
+            "segment": "open",
+            "refreshing": False,
+            "overseas": {"fetched_at": "2026-07-17T08:00:00+08:00", "items": [{"symbol": "NDX", "value": 1.0}]},
+            "notices": {"fetched_at": "2026-07-17T08:00:00+08:00", "status": "ok", "alerts": [alert], "checked": 1},
+            "auction": {
+                "signal_date": inputs["signal_date"], "mode": "auction", "benchmark_gap_pct": 0.002,
+                "checks": [{"symbol": "600001.SH", "auction_price": 10.1, "gap_pct": 0.01, "flags": []}],
+            },
+        }
+
+
+def test_premarket_context_shows_only_the_latest_cycles_brief_plus_live_data(tmp_path: Path) -> None:
     from scripts.serve_trading_desk import DeskState, build_parser
 
     cycles = _write_cycles(tmp_path)
     pm_root = tmp_path / "premarket"
-    args = build_parser().parse_args(
-        ["--cycle-root", str(cycles), "--premarket-root", str(pm_root)]
+    args = build_parser().parse_args(  # no pipeline state: the panel works from the brief alone
+        ["--cycle-root", str(cycles), "--premarket-root", str(pm_root), "--state", str(tmp_path / "none.json")]
     )
     state = DeskState(args)
+    state.premarket_live = live = _FakeLive()
+    as_of = state.snapshot["as_of"]
+    for day in ("2026-07-01", as_of):
+        (pm_root / day).mkdir(parents=True)
 
-    empty = state.premarket_context()
-    assert empty["status"] == "unavailable"
-    assert empty["market_pulse"]["status"] == "unavailable"
-    assert empty["pitfall_calendar"] == {"status": "not_checked", "alerts": []}
-    assert empty["auction"] is None
+    _write_json(pm_root / "2026-07-01" / "brief.json", {
+        "signal_date": "2026-07-01", "market_pulse": {"status": "ok", "regime": "risk_on"},
+    })
+    stale = state.premarket_context()
+    assert stale["signal_date"] is None  # an older brief is never shown as today's
+    assert stale["market_pulse"]["status"] == "partial"  # live overseas only
+    assert stale["market_pulse"]["overseas"][0]["symbol"] == "NDX"
 
-    day_dir = pm_root / "2026-07-16"
-    day_dir.mkdir(parents=True)
-    _write_json(
-        day_dir / "brief.json",
-        {
-            "signal_date": "2026-07-16",
-            "market_pulse": {"status": "ok", "regime": "neutral", "indices": []},
-            "pitfall_calendar": {"status": "ok", "alerts": []},
-        },
-    )
-    _write_json(
-        day_dir / "auction.json",
-        {
-            "signal_date": "2026-07-16",
-            "benchmark_gap_pct": 0.002,
-            "near_limit_pct": 0.01,
-            "large_gap_pct": 0.05,
-            "checks": [{"symbol": "600001.SH", "auction_price": 10.1, "gap_pct": 0.01, "flags": []}],
-        },
-    )
+    _write_json(pm_root / as_of / "brief.json", {
+        "signal_date": as_of,
+        "targets": [{"symbol": "600001.SH", "name": "甲"}],
+        "near_miss": [],
+        "market_pulse": {"status": "ok", "regime": "neutral", "indices": []},
+        "pitfall_calendar": {"status": "ok", "alerts": [
+            {"symbol": "600001.SH", "kind": "ex_dividend", "severity": "medium", "date": "2026-07-17"},
+            {"symbol": "000009.SZ", "kind": "unlock", "severity": "high", "date": "2026-07-17"},
+        ]},
+    })
     loaded = state.premarket_context()
-    assert loaded["status"] == "ok"
-    assert loaded["signal_date"] == "2026-07-16"
+    assert loaded["status"] == "ok" and loaded["signal_date"] == as_of
     assert loaded["market_pulse"]["regime"] == "neutral"
+    assert [a["kind"] for a in loaded["pitfall_calendar"]["alerts"]] == ["ex_dividend", "overnight_negative"]
     assert loaded["auction"]["by_symbol"]["600001.SH"]["auction_price"] == 10.1
+    assert loaded["auction"]["mode"] == "auction"
+    assert loaded["live"]["notices_checked"] == 1
+    assert live.inputs["notice_symbols"] == ["600001.SH"]

@@ -220,7 +220,9 @@ class RunScheduledTest(unittest.TestCase):
             "scripts/refresh_momentum_pool.py",
             "scripts/refresh_momentum_pool_v2.py",
             "scripts/run_scoring_v2.py",
+            "scripts/build_premarket_brief.py",
         ])
+        self.assertEqual(runner.calls[-1][2:], ["--market-data"])
         self.assertEqual(set(result["research"].values()), {"refreshed"})
         self.assertEqual(self.notifications, [])
 
@@ -232,7 +234,7 @@ class RunScheduledTest(unittest.TestCase):
         self.assertEqual(result["status"], "completed")
         self.assertEqual(result["valid_sessions"], 4)
         self.assertEqual(set(result["research"].values()), {"failed (exit 1)"})
-        self.assertEqual(len(self.notifications), 3)
+        self.assertEqual(len(self.notifications), 4)
         self.assertIn("counted evidence is unaffected", self.notifications[0])
 
     def test_failed_audit_skips_research_refreshes(self) -> None:
@@ -256,7 +258,7 @@ class RunScheduledTest(unittest.TestCase):
         self.assertEqual(first["status"], "up_to_date")
         self.assertEqual(set(first["research"].values()), {"refreshed"})
         self.assertNotIn("research", again)
-        self.assertEqual(len(runner.calls), 3)
+        self.assertEqual(len(runner.calls), 4)
 
 
 class LaunchdPlistTest(unittest.TestCase):
@@ -282,6 +284,7 @@ RESEARCH_SCRIPTS = {
     "scripts/refresh_momentum_pool.py": lambda root: root / "outputs/momentum_pool/state.json",
     "scripts/refresh_momentum_pool_v2.py": lambda root: root / "outputs/momentum_pool_v2/state.json",
     "scripts/run_scoring_v2.py": lambda root: root / "outputs/research/scoring_v2/latest_scores.json",
+    "scripts/build_premarket_brief.py": lambda root: root / "outputs/premarket/state.json",
 }
 
 

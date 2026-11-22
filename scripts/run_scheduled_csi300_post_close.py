@@ -33,6 +33,7 @@ AUDIT_SCRIPT = "scripts/audit_csi300_paper_validation.py"
 POOL_V1_SCRIPT = "scripts/refresh_momentum_pool.py"
 POOL_V2_SCRIPT = "scripts/refresh_momentum_pool_v2.py"
 SCORING_V2_SCRIPT = "scripts/run_scoring_v2.py"
+PREMARKET_BRIEF_SCRIPT = "scripts/build_premarket_brief.py"
 
 Runner = Callable[[list[str], TextIO], int]
 Notifier = Callable[[str], None]
@@ -213,6 +214,12 @@ def research_steps(config: SchedulerConfig) -> tuple[tuple[str, list[str], Path]
             [SCORING_V2_SCRIPT, "--offline", "--report", str(config.log_dir / "scoring_v2_report.md")],
             config.root / "outputs/research/scoring_v2/latest_scores.json",
         ),
+        # After scoring_v2: the brief shows the v2 snapshot only when it is for the same date.
+        (
+            "premarket_brief",
+            [PREMARKET_BRIEF_SCRIPT, "--market-data"],
+            config.root / "outputs/premarket/state.json",
+        ),
     )
 
 
@@ -220,7 +227,7 @@ def refresh_research(
     config: SchedulerConfig, session: date, runner: Runner, notifier: Notifier, log: TextIO
 ) -> dict[str, str]:
     """Research-only refreshes after an accepted cycle: the two shadow pools (which catch up day by
-    day) and the v2 research snapshot. Each runs only while its output is behind the session. A
+    day), the v2 research snapshot and the pre-market brief with its market data. Each runs only while its output is behind the session. A
     failure is logged and notified; it never changes the cycle result or the counted evidence."""
     outcome: dict[str, str] = {}
     for name, script, marker in research_steps(config):

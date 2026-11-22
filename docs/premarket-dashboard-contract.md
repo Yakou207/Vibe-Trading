@@ -283,12 +283,20 @@ Attach Martin Luk setup diagnostics (from `fintech_quant.research.momentum_setup
 
 ---
 
-## Wiring Real Fetchers (Handoff Guide)
+## Real Data Sources
 
-To connect live A-share data without touching the frontend template:
+Real mode is wired up. `docs/operations.md` (盘前选股简报 section) describes the schedule and the
+cache rules.
 
-1. **Market Pulse**: Build a fetcher module (e.g. `src/fintech_quant/information/market_pulse.py`) using AkShare index bars (`stock_zh_index_daily_em`), daily market breadth (`stock_zh_a_spot_em` / cached close summary), and `global_intel` overseas quotes; pass the resulting dict into `build_brief(..., market_pulse=...)`.
-2. **Pitfall Calendar**: Query ex-dividend (`stock_fhps_detail_em`), share unlock (`stock_restricted_release_detail_em`), earnings calendar, suspension list, and `stock_intel` overnight notices for `targets + near_miss + paper_exits`; pass into `build_brief(..., pitfall_calendar=...)` and populate each item's `overnight_announcements`.
-3. **Luk Setup**: Run `momentum_setup.screen` over the cycle's signal prices and attach `item["luk_setup"]` before dumping `brief.json`.
-4. **09:25 Auction Check**: Pass `auction_turnover`, `avg_turnover_20d` in quote rows and `benchmark_gap_pct` (CSI 300 auction gap) into `evaluate_auction(...)`.
-5. **Serving**: `scripts/serve_trading_desk.py` automatically reads the latest `outputs/premarket/<date>/brief.json` (+ sibling `auction.json`) and serves it at `/api/premarket-context` for `/picks` (keeping the clean 2-page `交易桌 /` + `选股 /picks` UI). Standalone Paper Trade briefs continue to export via `scripts/build_premarket_brief.py` into `outputs/premarket/<date>/brief.html`.
+| Block | Built by | Sources |
+|---|---|---|
+| `market_pulse.indices`, `breadth` | `information/premarket_data.py`, run by the post-close job (`build_premarket_brief.py --market-data`) | Sina index daily bars; Legu market activity; Tencent SSE/SZSE composite turnover; local hfq signal prices |
+| `pitfall_calendar` (ex-dividend, unlock, suspension, earnings) | same | pipeline raw corporate actions (local); Eastmoney unlock, suspension, report schedule |
+| `market_pulse.overseas` | `information/premarket_live.py`, fetched on demand by the desk | Sina quotes (A50, Nasdaq, S&P 500, Golden Dragon, USD/CNH) |
+| `pitfall_calendar` (`overnight_negative`) | same | Eastmoney per-stock notices, tagged with `event_nlp` |
+| `auction` | same | Tencent quotes; `luk_setup` from the picker screen; 20-day turnover from local execution prices |
+
+`/api/premarket-context` additionally returns a `live` object (`segment`, `refreshing`,
+`overseas_fetched_at`, `notices_fetched_at`, `notices_status`, `notices_checked`, `brief`), and
+`auction` carries `mode` (`auction` | `open_fallback`) and `captured_at`. `?refresh=1` drops the
+overseas and notice caches.
