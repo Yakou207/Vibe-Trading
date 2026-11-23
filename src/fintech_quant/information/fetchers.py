@@ -9,6 +9,7 @@ from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from fintech_quant.clock import shanghai_today
 from fintech_quant.data.deadline import call_with_deadline
 from fintech_quant.data.errors import MissingProviderCredential, MissingProviderDependency, ProviderFetchError
 from fintech_quant.data.symbols import normalize_a_share_symbol
@@ -273,7 +274,7 @@ class AkShareFundamentalFetcher(InformationFetcher):
             normalized_symbol,
             valuation_rows,
             financial_rows,
-            self._as_of or date.today(),
+            self._as_of or shanghai_today(),
         )
         return _filter_records(records, normalized_symbol, None, start, end)
 
@@ -601,7 +602,7 @@ class AkShareDragonTigerFetcher(InformationFetcher):
         end: date,
     ) -> list[InformationRecord]:
         del sector
-        as_of = self._as_of or date.today()
+        as_of = self._as_of or shanghai_today()
         if not start <= as_of <= end:
             return []
         try:

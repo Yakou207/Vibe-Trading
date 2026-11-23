@@ -21,6 +21,7 @@ import threading
 import time
 from typing import Callable, Mapping, Sequence
 
+from fintech_quant.clock import machine_local_to_shanghai
 from fintech_quant.data.js_runtime import js_call
 from fintech_quant.data.net_adaptive import adaptive_timeout, run_parallel_with_deadline
 from fintech_quant.information.event_nlp import MACRO_TAGS, tag_text
@@ -143,7 +144,9 @@ def collect_global_intel(
 
     news = []
     for key in ("news_em", "news_sina", "news_ths"):
-        news.extend(_news_item(row, jobs[key][0]) for row in _rows(results.get(key)))
+        news.extend(
+            _news_item(row, jobs[key][0], machine_local=key == "news_ths") for row in _rows(results.get(key))
+        )
     items = select_relevant(news, name=name, symbol=symbol, keywords=profile["keywords"])
     overseas = []
     for ticker, label in (*US_INDICES, *((t, t) for t in profile["us"])):
@@ -237,7 +240,14 @@ def _last_move(rows: Sequence[Mapping[str, object]]) -> dict[str, object] | None
     return {"date": str(rows[-1].get("date"))[:10], "close": last, "change": last / previous - 1}
 
 
-def _news_item(row: Mapping[str, object], source: str) -> dict[str, object]:
+def _news_item(row: Mapping[str, object], source: str, *, machine_local: bool = False) -> dict[str, object]:
+    """``machine_local``: AkShare stamps the Tonghuashun feed in this machine's zone, not Shanghai's."""
+    published = str(row.get("发布时间") or row.get("时间") or "")[:19]
+    if machine_local and published:
+        try:
+            published = machine_local_to_shanghai(published).strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            pass
     title = str(row.get("标题") or "")
     summary = str(row.get("摘要") or row.get("内容") or "")
     if not title:  # Sina flashes are one block of text: 【title】body
@@ -249,7 +259,7 @@ def _news_item(row: Mapping[str, object], source: str) -> dict[str, object]:
     return {
         "kind": "global",
         "source": source,
-        "published_at": str(row.get("发布时间") or row.get("时间") or "")[:19],
+        "published_at": published,
         "title": title.strip(),
         "summary": summary.strip()[:200],
         "url": str(row.get("链接") or ""),

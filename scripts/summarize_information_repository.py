@@ -13,6 +13,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.clock import shanghai_today  # noqa: E402
 from fintech_quant.data import normalize_a_share_symbol  # noqa: E402
 from fintech_quant.information import InformationRecord, InformationRepository  # noqa: E402
 from fintech_quant.research.scoring import NEGATIVE_RISK_TAGS  # noqa: E402
@@ -28,7 +29,7 @@ def main() -> int:
     parser.add_argument("--output", default="outputs/information_repository_summary.json")
     args = parser.parse_args()
 
-    as_of = date.fromisoformat(args.as_of) if args.as_of else date.today()
+    as_of = date.fromisoformat(args.as_of) if args.as_of else shanghai_today()
     records = _filter_records(
         InformationRepository(Path(args.input)).all_records(),
         symbol=args.symbol,

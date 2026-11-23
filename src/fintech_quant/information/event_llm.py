@@ -15,10 +15,11 @@ import hashlib
 import json
 import os
 import re
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from fintech_quant.clock import shanghai_now
 from fintech_quant.information.event_nlp import EVENT_RULES, decayed_sentiment, sentiment_label
 from fintech_quant.research.jev import DEEPSEEK_BASE_URL, DEFAULT_DEEPSEEK_MODEL, LlmClient
 
@@ -170,7 +171,7 @@ def classify_events(
     record = {
         "symbol": symbol,
         "model": client.model,
-        "created_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "created_at": shanghai_now().isoformat(timespec="seconds"),
         "sent_items": len(sent),
         "request_sha256": digest,
         "labels": {str(k): v for k, v in labels.items()},

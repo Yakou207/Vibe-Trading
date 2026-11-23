@@ -10,6 +10,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.clock import shanghai_today  # noqa: E402
 from fintech_quant.information import (
     AkShareDragonTigerFetcher,
     AkShareFundFlowFetcher,
@@ -75,7 +76,7 @@ def main() -> int:
     fetcher = _build_fetcher(args)
     records = fetcher.fetch(args.symbol, args.sector, date.fromisoformat(args.start), date.fromisoformat(args.end))
     added = sum(1 for record in records if repository.append(record))
-    retention_as_of = date.fromisoformat(args.retention_as_of) if args.retention_as_of else date.today()
+    retention_as_of = date.fromisoformat(args.retention_as_of) if args.retention_as_of else shanghai_today()
     pruned = repository.prune_text_records(retention_as_of)
     print(f"stored_records={added}")
     print(f"pruned_text_records={pruned}")

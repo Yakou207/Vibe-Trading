@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import html
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Mapping
 
+from fintech_quant.clock import shanghai_now
 from fintech_quant.reports.pnl_curve import validate_pnl_curve
 
 
@@ -64,7 +64,7 @@ def build_research_dashboard(
 <body>
   <header>
     <h1>Daily Quant Monitor</h1>
-    <div class="meta">Generated {html.escape(datetime.now().isoformat(timespec="seconds"))}</div>
+    <div class="meta">Generated {html.escape(shanghai_now().isoformat(timespec="seconds"))}</div>
   </header>
   <main>
     <section class="grid">

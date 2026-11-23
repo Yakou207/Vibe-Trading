@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,6 +9,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.clock import shanghai_now  # noqa: E402
 from fintech_quant.research import ResearchRunConfig, run_research_baseline, write_run_report  # noqa: E402
 from fintech_quant.research.preflight import require_passing_data_health  # noqa: E402
 
@@ -50,7 +50,7 @@ def main() -> int:
     parser.add_argument("--broad-market-drop-threshold", type=int, default=15)
     args = parser.parse_args()
 
-    run_id = args.run_id or f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-baseline"
+    run_id = args.run_id or f"{shanghai_now().strftime('%Y%m%d-%H%M%S')}-baseline"
     try:
         if args.require_point_in_time:
             require_passing_data_health(_optional_path(args.data_health), _research_inputs(args))

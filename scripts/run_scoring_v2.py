@@ -14,7 +14,6 @@ import csv
 import json
 import sys
 import tempfile
-from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -27,6 +26,7 @@ for path in (SRC, ROOT / "scripts"):
 
 from run_factor_lab import MAIN, _f, _git_sha, _json_default, input_refs, load_panel  # noqa: E402
 
+from fintech_quant.clock import shanghai_today  # noqa: E402
 from fintech_quant.data.historical_universe import load_membership_intervals  # noqa: E402
 from fintech_quant.execution.paper_evidence import approved_paper_policy  # noqa: E402
 from fintech_quant.research.dataset import load_research_dataset  # noqa: E402
@@ -57,7 +57,7 @@ def main() -> int:
     parser.add_argument("--stress-window", nargs=2, default=["2024-09-15", "2024-10-31"])
     parser.add_argument("--output-dir", default=str(MAIN / "outputs/research/scoring_v2"))
     parser.add_argument("--report",
-                        default=str(ROOT / f"docs/research/{date.today():%Y-%m-%d}-scoring-v2.md"))
+                        default=str(ROOT / f"docs/research/{shanghai_today():%Y-%m-%d}-scoring-v2.md"))
     args = parser.parse_args()
 
     state_path, industry_cache = Path(args.pipeline_state), Path(args.industry_cache)
@@ -203,7 +203,7 @@ def render_report(study: dict, json_path: Path) -> str:
     window = "..".join(split["stress_window"])
     h = str(PRIMARY_HORIZON)
     lines = [
-        f"# Scoring v2: rank-based composite multi-factor score ({date.today():%Y-%m-%d})",
+        f"# Scoring v2: rank-based composite multi-factor score ({shanghai_today():%Y-%m-%d})",
         "",
         "A research track. It does not change the counted strategy's score "
         "(`features/factors.py`, `research/scoring.py`), the frozen policy, the paper account "

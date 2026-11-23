@@ -20,9 +20,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.clock import SHANGHAI, shanghai_today  # noqa: E402
 from fintech_quant.information.headlines import collect_headlines  # noqa: E402
 from fintech_quant.information.premarket_live import (  # noqa: E402
-    SHANGHAI,
     PremarketLive,
     merge_live_market_pulse,
 )
@@ -136,7 +136,7 @@ class DeskState:
 
     def prune_cache(self) -> None:
         """Once per calendar day: drop intel/quote cache day folders older than 30 days."""
-        today = date.today()
+        today = shanghai_today()
         if self.pruned_on == today:
             return
         self.pruned_on = today

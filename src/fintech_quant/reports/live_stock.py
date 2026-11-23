@@ -31,8 +31,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable, Mapping, Sequence
-from zoneinfo import ZoneInfo
 
+from fintech_quant.clock import SHANGHAI, shanghai_today
 from fintech_quant.data.js_runtime import js_call
 from fintech_quant.data.net_adaptive import (
     adaptive_timeout,
@@ -48,7 +48,6 @@ from fintech_quant.features.technical_indicators import enrich_daily_bars
 from fintech_quant.information.stock_intel import parse_financial_abstract
 from fintech_quant.research.momentum_setup import Bar, SetupConfig, SymbolSeries, analyze_at
 
-SHANGHAI = ZoneInfo("Asia/Shanghai")  # A-share clock, whatever time zone the Mac is in
 HISTORY_DAYS = 430
 VALUATION_HISTORY_SESSIONS = 30
 BAR_TIMEOUT = 15.0
@@ -72,7 +71,7 @@ class LiveContext:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def day(self) -> date:
-        return self.today or date.today()
+        return self.today or shanghai_today()
 
     def all_shares(self) -> dict[str, str]:
         """{symbol: name} for every listed A-share, cached for the day."""

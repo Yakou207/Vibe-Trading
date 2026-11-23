@@ -46,6 +46,11 @@ system for fintech graduate-school portfolio work.
 - Prefer simple, working vertical slices over broad empty scaffolding.
 - Keep changes surgical and tied to the current research-system goal.
 - Use Git frequently for checkpoints.
+- Research runs on Shanghai time (UTC+8), whatever zone the machine is set to; the desk Mac runs on
+  GMT. Use `fintech_quant.clock` (`shanghai_today()`, `shanghai_now()`) instead of
+  `date.today()` / `datetime.now()`, and convert provider times stamped in the machine's zone
+  (AkShare's Tonghuashun and Futu flashes) with `machine_local_to_shanghai`. Explicit-offset UTC
+  `created_at` values in evidence manifests name exact instants and stay as they are.
 - The user's GitHub repository may be used as a remote backup once a remote URL
   is configured.
 

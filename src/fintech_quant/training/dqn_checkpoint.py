@@ -5,10 +5,10 @@ import pickle
 import shutil
 from collections import deque
 from dataclasses import asdict
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from fintech_quant.clock import shanghai_now
 from fintech_quant.training.torch_dqn import (
     DQN_ACTIONS,
     FeatureScaler,
@@ -32,7 +32,7 @@ def save_torch_dqn_checkpoint(
     root = Path(checkpoint_root)
     checkpoints_dir = root / "checkpoints"
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
-    checkpoint_id = checkpoint_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    checkpoint_id = checkpoint_id or shanghai_now().strftime("%Y%m%d_%H%M%S")
     checkpoint_path = checkpoints_dir / checkpoint_id
     if checkpoint_path.exists():
         shutil.rmtree(checkpoint_path)
@@ -53,7 +53,7 @@ def save_torch_dqn_checkpoint(
         checkpoint_path / "training_state.json",
         {
             "checkpoint_id": checkpoint_id,
-            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "created_at": shanghai_now().isoformat(timespec="seconds"),
             "episodes_trained": run.episodes_trained,
             "training_steps": run.policy.training_steps,
             "state_fields": list(run.policy.state_fields),
@@ -125,7 +125,7 @@ def _update_manifest(
         {
             "id": checkpoint_id,
             "path": f"checkpoints/{checkpoint_id}",
-            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "created_at": shanghai_now().isoformat(timespec="seconds"),
             "metadata": metadata,
             "metrics": metrics,
         }

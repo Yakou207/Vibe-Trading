@@ -18,6 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Mapping
 
+from fintech_quant.clock import shanghai_today
 from fintech_quant.data.net_adaptive import adaptive_timeout, run_parallel_with_deadline
 
 Fetcher = Callable[[str], object]
@@ -66,7 +67,7 @@ def collect_stock_intel(
     timeout: float = SOURCE_TIMEOUT_SECONDS,
 ) -> dict[str, object]:
     """Collect every source for ``symbol`` (e.g. ``601398.SH``); cached per stock per day."""
-    day = today or date.today()
+    day = today or shanghai_today()
     cache = cache_dir / day.isoformat() / f"{symbol}.json" if cache_dir else None
     if cache is not None and cache.exists():
         return json.loads(cache.read_text(encoding="utf-8"))

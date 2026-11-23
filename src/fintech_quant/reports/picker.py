@@ -18,6 +18,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Mapping
 
+from fintech_quant.clock import SHANGHAI, shanghai_today
 from fintech_quant.data.historical_universe import active_symbols, load_membership_intervals
 from fintech_quant.data.manifest_chain import load_verified_manifest
 from fintech_quant.data.shenwan import read_official_shenwan
@@ -604,7 +605,7 @@ def research_payload(
     symbol = _resolve(data, query, live)
     if symbol is None:
         return {"error": f"未找到：{query}"}
-    day = today or date.today()
+    day = today or shanghai_today()
     intel, name, world, nlp = _gather(
         data, symbol, day, cache_dir=cache_dir, fetchers=fetchers, live=live,
         global_fetchers=global_fetchers,
@@ -687,7 +688,7 @@ def events_llm_payload(
     symbol = _resolve(data, query, live)
     if symbol is None:
         return {"error": f"未找到：{query}"}
-    day = today or date.today()
+    day = today or shanghai_today()
     _, name, _, nlp = _gather(
         data, symbol, day, cache_dir=cache_dir, fetchers=fetchers, live=live,
         global_fetchers=global_fetchers,
@@ -815,12 +816,12 @@ def jev_payload(
     packet = jev_packet(stock_payload(data, str(research["symbol"]), live), research)
     record = ask_jev(packet, client=active, record_dir=jev_record_dir)
     if jev_record_dir is not None:
-        record["jev_spend"] = jev_spend(jev_record_dir, today=today or date.today())
+        record["jev_spend"] = jev_spend(jev_record_dir, today=today or shanghai_today())
     return record
 
 
 def jev_spend(record_dir: Path, *, today: date) -> dict[str, object]:
-    """Sum recorded model call costs: today (local calendar date of the call) and all time.
+    """Sum recorded model call costs: today (Shanghai calendar date of the call) and all time.
     Used for both Jev records and LLM-assist records. DeepSeek calls saved before costs were
     recorded are priced from their token counts, all input treated as a cache miss."""
     totals = {
@@ -847,7 +848,7 @@ def jev_spend(record_dir: Path, *, today: date) -> dict[str, object]:
                 },
                 moment,
             )
-        is_today = _local_date(str(record.get("created_at", ""))) == today
+        is_today = _shanghai_date(str(record.get("created_at", ""))) == today
         totals["total_calls"] += 1
         totals["today_calls"] += int(is_today)
         if isinstance(cost, (int, float)):
@@ -921,9 +922,9 @@ def _signed_pct(value: object) -> str | None:
     return None if not isinstance(value, (int, float)) else f"{float(value):+.1%}"
 
 
-def _local_date(timestamp: str) -> date | None:
+def _shanghai_date(timestamp: str) -> date | None:
     moment = _timestamp(timestamp)
-    return moment.astimezone().date() if moment else None
+    return moment.astimezone(SHANGHAI).date() if moment else None
 
 
 def _timestamp(text: str) -> datetime | None:

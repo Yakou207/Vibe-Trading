@@ -33,8 +33,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from datetime import time as dtime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
+from fintech_quant.clock import SHANGHAI
 from fintech_quant.data.deadline import call_with_deadline
 from fintech_quant.data.net_adaptive import run_parallel_with_deadline
 from fintech_quant.information.event_nlp import tag_text
@@ -51,7 +51,6 @@ from fintech_quant.information.premarket_data import (
 )
 from fintech_quant.reports.premarket_brief import evaluate_auction, limit_prices, price_limit_rate
 
-SHANGHAI = ZoneInfo("Asia/Shanghai")
 MORNING_START = dtime(6, 0)
 AUCTION_START = dtime(9, 25)
 OPEN_START = dtime(9, 30)

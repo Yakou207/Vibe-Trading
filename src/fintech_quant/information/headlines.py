@@ -22,14 +22,13 @@ import importlib
 import re
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
+from fintech_quant.clock import SHANGHAI, machine_local_to_shanghai
 from fintech_quant.data.net_adaptive import run_parallel_with_deadline
 from fintech_quant.information.event_nlp import MACRO_TAGS, tag_text
 from fintech_quant.information.global_intel import INDUSTRY_PROFILES
 from fintech_quant.information.premarket_live import sina_move, sina_quotes
 
-SHANGHAI = ZoneInfo("Asia/Shanghai")
 LOOKBACK_HOURS = 12
 FETCH_DEADLINE_SECONDS = 15.0
 SAME_STORY_OVERLAP = 0.6
@@ -131,7 +130,7 @@ def parse_feed(key: str, rows: Sequence[Mapping[str, object]]) -> list[dict[str,
             naive = datetime.fromisoformat(stamp)
         except ValueError:
             continue
-        when = naive.astimezone(SHANGHAI) if local_zone else naive.replace(tzinfo=SHANGHAI)
+        when = machine_local_to_shanghai(stamp) if local_zone else naive.replace(tzinfo=SHANGHAI)
         title = _SOURCE_SUFFIX.sub("", title).strip()
         if title:
             flashes.append({"source": label, "published_at": when, "title": title[:120],

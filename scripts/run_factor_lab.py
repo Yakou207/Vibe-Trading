@@ -20,7 +20,6 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
-from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +32,7 @@ for path in (SRC, ROOT / "scripts"):
         sys.path.insert(0, str(path))
 
 from analyze_backtest_attribution import load_industries  # noqa: E402
+from fintech_quant.clock import shanghai_today  # noqa: E402
 from fintech_quant.research.factor_lab import FACTORS, run_study  # noqa: E402
 
 MAIN = Path("/Users/yakou/Desktop/Vibe-Trading")
@@ -62,7 +62,7 @@ def main() -> int:
     parser.add_argument("--output-json",
                         default=str(MAIN / "outputs/research/factor_lab/factor_lab.json"))
     parser.add_argument("--report",
-                        default=str(ROOT / f"docs/research/{date.today():%Y-%m-%d}-factor-lab.md"))
+                        default=str(ROOT / f"docs/research/{shanghai_today():%Y-%m-%d}-factor-lab.md"))
     args = parser.parse_args()
 
     inputs = load_panel(Path(args.pipeline_state), Path(args.industry_cache), args.offline)
@@ -254,7 +254,7 @@ def render_report(study: dict, json_path: Path) -> str:
     inputs = study["inputs"]
     factors = study["factors"]
     lines = [
-        f"# CSI 300 cross-sectional factor lab ({date.today():%Y-%m-%d})",
+        f"# CSI 300 cross-sectional factor lab ({shanghai_today():%Y-%m-%d})",
         "",
         "A read-only research track. It does not change the counted strategy, the frozen "
         "policy, the paper account or any evidence file.",
