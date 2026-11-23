@@ -133,21 +133,30 @@ def segment(now: datetime) -> str:
 def parse_overseas(raw: Mapping[str, Sequence[str]]) -> list[dict[str, object]]:
     rows = []
     for code, symbol, name in OVERSEAS:
-        fields = raw.get(code)
-        if not fields:
-            continue
-        try:
-            if code.startswith("gb_"):
-                value, change, stamp = float(fields[1]), float(fields[2]) / 100, fields[3][:16]
-            elif code.startswith("hf_"):
-                value, previous = float(fields[0]), float(fields[7])
-                change, stamp = value / previous - 1, f"{fields[12]} {fields[6][:5]}"
-            else:  # fx_
-                value, change, stamp = float(fields[8]), float(fields[10]) / 100, f"{fields[17]} {fields[0][:5]}"
-        except (IndexError, ValueError, ZeroDivisionError):
-            continue
-        rows.append({"symbol": symbol, "name": name, "value": value, "change_pct": round(change, 6), "as_of": stamp})
+        move = sina_move(code, name, raw.get(code))
+        if move is not None:
+            rows.append({"symbol": symbol, "name": name, "value": move["value"],
+                         "change_pct": move["change_pct"], "as_of": move["as_of"]})
     return rows
+
+
+def sina_move(code: str, label: str, fields: Sequence[str] | None) -> dict[str, object] | None:
+    """Last price and change from one Sina quote line: US stock or index, futures, or FX."""
+    if not fields:
+        return None
+    try:
+        if code.startswith("gb_"):
+            value, change, stamp = float(fields[1]), float(fields[2]) / 100, fields[3][:16]
+        elif code.startswith("hf_"):
+            value, previous = float(fields[0]), float(fields[7])
+            change, stamp = value / previous - 1, f"{fields[12]} {fields[6][:5]}"
+        elif code.startswith("fx_"):
+            value, change, stamp = float(fields[8]), float(fields[10]) / 100, f"{fields[17]} {fields[0][:5]}"
+        else:
+            return None
+    except (IndexError, ValueError, ZeroDivisionError):
+        return None
+    return {"code": code, "label": label, "value": value, "change_pct": round(change, 6), "as_of": stamp}
 
 
 def auction_quote(fields: Sequence[str], now: datetime) -> dict[str, object] | None:

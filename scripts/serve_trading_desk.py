@@ -9,7 +9,7 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import date
+from datetime import date, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,7 +20,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from fintech_quant.information.headlines import collect_headlines  # noqa: E402
 from fintech_quant.information.premarket_live import (  # noqa: E402
+    SHANGHAI,
     PremarketLive,
     merge_live_market_pulse,
 )
@@ -57,6 +59,7 @@ PICKER_TEMPLATE = SRC / "fintech_quant" / "reports" / "picker_template.html"
 
 
 HEARTBEAT_SECONDS = 15.0
+HEADLINE_TTL_SECONDS = 120.0
 
 
 class DeskState:
@@ -68,6 +71,9 @@ class DeskState:
         self.demo_paths: DemoPaths | None = getattr(args, "_demo_paths", None)
         self._demo_premarket_cache: dict[str, object] | None = None
         self.premarket_live = PremarketLive(None if self.demo else args.premarket_root)
+        self.headline_fetchers = None  # None: the live feeds; tests pass fakes
+        self.headline_lock = threading.Lock()
+        self._headlines: tuple[float, dict[str, object]] | None = None
         self._turnover_cache: tuple[str, dict[str, float]] = ("", {})
         self.lock = threading.Lock()
         self.subscribers: list[queue.Queue[str]] = []
@@ -288,6 +294,18 @@ class DeskState:
             },
         }
 
+    def premarket_headlines(self, *, refresh: bool = False) -> dict[str, object]:
+        """Market headlines for the top of `/picks`, fetched at most once per TTL; concurrent
+        requests wait for the one fetch in flight."""
+        if self.demo:
+            return {"status": "unavailable", "headlines": [], "reason": "Demo 模式不抓取实时快讯"}
+        with self.headline_lock:
+            cached = self._headlines
+            if refresh or cached is None or time.monotonic() - cached[0] >= HEADLINE_TTL_SECONDS:
+                cached = (time.monotonic(), collect_headlines(datetime.now(SHANGHAI), self.headline_fetchers))
+                self._headlines = cached
+            return cached[1]
+
     def _brief(self, signal_date: str) -> dict[str, object] | None:
         path = self.args.premarket_root / signal_date / "brief.json"
         try:
@@ -408,6 +426,9 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                 raw_phase = (qs.get("phase") or [""])[0].strip().lower()
                 phase = raw_phase if raw_phase in ("fast", "notices") else None
                 self._json(state.premarket_context(refresh=refresh, phase=phase))
+            elif path == "/api/premarket-headlines":
+                refresh = parse_qs(urlsplit(self.path).query).get("refresh") == ["1"]
+                self._json(state.premarket_headlines(refresh=refresh))
             elif path == "/api/universe":
                 self._json(universe_payload(state.picker(), state.live))
             elif path == "/api/picks":

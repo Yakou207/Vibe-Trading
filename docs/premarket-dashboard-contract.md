@@ -317,3 +317,32 @@ cache rules.
 - `?refresh=1` bypasses live TTL caches (on `?phase=fast&refresh=1`, clears live pulse, overseas,
   and notices so phase 2 fetches fresh notices too). In `--demo` mode and static GitHub Pages
   exports, all `phase` values stay 100% offline with `notices_pending: false`.
+
+## `/api/premarket-headlines` (market headlines strip)
+
+A separate endpoint so the strip loads in parallel with the pre-market cards. The desk fetches it
+at most once every 120 s (`?refresh=1` bypasses the cache) and the page reloads it every two
+minutes. Rules live in `src/fintech_quant/information/headlines.py`:
+
+- Pool: the last 12 hours of Eastmoney, Sina, Tonghuashun and Futu global flashes. Tonghuashun and
+  Futu times are in the desk machine's local zone and are converted to Shanghai. 财联社 is not used
+  (its AkShare endpoint returns 404).
+- The same flash relayed by several feeds is merged (title bigram overlap ≥ 0.6 within 3 hours).
+- Score = (feeds carrying it − 1) + 2 if it names a listed actor (Fed, PBOC, domestic policy
+  bodies, Trump, Nvidia, Apple, Tesla, TSMC, oil, gold) or carries a macro tag from `event_nlp`
+  + 0.25 per other flash sharing an actor or tag (at most 6). At most three headlines scoring ≥ 4,
+  one per actor or tag.
+- Each headline carries the live Sina quote its actor maps to and the Shenwan sectors whose
+  `global_intel` keywords it mentions.
+
+```json
+{"status": "ok", "fetched_at": "2026-11-24T02:20:00+08:00", "lookback_hours": 12, "pool_size": 290,
+ "sources": {"em": {"label": "东方财富", "status": "ok", "count": 200}},
+ "headlines": [{"title": "英伟达股价涨幅收窄至30%", "published_at": "2026-11-24T01:51:02+08:00",
+   "sources": ["东方财富", "同花顺", "新浪"], "entities": ["英伟达"], "macro_tags": [],
+   "quotes": [{"code": "gb_nvda", "label": "英伟达", "value": 165.43, "change_pct": 0.3179, "as_of": "2026-11-24 02:20"}],
+   "sectors": ["电子", "计算机", "通信"], "score": 10.0, "related_count": 40, "related": [], "summary": "", "url": ""}]}
+```
+
+Display only: nothing here reaches the counted strategy or the paper account. In `--demo` mode the
+endpoint returns `{"status": "unavailable", "reason": ...}` without fetching.

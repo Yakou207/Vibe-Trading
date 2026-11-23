@@ -153,6 +153,21 @@ h2 {
 }
 .theme-btn:hover { color: var(--text-primary); border-color: var(--accent); }
 
+/* Market headlines: the few flashes most likely to move today's open */
+.hl-panel { padding: 12px 18px; margin-bottom: 14px; }
+.hl-panel .pm-head h2 { color: var(--accent); }
+.hl-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.hl-item { border-left: 3px solid var(--accent); padding: 2px 0 2px 12px; }
+.hl-title { font: 600 14.5px/1.45 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: var(--text-primary); text-decoration: none; }
+a.hl-title:hover { text-decoration: underline; }
+.hl-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 4px; font: 11px var(--mono); color: var(--text-muted); }
+.hl-meta .ov-cap { padding: 2px 8px; }
+.hl-sector { color: var(--text-secondary); }
+.hl-related summary { cursor: pointer; color: var(--text-secondary); }
+.hl-related ul { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 3px; font: 12px/1.4 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; color: var(--text-secondary); }
+.hl-related .t { font: 10.5px var(--mono); color: var(--text-muted); margin-right: 6px; }
+.hl-empty { margin-top: 8px; font: 11.5px var(--mono); color: var(--text-muted); }
+
 /* Collapsible Pre-Market Pulse & Pitfall Panel */
 .pm-panel {
   padding: 13px 18px;
@@ -745,6 +760,7 @@ tr.click:hover td { background: var(--surface-hover); }
     </div>
   </header>
 
+  <section class="panel hl-panel" id="headline-panel" aria-label="市场头条" hidden></section>
   <section class="panel pm-panel" id="premarket-panel" aria-label="盘前脉搏与排雷" hidden></section>
 
   <form class="panel search" id="search-form" autocomplete="off">
@@ -1083,6 +1099,69 @@ tr.click:hover td { background: var(--surface-hover); }
     const auc = ctx.auction;
     if (auc) parts.push(auc.mode === "open_fallback" ? `竞价按今开计 · ${hm(auc.captured_at)}` : `竞价 ${hm(auc.captured_at)} 锁定`);
     return parts.length ? `<span class="pm-note mono" title="09:30 后才打开且未在 09:25–09:30 抓到竞价时，跳空按今开计算、竞价量比显示 —">${esc(parts.join(" · "))}</span>` : "";
+  }
+
+  let hlSeq = 0;
+  async function loadHeadlines(refresh) {
+    const seq = ++hlSeq;
+    try {
+      const data = await getJSON(`/api/premarket-headlines${refresh ? "?refresh=1" : ""}`);
+      if (seq === hlSeq) renderHeadlines(data);
+    } catch (_) {
+      if (seq === hlSeq) renderHeadlines(null);
+    }
+  }
+
+  function renderHeadlines(data) {
+    const el = $("headline-panel");
+    if (!data || data.status === "unavailable") {
+      el.hidden = !data || !data.reason;
+      if (!el.hidden) el.innerHTML = `<div class="pm-head"><h2>市场头条 · HEADLINES</h2></div><div class="hl-empty">${esc(data.reason)}</div>`;
+      return;
+    }
+    el.hidden = false;
+    const sources = Object.values(data.sources || {}).filter((s) => s.label !== "新浪行情");
+    const okFeeds = sources.filter((s) => s.status === "ok").length;
+    const failed = sources.filter((s) => s.status !== "ok").map((s) => s.label);
+    const hm = (t) => String(t || "").slice(11, 16);
+    const items = (data.headlines || []).map((h) => {
+      const safeUrl = /^https?:\/\//.test(h.url || "") ? h.url : "";
+      const title = safeUrl
+        ? `<a class="hl-title" href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer">${esc(h.title)}</a>`
+        : `<span class="hl-title">${esc(h.title)}</span>`;
+      const quotes = (h.quotes || []).map((q) => {
+        const chg = Number(q.change_pct || 0);
+        return `<span class="ov-cap" title="${esc(q.as_of || "")}"><span class="n">${esc(q.label)}</span><span class="v">${Number(q.value).toLocaleString("en-US", { maximumFractionDigits: 3 })}</span><span class="${chg >= 0 ? "up" : "down"}">${signedPct(chg, 2)}</span></span>`;
+      }).join("");
+      const topics = [...(h.entities || []), ...(h.macro_tags || [])];
+      const related = (h.related || []).length
+        ? `<details class="hl-related"><summary>相关快讯 ${h.related_count} 条</summary><ul>${h.related.map((r) => `<li><span class="t">${esc(hm(r.published_at))}</span>${esc(r.title)}</li>`).join("")}</ul></details>`
+        : "";
+      return `<li class="hl-item">
+        ${title}
+        <div class="hl-meta">
+          ${quotes}
+          <span>${esc(hm(h.published_at))} · ${esc((h.sources || []).join(" / "))}</span>
+          ${topics.length ? `<span>${esc(topics.join("、"))}</span>` : ""}
+          ${(h.sectors || []).length ? `<span class="hl-sector">申万：${esc(h.sectors.join(" "))}</span>` : ""}
+          <span title="多源 + 关键主体/宏观标签 + 同主题热度">评分 ${esc(h.score)}</span>
+          ${related}
+        </div>
+      </li>`;
+    }).join("");
+    el.innerHTML = `<div class="pm-head">
+      <h2>市场头条 · HEADLINES</h2>
+      <span class="pm-pill">近 ${esc(data.lookback_hours)} 小时 · ${okFeeds} 个快讯源 · ${esc(data.pool_size)} 条</span>
+      ${failed.length ? `<span class="pm-pill" title="本次抓取失败的快讯源">缺 ${esc(failed.join("、"))}</span>` : ""}
+      <span class="pm-note mono">${esc(hm(data.fetched_at))} 更新 · 规则排序，仅供参考，不进入策略</span>
+      <button type="button" class="pm-toggle" id="hl-refresh-btn" title="重新抓取快讯">刷新</button>
+    </div>
+    ${items ? `<ol class="hl-list">${items}</ol>` : '<div class="hl-empty">暂无多源确认或涉及关键主体的重大快讯</div>'}`;
+    $("hl-refresh-btn").addEventListener("click", (e) => {
+      e.currentTarget.disabled = true;
+      e.currentTarget.innerHTML = '<span class="btn-spin" aria-hidden="true"></span>抓取中…';
+      loadHeadlines(true);
+    });
   }
 
   let pmSeq = 0;
@@ -1651,6 +1730,8 @@ tr.click:hover td { background: var(--surface-hover); }
 
   (async () => {
     try {
+      loadHeadlines(false);
+      setInterval(() => loadHeadlines(false), 120000);
       loadPremarket(false);
       const [universe, picks] = await Promise.all([getJSON("/api/universe"), getJSON("/api/picks")]);
       $("universe").innerHTML = universe.map((u) => `<option value="${esc(u.symbol)} ${esc(u.name)}${u.csi300 ? " · 沪深300" : ""}"></option>`).join("");

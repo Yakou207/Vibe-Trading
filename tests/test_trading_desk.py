@@ -516,3 +516,24 @@ def test_premarket_context_fast_and_notices_phases_decouple_and_keep_brief_reado
 
     # Strict read-only invariant: brief.json on disk is untouched
     assert brief_path.read_bytes() == brief_before
+
+
+def test_premarket_headlines_are_cached_between_page_loads(tmp_path: Path) -> None:
+    from scripts.serve_trading_desk import DeskState, build_parser
+
+    args = build_parser().parse_args(
+        ["--cycle-root", str(_write_cycles(tmp_path)), "--state", str(tmp_path / "none.json")]
+    )
+    state = DeskState(args)
+    calls = []
+
+    def em():
+        calls.append("em")
+        return []
+
+    state.headline_fetchers = {"em": em}
+    first = state.premarket_headlines()
+    assert first["status"] == "ok" and first["headlines"] == []
+    assert state.premarket_headlines() is first and calls == ["em"]
+    state.premarket_headlines(refresh=True)
+    assert calls == ["em", "em"]
