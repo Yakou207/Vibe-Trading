@@ -628,6 +628,8 @@ class PremarketLive:
             return False
         if inputs.get("brief") is None or not inputs.get("auction_symbols"):
             return False
+        if str(inputs.get("signal_date") or "") >= now.date().isoformat():
+            return False  # the brief's targets trade at the next session, which has not opened yet
         if self.auction is not None and self.auction.get("signal_date") == inputs.get("signal_date"):
             return False
         tried = self.auction_tried

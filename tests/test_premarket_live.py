@@ -166,6 +166,20 @@ def test_after_0930_the_open_price_is_used_and_the_volume_ratio_is_left_empty(tm
     assert auction["benchmark_gap_pct"] == 0.005
 
 
+def test_the_evening_after_a_cycle_records_no_auction_for_the_next_session(tmp_path: Path) -> None:
+    fetch = Fetchers()
+    fetch.tencent_stamp = "20261123150000"  # today's quotes; the next session has not opened
+    evening = dict(inputs(), signal_date="2026-11-23")
+    evening["brief"] = dict(evening["brief"], signal_date="2026-11-23")  # type: ignore[arg-type]
+    live = PremarketLive(tmp_path, fetch, Clock(at(21, 40)))
+
+    snapshot = live.snapshot(evening, wait=True)
+
+    assert snapshot["auction"] is None
+    assert "tencent" not in fetch.calls
+    assert not (tmp_path / "2026-11-23" / "auction_live.json").exists()
+
+
 def test_parse_overseas_reads_futures_index_and_fx_lines() -> None:
     rows = parse_overseas({
         "hf_CHA50CFD": "12515.3,,12515,12518,12669,12500,05:14:59,12623,12623,1019690,1,1,2026-11-21,A50,1".split(","),
