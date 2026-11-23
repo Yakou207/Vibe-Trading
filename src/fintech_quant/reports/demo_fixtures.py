@@ -1176,6 +1176,7 @@ def demo_premarket_context(
         "market_pulse": brief.get("market_pulse") or {"status": "unavailable"},  # type: ignore[union-attr]
         "pitfall_calendar": brief.get("pitfall_calendar")  # type: ignore[union-attr]
         or {"status": "not_checked", "alerts": []},
+        "notices_pending": False,
         "auction": (
             {
                 "signal_date": auction.get("signal_date"),

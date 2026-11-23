@@ -183,6 +183,36 @@ h2 {
 .pm-pill.risk_off { border-color: rgba(208, 59, 59, .45); background: var(--crit-bg); color: var(--text-primary); }
 .pm-pill.risk_off::before { content: "▲"; color: var(--critical); font-size: 9px; }
 .pm-pill.unknown::before { content: "○"; color: var(--text-muted); font-size: 9px; }
+@keyframes vibe-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .35; }
+}
+.pm-pill.live-intraday {
+  border-color: rgba(25, 158, 112, .48);
+  background: var(--down-bg);
+  color: var(--text-primary);
+}
+.pm-pill.live-intraday .pulse-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--good);
+  animation: vibe-pulse 1.8s ease-in-out infinite;
+}
+.pm-pill.live-close {
+  border-color: rgba(57, 135, 229, .42);
+  background: var(--info-bg);
+  color: var(--text-primary);
+}
+.radar-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 11px/1 var(--mono);
+  color: var(--text-muted);
+  padding: 2px 6px;
+}
 .pm-note { font: 11px var(--mono); color: var(--text-muted); }
 .pm-toggle {
   margin-left: auto;
@@ -686,7 +716,7 @@ tr.click:hover td { background: var(--surface-hover); }
 .sub-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .btn-spin, .load-spin, .sk { animation: none; }
+  .btn-spin, .load-spin, .sk, .pm-pill.live-intraday .pulse-dot { animation: none; }
   .nav a, .theme-btn, .pm-toggle, .radar-chip, .search input, .search button, tr.click { transition: none; }
 }
 @media (max-width: 1120px) { .idx-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
@@ -967,11 +997,19 @@ tr.click:hover td { background: var(--surface-hover); }
       }).join("")}
     </div>` : "";
 
+    const noticesPending = Boolean(pmNoticesPending || ctx.notices_pending);
+    const pendingBadge = noticesPending
+      ? '<span class="radar-pending" id="pm-notices-pending"><span class="btn-spin" aria-hidden="true"></span><span>公告扫描中…</span></span>'
+      : "";
     let radarHtml = "";
     if (pc.status === "not_checked") {
-      radarHtml = '<div class="radar-bar unchecked">盘前排雷日历未校验（除权除息 / 限售解禁 / 财报窗口 / 隔夜利空 / 停牌）</div>';
+      radarHtml = noticesPending
+        ? `<div class="radar-bar unchecked">${pendingBadge}<span>正在扫描标的池隔夜公告（静态排雷日历未校验）</span></div>`
+        : '<div class="radar-bar unchecked">盘前排雷日历未校验（除权除息 / 限售解禁 / 财报窗口 / 隔夜利空 / 停牌）</div>';
     } else if (!alerts.length) {
-      radarHtml = '<div class="radar-bar pass">盘前排雷全通过 — 标的池无除权、解禁、财报冲突或隔夜重大利空</div>';
+      radarHtml = noticesPending
+        ? `<div class="radar-bar pass"><span>静态排雷日历通过</span>${pendingBadge}</div>`
+        : '<div class="radar-bar pass">盘前排雷全通过 — 标的池无除权、解禁、财报冲突或隔夜重大利空</div>';
     } else {
       radarHtml = `<div class="radar-alerts">${alerts.map((a) => `
         <button type="button" class="radar-chip ${esc(a.severity || "medium")}" data-symbol="${esc(a.symbol)}" title="${esc(a.detail || "")}">
@@ -979,17 +1017,32 @@ tr.click:hover td { background: var(--surface-hover); }
           <span class="rs">${esc(a.symbol)}</span>
           <span>${esc(a.name || "")} · ${esc(a.title || "")}</span>
           <span class="rd">${esc(a.date || "")}</span>
-        </button>`).join("")}</div>`;
+        </button>`).join("")}${pendingBadge}</div>`;
     }
+
+    let freshnessPill = "";
+    if (mp.live_status === "intraday_live") {
+      freshnessPill = `<span class="pm-pill live-intraday" id="pm-live-pill" title="${esc(ctx.signal_date ? `盘中实时行情叠加（基准信号日 ${ctx.signal_date}）` : "盘中实时行情")}"><i class="pulse-dot" aria-hidden="true"></i>盘中实时 ${esc(mp.live_as_of || "")}</span>${ctx.signal_date ? `<span class="pm-pill">基线 ${esc(ctx.signal_date)}</span>` : ""}`;
+    } else if (mp.live_status === "today_close_live") {
+      freshnessPill = `<span class="pm-pill live-close" id="pm-live-pill" title="${esc(ctx.signal_date ? `今日收盘行情叠加（基准信号日 ${ctx.signal_date}）` : "今日收盘行情")}">今日收盘 ${esc(mp.live_date || "")}</span>${ctx.signal_date ? `<span class="pm-pill">基线 ${esc(ctx.signal_date)}</span>` : ""}`;
+    } else if (ctx.signal_date) {
+      freshnessPill = `<span class="pm-pill">信号日 ${esc(ctx.signal_date)}</span>`;
+    }
+
+    const radarPill = alerts.length
+      ? `<span class="pm-pill" style="border-color:rgba(250,178,25,.45)">▲ ${alerts.length} 条排雷提示</span>`
+      : noticesPending
+        ? '<span class="pm-pill">公告扫描中…</span>'
+        : (pc.status === "ok" ? '<span class="pm-pill risk_on">排雷全通过</span>' : "");
 
     el.innerHTML = `<div class="pm-head">
       <h2>盘前脉搏与排雷 · PRE-MARKET</h2>
       <span class="pm-pill ${esc(regime)}">${esc(REGIME[regime] || regime)}</span>
-      ${ctx.signal_date ? `<span class="pm-pill">信号日 ${esc(ctx.signal_date)}</span>` : ""}
-      ${alerts.length ? `<span class="pm-pill" style="border-color:rgba(250,178,25,.45)">▲ ${alerts.length} 条排雷提示</span>` : (pc.status === "ok" ? '<span class="pm-pill risk_on">排雷全通过</span>' : "")}
+      ${freshnessPill}
+      ${radarPill}
       <span class="pm-note">${esc(mp.regime_note || "")}</span>
       ${liveNote(ctx)}
-      ${ctx.live ? `<button type="button" class="pm-toggle" id="pm-refresh-btn" title="重新抓取外盘与隔夜公告"${ctx.live.refreshing ? " disabled" : ""}>${ctx.live.refreshing ? '<span class="btn-spin" aria-hidden="true"></span>抓取中…' : "刷新"}</button>` : ""}
+      ${ctx.live ? `<button type="button" class="pm-toggle" id="pm-refresh-btn" title="刷新实时行情、外盘与隔夜公告"${ctx.live.refreshing ? " disabled" : ""}>${ctx.live.refreshing ? '<span class="btn-spin" aria-hidden="true"></span>抓取中…' : "刷新"}</button>` : ""}
       <button type="button" class="pm-toggle" id="pm-toggle-btn">${collapsed ? "展开 ▾" : "收起 ▴"}</button>
     </div>
     <div class="pm-body" id="pm-body"${collapsed ? " hidden" : ""}>
@@ -1022,25 +1075,65 @@ tr.click:hover td { background: var(--surface-hover); }
     const hm = (t) => t ? String(t).slice(11, 16) : "";
     const parts = [];
     if (lv.overseas_fetched_at) parts.push(`外盘 ${hm(lv.overseas_fetched_at)}`);
-    if (lv.notices_fetched_at) parts.push(`公告 ${hm(lv.notices_fetched_at)}${lv.notices_status === "partial" ? "（部分）" : lv.notices_status === "unavailable" ? "（失败）" : ""}`);
+    if (pmNoticesPending || ctx.notices_pending) {
+      parts.push("公告扫描中…");
+    } else if (lv.notices_fetched_at) {
+      parts.push(`公告 ${hm(lv.notices_fetched_at)}${lv.notices_status === "partial" ? "（部分）" : lv.notices_status === "unavailable" ? "（失败）" : ""}`);
+    }
     const auc = ctx.auction;
     if (auc) parts.push(auc.mode === "open_fallback" ? `竞价按今开计 · ${hm(auc.captured_at)}` : `竞价 ${hm(auc.captured_at)} 锁定`);
     return parts.length ? `<span class="pm-note mono" title="09:30 后才打开且未在 09:25–09:30 抓到竞价时，跳空按今开计算、竞价量比显示 —">${esc(parts.join(" · "))}</span>` : "";
   }
 
-  let pmPolls = 0;
+  let pmSeq = 0;
+  let pmNoticesPending = false;
   async function loadPremarket(refresh) {
+    const seq = ++pmSeq;
     try {
-      const ctx = await getJSON(`/api/premarket-context${refresh ? "?refresh=1" : ""}`);
+      const fastUrl = `/api/premarket-context?phase=fast${refresh ? "&refresh=1" : ""}`;
+      const ctx = await getJSON(fastUrl);
+      if (seq !== pmSeq) return;
+      pmNoticesPending = Boolean(ctx && ctx.notices_pending);
       premarketCtx = ctx;
       renderPremarketPanel(ctx);
       if (latestPicks) renderPicks(latestPicks);
-      const settled = !(ctx && ctx.live && ctx.live.refreshing);
-      if (current && !current.error && settled) renderStock(current);  // redraw once the fetch settles
-      if (refresh) pmPolls = 0;
-      if (ctx && ctx.live && ctx.live.refreshing && pmPolls++ < 20) setTimeout(() => loadPremarket(false), 3000);
+      if (current && !current.error) renderStock(current);
+      if (pmNoticesPending) loadPremarketNotices(seq);
     } catch (_) {
-      if (!premarketCtx) renderPremarketPanel(null);
+      if (seq === pmSeq && !premarketCtx) renderPremarketPanel(null);
+    }
+  }
+
+  async function loadPremarketNotices(seq) {
+    try {
+      const res = await getJSON("/api/premarket-context?phase=notices");
+      if (seq !== pmSeq) return;
+      pmNoticesPending = false;
+      if (premarketCtx && res) {
+        if (res.pitfall_calendar) premarketCtx.pitfall_calendar = res.pitfall_calendar;
+        premarketCtx.notices_pending = false;
+        if (res.live) {
+          premarketCtx.live = {
+            ...(premarketCtx.live || {}),
+            notices_fetched_at: res.live.notices_fetched_at ?? res.notices_updated_at ?? null,
+            notices_status: res.live.notices_status ?? null,
+            notices_checked: res.live.notices_checked ?? null,
+            notices_pending: false,
+            refreshing: false,
+          };
+        }
+        if (premarketCtx.status === "unavailable" && res.pitfall_calendar && res.pitfall_calendar.status !== "not_checked") {
+          premarketCtx.status = "ok";
+        }
+      }
+      renderPremarketPanel(premarketCtx);
+      if (latestPicks) renderPicks(latestPicks);
+      if (current && !current.error) renderStock(current);
+    } catch (_) {
+      if (seq !== pmSeq) return;
+      pmNoticesPending = false;
+      if (premarketCtx) premarketCtx.notices_pending = false;
+      renderPremarketPanel(premarketCtx);
     }
   }
 

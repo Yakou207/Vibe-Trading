@@ -67,8 +67,11 @@ def test_market_pulse_reads_every_source_for_the_signal_date(tmp_path: Path) -> 
     csi300 = next(i for i in pulse["indices"] if i["symbol"] == "000300.SH")
     assert csi300["close"] == 3000.0 and len(csi300["sparkline"]) == 20
     assert csi300["above_ma20"] and csi300["above_ma250"]
+    assert csi300["ma20"] is not None and csi300["ma50"] is not None and csi300["ma250"] is not None
+    assert csi300["close"] > csi300["ma20"]
     star50 = next(i for i in pulse["indices"] if i["symbol"] == "000688.SH")
     assert star50["above_ma20"] is False
+    assert star50["ma20"] is not None and star50["close"] < star50["ma20"]
     breadth = pulse["breadth"]
     assert (breadth["advancers"], breadth["decliners"], breadth["limit_up_count"]) == (3000, 2000, 50)
     assert breadth["turnover_cny_bn"] == 1500.0  # (6e7 + 9e7) 万元

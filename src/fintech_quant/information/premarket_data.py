@@ -44,6 +44,10 @@ INDICES = (
 )
 # Whole-market turnover: SSE Composite plus SZSE Composite (深证成指 covers only 500 names).
 TURNOVER_CODES = ("sh000001", "sz399106")
+# Single-request Tencent batch covering all 6 headline indices plus SSE/SZSE whole-market turnover.
+MARKET_PULSE_TENCENT_CODES = tuple(
+    dict.fromkeys([code for code, _, _ in INDICES] + list(TURNOVER_CODES))
+)
 UNLOCK_HIGH_RATIO = 0.05
 UNLOCK_MEDIUM_RATIO = 0.01
 
@@ -269,6 +273,9 @@ def _index_card(rows: Sequence[Mapping[str, object]], symbol: str, name: str, da
     closes = [c for _, c in bars]
     close = closes[-1]
 
+    def ma(window: int) -> float | None:
+        return None if len(closes) < window else round(sum(closes[-window:]) / window, 2)
+
     def above(window: int) -> bool | None:
         return None if len(closes) < window else close > sum(closes[-window:]) / window
 
@@ -281,31 +288,121 @@ def _index_card(rows: Sequence[Mapping[str, object]], symbol: str, name: str, da
         "above_ma20": above(20),
         "above_ma50": above(50),
         "above_ma250": above(250),
+        "ma20": ma(20),
+        "ma50": ma(50),
+        "ma250": ma(250),
     }
+
+
+def parse_legu_activity(
+    rows: Sequence[Mapping[str, object]], expected_day: str | None = None
+) -> tuple[str, str | None, dict[str, object]]:
+    """Parse Legu full-market activity rows into ``(iso_date, hhmm_or_none, breadth_dict)``."""
+    values = {str(r.get("item")).strip(): r.get("value") for r in rows}
+    raw_stamp = str(values.get("统计日期", "")).strip()
+    stamp = raw_stamp[:10]
+    if expected_day is not None:
+        if stamp != expected_day:
+            raise ValueError(f"activity is for {stamp or 'unknown date'}, expected {expected_day}")
+    elif _date(stamp) is None:
+        raise ValueError(f"activity has invalid date: {stamp or 'unknown date'}")
+    hm = raw_stamp[11:16] if len(raw_stamp) >= 16 and raw_stamp[13:14] == ":" else None
+    return (
+        stamp,
+        hm,
+        {
+            "advancers": int(float(values["上涨"])),  # type: ignore[arg-type]
+            "decliners": int(float(values["下跌"])),  # type: ignore[arg-type]
+            "unchanged": int(float(values["平盘"])),  # type: ignore[arg-type]
+            "limit_up_count": int(float(values["涨停"])),  # type: ignore[arg-type]
+            "limit_down_count": int(float(values["跌停"])),  # type: ignore[arg-type]
+        },
+    )
 
 
 def _activity(rows: Sequence[Mapping[str, object]], day: str) -> dict[str, object]:
-    values = {str(r.get("item")).strip(): r.get("value") for r in rows}
-    stamp = str(values.get("统计日期", ""))[:10]
-    if stamp != day:
-        raise ValueError(f"activity is for {stamp or 'unknown date'}, expected {day}")
-    return {
-        "advancers": int(float(values["上涨"])),  # type: ignore[arg-type]
-        "decliners": int(float(values["下跌"])),  # type: ignore[arg-type]
-        "unchanged": int(float(values["平盘"])),  # type: ignore[arg-type]
-        "limit_up_count": int(float(values["涨停"])),  # type: ignore[arg-type]
-        "limit_down_count": int(float(values["跌停"])),  # type: ignore[arg-type]
-    }
+    return parse_legu_activity(rows, expected_day=day)[2]
+
+
+def _tencent_iso_date(fields: Sequence[str]) -> str | None:
+    if len(fields) <= 30:
+        return None
+    raw = str(fields[30])[:8]
+    if len(raw) != 8 or not raw.isdigit():
+        return None
+    iso = f"{raw[:4]}-{raw[4:6]}-{raw[6:8]}"
+    return iso if _date(iso) is not None else None
+
+
+def parse_tencent_turnover_bn(
+    quotes: Mapping[str, Sequence[str]], expected_day: str | None = None
+) -> tuple[str, float]:
+    """Parse SSE + SZSE total turnover (billion CNY) from Tencent quotes."""
+    total = 0.0
+    seen_day: str | None = None
+    for code in TURNOVER_CODES:
+        fields = quotes[code]
+        raw_day = str(fields[30])[:8] if len(fields) > 30 else ""
+        if expected_day is not None:
+            if raw_day != expected_day.replace("-", ""):
+                raise ValueError(f"{code} quote is for {raw_day}, expected {expected_day}")
+            seen_day = expected_day
+        else:
+            qday = _tencent_iso_date(fields)
+            if qday is None:
+                raise ValueError(f"{code} quote has invalid date: {raw_day or 'empty'}")
+            if seen_day is not None and qday != seen_day:
+                raise ValueError(f"{code} quote date {qday} does not match {seen_day}")
+            seen_day = qday
+        total += float(fields[37]) * 1e4  # 成交额 in 万元
+    return seen_day or "", round(total / 1e9, 1)
+
+
+def parse_tencent_indices(
+    quotes: Mapping[str, Sequence[str]],
+) -> tuple[str | None, str | None, list[dict[str, object]]]:
+    """Parse the six headline A-share indices from Tencent quotes.
+
+    Returns ``(latest_iso_date, latest_hhmm, index_rows)``.
+    """
+    parsed: list[tuple[str, str | None, dict[str, object]]] = []
+    for code, symbol, name in INDICES:
+        fields = quotes.get(code)
+        if not fields or len(fields) <= 30:
+            continue
+        qday = _tencent_iso_date(fields)
+        price = _float(fields[3])
+        prev = _float(fields[4])
+        if qday is None or not price or price <= 0 or not prev or prev <= 0:
+            continue
+        stamp = str(fields[30])
+        qtime = (
+            f"{stamp[8:10]}:{stamp[10:12]}"
+            if len(stamp) >= 12 and stamp[8:12].isdigit()
+            else None
+        )
+        parsed.append(
+            (
+                qday,
+                qtime,
+                {
+                    "symbol": symbol,
+                    "name": name,
+                    "close": round(price, 2),
+                    "change_pct": round(price / prev - 1, 6),
+                },
+            )
+        )
+    if not parsed:
+        return None, None, []
+    latest_day = max(day for day, _, _ in parsed)
+    on_day = [(hm, row) for day, hm, row in parsed if day == latest_day]
+    times = [hm for hm, _ in on_day if hm is not None]
+    return latest_day, (max(times) if times else None), [row for _, row in on_day]
 
 
 def _turnover_bn(quotes: Mapping[str, Sequence[str]], day: str) -> float:
-    total = 0.0
-    for code in TURNOVER_CODES:
-        fields = quotes[code]
-        if fields[30][:8] != day.replace("-", ""):
-            raise ValueError(f"{code} quote is for {fields[30][:8]}, expected {day}")
-        total += float(fields[37]) * 1e4  # 成交额 in 万元
-    return round(total / 1e9, 1)
+    return parse_tencent_turnover_bn(quotes, expected_day=day)[1]
 
 
 def _record_turnover(path: Path, day: str, turnover_bn: float) -> float | None:
@@ -320,7 +417,7 @@ def _record_turnover(path: Path, day: str, turnover_bn: float) -> float | None:
     return round(turnover_bn / (sum(previous) / 5) - 1, 4)
 
 
-def _regime(csi300: Mapping[str, object] | None, breadth: Mapping[str, object]) -> tuple[str, str]:
+def classify_regime(csi300: Mapping[str, object] | None, breadth: Mapping[str, object]) -> tuple[str, str]:
     parts = []
     if csi300 is not None:
         for window in (20, 50, 250):
@@ -341,6 +438,9 @@ def _regime(csi300: Mapping[str, object] | None, breadth: Mapping[str, object]) 
     if ma20 is False and ma50 is False and dec > adv:  # type: ignore[operator]
         return "risk_off", note
     return "neutral", note
+
+
+_regime = classify_regime
 
 
 def _unlock_alerts(rows: Sequence[Mapping[str, object]], names: Mapping[str, str], first: date, last: date) -> list[dict[str, object]]:

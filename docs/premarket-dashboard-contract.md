@@ -127,9 +127,13 @@ Top-of-page macro, headline index, breadth, and overnight overseas strip.
 | `status` | `string` | `"ok" \| "partial" \| "unavailable"` |
 | `regime` | `string` | `"risk_on" \| "neutral" \| "risk_off" \| "unknown"` |
 | `regime_note` | `string` | Short 1-line summary shown in the Market Pulse header |
+| `live_status` | `string` (optional) | `"intraday_live" \| "today_close_live" \| "post_close"` — in-memory live overlay freshness indicator |
+| `live_date` | `string \| null` (optional) | Live trading date (`YYYY-MM-DD`) when overlaid ahead of today's post-close brief |
+| `live_as_of` | `string \| null` (optional) | Live quote timestamp (`HH:MM`, `Asia/Shanghai`) when `live_status` is `"intraday_live"` or `"today_close_live"` |
 | `indices` | `array` | Recommended 6 headline A-share indices: `000001.SH` 上证指数, `399001.SZ` 深证成指, `399006.SZ` 创业板指, `000300.SH` 沪深300, `000905.SH` 中证500, `000688.SH` 科创50 |
-| `indices[].sparkline` | `list[float]` | Recent closes (typically 20 trading days), rendered as inline SVG |
-| `indices[].above_ma20/50/250` | `bool \| null` | Rendered as 3 MA regime dots (`20`, `50`, `250`) |
+| `indices[].sparkline` | `list[float]` | Recent closes (typically 20 trading days), rendered as inline SVG; live overlay appends today's live price when `live_date > signal_date` |
+| `indices[].above_ma20/50/250` | `bool \| null` | Rendered as 3 MA regime dots (`20`, `50`, `250`); recomputed live when `ma20/50/250` reference levels are present |
+| `indices[].ma20/50/250` | `float \| null` (optional) | Numeric MA reference levels stored by `premarket_data.py` so live overlay can update `above_ma*` accurately |
 | `breadth` | `object \| null` | Market advancers/decliners/unchanged, limit-up/down counts, total turnover, vs-5d ratio, CSI 300 MA breadth percentages |
 | `overseas` | `array` | Overnight global / A50 / FX reference pills |
 | `sector_alerts` | `array` (optional) | Industry-linked overseas peer moves |
@@ -293,10 +297,23 @@ cache rules.
 | `market_pulse.indices`, `breadth` | `information/premarket_data.py`, run by the post-close job (`build_premarket_brief.py --market-data`) | Sina index daily bars; Legu market activity; Tencent SSE/SZSE composite turnover; local hfq signal prices |
 | `pitfall_calendar` (ex-dividend, unlock, suspension, earnings) | same | pipeline raw corporate actions (local); Eastmoney unlock, suspension, report schedule |
 | `market_pulse.overseas` | `information/premarket_live.py`, fetched on demand by the desk | Sina quotes (A50, Nasdaq, S&P 500, Golden Dragon, USD/CNH) |
+| `market_pulse` (live A-share overlay) | same (in-memory only; never mutates `brief.json`) | Single Tencent batch for 6 headline indices + SSE/SZSE turnover, plus Legu full-market breadth (weekdays `09:25–15:05` 60s TTL as `intraday_live`; `15:05+` 600s TTL as `today_close_live` until today's post-close brief lands) |
 | `pitfall_calendar` (`overnight_negative`) | same | Eastmoney per-stock notices, tagged with `event_nlp` |
 | `auction` | same | Tencent quotes; `luk_setup` from the picker screen; 20-day turnover from local execution prices |
 
-`/api/premarket-context` additionally returns a `live` object (`segment`, `refreshing`,
-`overseas_fetched_at`, `notices_fetched_at`, `notices_status`, `notices_checked`, `brief`), and
-`auction` carries `mode` (`auction` | `open_fallback`) and `captured_at`. `?refresh=1` drops the
-overseas and notice caches.
+`/api/premarket-context` additionally returns `notices_pending` (`bool`) and a `live` object
+(`segment`, `refreshing`, `overseas_fetched_at`, `notices_fetched_at`, `notices_status`,
+`notices_checked`, `notices_pending`, `brief`), and `auction` carries `mode` (`auction` |
+`open_fallback`) and `captured_at`.
+
+### Fast / Slow Channel Query Parameters
+
+- `GET /api/premarket-context` (default, no `phase`): backwards-compatible combined payload.
+- `GET /api/premarket-context?phase=fast`: runs only fast parallel fetches (live A-share 6 indices
+  + turnover + Legu breadth + overseas + auction check) and skips the slow up-to-60-stock overnight
+  notice scan, returning `notices_pending: true` when notices still need to be scanned in phase 2.
+- `GET /api/premarket-context?phase=notices`: runs the overnight notice scan and returns
+  `{status, signal_date, pitfall_calendar, notices_updated_at, notices_pending: false, live}`.
+- `?refresh=1` bypasses live TTL caches (on `?phase=fast&refresh=1`, clears live pulse, overseas,
+  and notices so phase 2 fetches fresh notices too). In `--demo` mode and static GitHub Pages
+  exports, all `phase` values stay 100% offline with `notices_pending: false`.
