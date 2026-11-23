@@ -402,3 +402,117 @@ def test_premarket_context_shows_only_the_latest_cycles_brief_plus_live_data(tmp
     assert loaded["auction"]["mode"] == "auction"
     assert loaded["live"]["notices_checked"] == 1
     assert live.inputs["notice_symbols"] == ["600001.SH"]
+
+
+def test_premarket_context_fast_and_notices_phases_decouple_and_keep_brief_readonly(tmp_path: Path) -> None:
+    from datetime import datetime
+    from fintech_quant.information.premarket_live import SHANGHAI, PremarketLive
+    from scripts.serve_trading_desk import DeskState, build_parser
+
+    cycles = _write_cycles(tmp_path)
+    pm_root = tmp_path / "premarket"
+    args = build_parser().parse_args(
+        ["--cycle-root", str(cycles), "--premarket-root", str(pm_root), "--state", str(tmp_path / "none.json")]
+    )
+    state = DeskState(args)
+    as_of = str(state.snapshot["as_of"])  # 2026-07-16 (Thursday)
+    brief_path = pm_root / as_of / "brief.json"
+    brief_path.parent.mkdir(parents=True)
+    _write_json(brief_path, {
+        "signal_date": as_of,
+        "capital": 100_000.0,
+        "policy": {"commission_rate": 0.0003, "minimum_commission": 5.0},
+        "targets": [{"symbol": "600001.SH", "name": "甲", "category": "target", "target_weight": 0.08}],
+        "near_miss": [],
+        "market_pulse": {
+            "status": "ok",
+            "regime": "neutral",
+            "indices": [
+                {
+                    "symbol": "000300.SH", "name": "沪深300", "close": 4000.0, "change_pct": 0.001,
+                    "sparkline": [3990.0, 4000.0],
+                    "above_ma20": False, "above_ma50": False, "above_ma250": True,
+                    "ma20": 4020.0, "ma50": 4010.0, "ma250": 3800.0,
+                }
+            ],
+            "breadth": {
+                "advancers": 2100, "decliners": 2800, "unchanged": 100,
+                "limit_up_count": 30, "limit_down_count": 10,
+                "turnover_cny_bn": 950.0, "csi300_above_ma20_pct": 0.42,
+            },
+        },
+        "pitfall_calendar": {
+            "status": "ok",
+            "alerts": [
+                {"symbol": "600001.SH", "kind": "ex_dividend", "severity": "medium", "date": "2026-07-17"},
+            ],
+        },
+    })
+    brief_before = brief_path.read_bytes()
+
+    notice_calls: list[str] = []
+
+    def fake_tencent(codes):
+        fields = ["0"] * 50
+        fields[3], fields[4], fields[5] = "4080.0", "4000.0", "4020.0"
+        fields[30], fields[37] = "20260717103005", "50000000"
+        out = {c: list(fields) for c in codes}
+        out["sz399106"] = list(fields)
+        out["sz399106"][37] = "60000000"
+        return out
+
+    def fake_activity():
+        return [
+            {"item": "上涨", "value": 3800.0}, {"item": "下跌", "value": 1100.0},
+            {"item": "平盘", "value": 100.0}, {"item": "涨停", "value": 90.0},
+            {"item": "跌停", "value": 2.0}, {"item": "统计日期", "value": "2026-07-17 10:30:00"},
+        ]
+
+    def fake_notices(code, begin, end):
+        notice_calls.append(code)
+        return [{"公告日期": as_of, "公告标题": "关于控股股东减持股份的预披露公告"}]
+
+    state.premarket_live = PremarketLive(
+        pm_root,
+        {
+            "sina": lambda codes: {"gb_$ixic": ["纳斯达克", "22000.0", "0.8", "2026-07-17 05:00:00"]},
+            "tencent": fake_tencent,
+            "activity": fake_activity,
+            "notices": fake_notices,
+        },
+        clock=lambda: datetime(2026, 7, 17, 10, 30, tzinfo=SHANGHAI),
+    )
+
+    # Phase 1: fast skips notice scan and overlays live A-share market pulse
+    fast = state.premarket_context(phase="fast")
+    assert notice_calls == []
+    assert fast["notices_pending"] is True
+    assert fast["market_pulse"]["live_status"] == "intraday_live"
+    assert fast["market_pulse"]["live_as_of"] == "10:30"
+    assert fast["market_pulse"]["live_date"] == "2026-07-17"
+    assert fast["market_pulse"]["regime"] == "risk_on"  # flipped from neutral on live breakout + breadth
+    assert fast["market_pulse"]["breadth"]["turnover_cny_bn"] == 1100.0
+    assert fast["market_pulse"]["breadth"]["csi300_above_ma20_pct"] == 0.42
+    assert [a["kind"] for a in fast["pitfall_calendar"]["alerts"]] == ["ex_dividend"]
+    assert fast["market_pulse"]["overseas"][0]["symbol"] == "NDX"
+
+    # Phase 2: notices runs slow scan and returns merged pitfall_calendar
+    slow = state.premarket_context(phase="notices")
+    assert notice_calls == ["600001"]
+    assert slow["notices_pending"] is False
+    assert slow["notices_updated_at"] is not None
+    assert [a["kind"] for a in slow["pitfall_calendar"]["alerts"]] == ["ex_dividend", "overnight_negative"]
+
+    # Subsequent fast call sees cached notices and reports notices_pending=False
+    fast2 = state.premarket_context(phase="fast")
+    assert fast2["notices_pending"] is False
+    assert [a["kind"] for a in fast2["pitfall_calendar"]["alerts"]] == ["ex_dividend", "overnight_negative"]
+
+    # Default (no phase) remains 100% backwards-compatible full payload
+    full = state.premarket_context(wait=True)
+    assert full["status"] == "ok"
+    assert full["market_pulse"]["live_status"] == "intraday_live"
+    assert [a["kind"] for a in full["pitfall_calendar"]["alerts"]] == ["ex_dividend", "overnight_negative"]
+
+    # Strict read-only invariant: brief.json on disk is untouched
+    assert brief_path.read_bytes() == brief_before

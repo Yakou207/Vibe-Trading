@@ -20,7 +20,10 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from fintech_quant.information.premarket_live import PremarketLive  # noqa: E402
+from fintech_quant.information.premarket_live import (  # noqa: E402
+    PremarketLive,
+    merge_live_market_pulse,
+)
 from fintech_quant.information.stock_intel import prune_daily_cache  # noqa: E402
 from fintech_quant.reports.demo_fixtures import (  # noqa: E402
     DemoPaths,
@@ -179,41 +182,80 @@ class DeskState:
         path = self.args.scoring_v2
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
 
-    def premarket_context(self, *, refresh: bool = False, wait: bool = False) -> dict[str, object]:
+    def premarket_context(
+        self, *, refresh: bool = False, wait: bool = False, phase: str | None = None
+    ) -> dict[str, object]:
         """Pre-market pulse, pitfall radar and 09:25 auction for `/picks`.
 
         The pulse and the calendar come from the brief the post-close job built for the latest
-        cycle; an older brief is never shown as today's. Overseas quotes, overnight notices and
-        the auction are fetched on demand (see ``premarket_live``)."""
+        cycle; an older brief is never shown as today's. Live A-share market temperature,
+        overseas quotes, overnight notices and the auction are fetched on demand (see
+        ``premarket_live``). ``phase="fast"`` skips the slow notice scan so cards paint
+        immediately; ``phase="notices"`` runs the overnight notice scan; ``phase=None`` returns
+        the backwards-compatible combined payload."""
         if self.demo and self.demo_paths is not None:
             if self._demo_premarket_cache is None:
                 self._demo_premarket_cache = demo_premarket_context(self.demo_paths, self.picker())
+            if phase == "notices":
+                return {
+                    "status": "ok",
+                    "signal_date": self._demo_premarket_cache.get("signal_date"),
+                    "pitfall_calendar": self._demo_premarket_cache.get("pitfall_calendar")
+                    or {"status": "ok", "alerts": []},
+                    "notices_updated_at": None,
+                    "notices_pending": False,
+                }
             return self._demo_premarket_cache
 
         with self.lock:
             signal_date = self.snapshot.get("as_of")
         brief = self._brief(str(signal_date)) if signal_date else None
         inputs = self._premarket_inputs(str(signal_date or ""), brief)
-        live = self.premarket_live.snapshot(inputs, refresh=refresh, wait=wait)
+        if phase is None:
+            live = self.premarket_live.snapshot(inputs, refresh=refresh, wait=wait)
+        else:
+            live = self.premarket_live.snapshot(inputs, refresh=refresh, wait=wait, phase=phase)
         watched = set(inputs["auction_symbols"])  # type: ignore[arg-type]
 
-        market_pulse = dict((brief or {}).get("market_pulse") or {"status": "unavailable"})
-        overseas = live["overseas"] or {}
+        calendar = dict((brief or {}).get("pitfall_calendar") or {"status": "not_checked", "alerts": []})
+        alerts = [a for a in calendar.get("alerts", []) if a.get("symbol") in watched]
+        notices = live.get("notices") or {}
+        if notices.get("signal_date") in (None, signal_date):
+            alerts += notices.get("alerts", [])
+            if calendar.get("status") == "not_checked" and notices.get("status") not in (None, "not_checked"):
+                calendar["status"] = "partial"
+        calendar["alerts"] = alerts
+
+        if phase == "notices":
+            return {
+                "status": "ok" if calendar.get("status") != "not_checked" else "unavailable",
+                "signal_date": signal_date if brief else None,
+                "pitfall_calendar": calendar,
+                "notices_updated_at": notices.get("fetched_at"),
+                "notices_pending": False,
+                "live": {
+                    "segment": live["segment"],
+                    "refreshing": bool(live.get("refreshing", False)),
+                    "brief": brief is not None,
+                    "notices_fetched_at": notices.get("fetched_at"),
+                    "notices_status": notices.get("status"),
+                    "notices_checked": notices.get("checked"),
+                },
+            }
+
+        market_pulse = merge_live_market_pulse(
+            (brief or {}).get("market_pulse"),
+            live.get("market_pulse"),
+            signal_date=str(signal_date or "") or None,
+        )
+        overseas = live.get("overseas") or {}
         if overseas.get("items"):
             market_pulse["overseas"] = overseas["items"]
             if market_pulse.get("status") == "unavailable":
                 market_pulse["status"] = "partial"
 
-        calendar = dict((brief or {}).get("pitfall_calendar") or {"status": "not_checked", "alerts": []})
-        alerts = [a for a in calendar.get("alerts", []) if a.get("symbol") in watched]
-        notices = live["notices"] or {}
-        alerts += notices.get("alerts", [])
-        if calendar.get("status") == "not_checked" and notices.get("status") not in (None, "not_checked"):
-            calendar["status"] = "partial"
-        calendar["alerts"] = alerts
-
         auction = None
-        raw = live["auction"]
+        raw = live.get("auction")
         if raw and raw.get("signal_date") == signal_date:
             auction = {
                 key: raw.get(key)
@@ -226,20 +268,23 @@ class DeskState:
             or calendar.get("status") != "not_checked"
             or auction is not None
         )
+        notices_pending = bool(live.get("notices_pending", False))
         return {
             "status": "ok" if has_data else "unavailable",
             "signal_date": signal_date if brief else None,
             "market_pulse": market_pulse,
             "pitfall_calendar": calendar,
             "auction": auction,
+            "notices_pending": notices_pending,
             "live": {
                 "segment": live["segment"],
-                "refreshing": live["refreshing"],
+                "refreshing": bool(live.get("refreshing", False)),
                 "brief": brief is not None,
                 "overseas_fetched_at": overseas.get("fetched_at"),
                 "notices_fetched_at": notices.get("fetched_at"),
                 "notices_status": notices.get("status"),
                 "notices_checked": notices.get("checked"),
+                "notices_pending": notices_pending,
             },
         }
 
@@ -358,8 +403,11 @@ def make_handler(state: DeskState) -> type[BaseHTTPRequestHandler]:
                 )
                 self._send(body.encode("utf-8"), "text/html; charset=utf-8")
             elif path == "/api/premarket-context":
-                refresh = parse_qs(urlsplit(self.path).query).get("refresh") == ["1"]
-                self._json(state.premarket_context(refresh=refresh))
+                qs = parse_qs(urlsplit(self.path).query)
+                refresh = qs.get("refresh") == ["1"]
+                raw_phase = (qs.get("phase") or [""])[0].strip().lower()
+                phase = raw_phase if raw_phase in ("fast", "notices") else None
+                self._json(state.premarket_context(refresh=refresh, phase=phase))
             elif path == "/api/universe":
                 self._json(universe_payload(state.picker(), state.live))
             elif path == "/api/picks":

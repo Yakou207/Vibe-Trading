@@ -183,6 +183,16 @@ def test_serve_trading_desk_demo_mode_serves_all_endpoints_offline() -> None:
         assert len(pm_ctx["market_pulse"]["indices"]) == 6
         assert pm_ctx["pitfall_calendar"]["status"] == "ok"
         assert "999001.SH" in pm_ctx["auction"]["by_symbol"]
+        assert pm_ctx["notices_pending"] is False
+
+        pm_fast = json.loads(_get(f"http://127.0.0.1:{port}/api/premarket-context?phase=fast"))
+        assert pm_fast["status"] == "ok"
+        assert pm_fast["notices_pending"] is False
+        assert len(pm_fast["market_pulse"]["indices"]) == 6
+
+        pm_notices = json.loads(_get(f"http://127.0.0.1:{port}/api/premarket-context?phase=notices"))
+        assert pm_notices["notices_pending"] is False
+        assert pm_notices["pitfall_calendar"]["status"] == "ok"
 
         stock = json.loads(_get(f"http://127.0.0.1:{port}/api/stock?q=999001"))
         assert stock["verdict"]["level"] == "entry"
