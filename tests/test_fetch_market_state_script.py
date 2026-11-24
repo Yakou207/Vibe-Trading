@@ -126,6 +126,44 @@ class FetchMarketStateScriptTest(unittest.TestCase):
         self.assertEqual(len(outputs[0]), 66)
         self.assertEqual(outputs[1], outputs[0])
 
+    def test_csindex_fallback_fills_a_session_it_lacks_from_tencent(self) -> None:
+        # 2026-11-24: Eastmoney stalled and the CSIndex history had no 2026-11-23 row, so the
+        # benchmark skipped a session and the audit failed. Tencent fills the missing session.
+        from scripts.fetch_market_state import _bars_from_akshare, _build_market_state_rows
+
+        history = _history()
+        start, end = date(2019, 12, 1), date(2020, 2, 4)
+        complete = _FakeHistoryAkShare(history, fail_eastmoney=False)
+        gapped = _FakeHistoryAkShare(history, fail_eastmoney=True, csindex_missing=("2020-01-15",))
+        outputs = []
+        for fake_akshare in (complete, gapped):
+            with patch("scripts.fetch_market_state.importlib.import_module", return_value=fake_akshare):
+                bars = _bars_from_akshare("sh000300", start, end)
+            outputs.append(_build_market_state_rows(bars, "sh000300", start, end, 250))
+
+        self.assertIn("2020-01-15", [row["trade_date"] for row in outputs[1]])
+        self.assertEqual(outputs[1], outputs[0])
+
+    def test_csindex_fallback_fails_when_tencent_disagrees_or_is_down(self) -> None:
+        from fintech_quant.data.errors import ProviderFetchError
+        from scripts.fetch_market_state import _bars_from_akshare
+
+        history = _history()
+        wrong_close = [dict(row, 收盘=row["收盘"] + 1.0) if row["日期"] == "2020-01-15" else row for row in history]
+        cases = {
+            r"close_mismatch=\['2020-01-15'\]": _FakeHistoryAkShare(history, fail_eastmoney=True, tencent_rows=wrong_close),
+            r"only_csindex=\['2020-01-15'\]": _FakeHistoryAkShare(
+                history, fail_eastmoney=True, tencent_rows=[row for row in history if row["日期"] != "2020-01-15"]
+            ),
+            "Tencent cross-check": _FakeHistoryAkShare(history, fail_eastmoney=True, fail_tencent=True),
+        }
+        for message, fake_akshare in cases.items():
+            with self.subTest(message), patch(
+                "scripts.fetch_market_state.importlib.import_module", return_value=fake_akshare
+            ):
+                with self.assertRaisesRegex(ProviderFetchError, message):
+                    _bars_from_akshare("sh000300", date(2019, 12, 1), date(2020, 2, 4))
+
     def test_fetch_market_state_reads_own_index_close_csv_output(self) -> None:
         from scripts.fetch_market_state import _bars_from_csv
 
@@ -141,6 +179,13 @@ class FetchMarketStateScriptTest(unittest.TestCase):
 
         self.assertEqual(bars[0].trade_date.isoformat(), "2026-01-01")
         self.assertEqual(bars[0].close, 100.0)
+
+def _history() -> list[dict[str, object]]:
+    return [
+        {"日期": (date(2019, 1, 1) + timedelta(days=offset)).isoformat(), "收盘": 4000.0 + offset}
+        for offset in range(400)
+    ]
+
 
 class _FakeAkShareIndexModule:
     def __init__(self, *, stall_eastmoney: bool = False) -> None:
@@ -161,13 +206,27 @@ class _FakeAkShareIndexModule:
             raise AssertionError(kwargs)
         return _FakeFrame([{"日期": "2021-06-16", "收盘": 5080.49}])
 
+    def stock_zh_index_daily_tx(self, **_kwargs: object) -> object:
+        return _FakeFrame([{"date": "2021-06-16", "close": 5080.49}])
+
 
 class _FakeHistoryAkShare:
     """Both providers serve one history; CSIndex honours the requested start date."""
 
-    def __init__(self, rows: list[dict[str, object]], *, fail_eastmoney: bool) -> None:
+    def __init__(
+        self,
+        rows: list[dict[str, object]],
+        *,
+        fail_eastmoney: bool,
+        csindex_missing: tuple[str, ...] = (),
+        tencent_rows: list[dict[str, object]] | None = None,
+        fail_tencent: bool = False,
+    ) -> None:
         self.rows = rows
         self.fail_eastmoney = fail_eastmoney
+        self.csindex_missing = set(csindex_missing)
+        self.tencent_rows = rows if tencent_rows is None else tencent_rows
+        self.fail_tencent = fail_tencent
 
     def stock_zh_index_daily_em(self, **_kwargs: object) -> object:
         if self.fail_eastmoney:
@@ -177,7 +236,30 @@ class _FakeHistoryAkShare:
     def stock_zh_index_hist_csindex(self, **kwargs: object) -> object:
         first = str(kwargs["start_date"])
         first_day = date.fromisoformat(f"{first[:4]}-{first[4:6]}-{first[6:]}")
-        return _FakeFrame([row for row in self.rows if date.fromisoformat(str(row["日期"])) >= first_day])
+        return _FakeFrame(
+            [
+                row
+                for row in self.rows
+                if date.fromisoformat(str(row["日期"])) >= first_day and row["日期"] not in self.csindex_missing
+            ]
+        )
+
+    def stock_zh_index_daily_tx(self, **kwargs: object) -> object:
+        if self.fail_tencent:
+            raise RuntimeError("tencent unavailable")
+        first, last = (_compact_date(kwargs["start_date"]), _compact_date(kwargs["end_date"]))
+        return _FakeFrame(
+            [
+                {"date": row["日期"], "close": row["收盘"]}
+                for row in self.tencent_rows
+                if first <= date.fromisoformat(str(row["日期"])) <= last
+            ]
+        )
+
+
+def _compact_date(value: object) -> date:
+    text = str(value)
+    return date.fromisoformat(f"{text[:4]}-{text[4:6]}-{text[6:]}")
 
 
 class _FakeFrame:

@@ -948,6 +948,13 @@ def _require_next_validation_session(
         ]
     if raw_dates != sorted(set(raw_dates)):
         raise ValueError("benchmark trading sessions must be unique and increasing")
+    if parent_date not in raw_dates:
+        # The audit checks every counted date against this benchmark; a gap must stop the run
+        # before the account changes, not after.
+        raise ValueError(
+            "validation session continuity failed before paper execution: "
+            f"benchmark is missing the parent session {parent_date.isoformat()}"
+        )
     pending = [value for value in raw_dates if parent_date < value <= as_of]
     if pending != [as_of]:
         raise ValueError(

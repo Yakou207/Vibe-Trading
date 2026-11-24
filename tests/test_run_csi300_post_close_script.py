@@ -554,13 +554,41 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             account_before = config.account.read_bytes()
             runner = RecordingRunner(
                 config,
-                benchmark_dates=(date(2026, 1, 5), date(2026, 1, 6)),
+                benchmark_dates=(date(2026, 1, 2), date(2026, 1, 5), date(2026, 1, 6)),
             )
 
             with self.assertRaisesRegex(
                 ValueError,
                 "validation session continuity",
             ):
+                run_pipeline(config, runner=runner)
+
+            self.assertFalse(
+                any(
+                    Path(command[0]).name == "run_post_close_daily_cycle.py"
+                    for command, _ in runner.calls
+                )
+            )
+            self.assertEqual(config.state.read_bytes(), state_before)
+            self.assertEqual(config.account.read_bytes(), account_before)
+
+    def test_pipeline_rejects_benchmark_missing_the_parent_session_before_paper_commit(
+        self,
+    ) -> None:
+        # 2026-11-24: the CSIndex fallback had no row for the parent session 2026-11-23. The
+        # check only looked after the parent, so the account moved and the audit then failed.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            _seed_state(config, date(2026, 1, 2))
+            state_before = config.state.read_bytes()
+            account_before = config.account.read_bytes()
+            runner = RecordingRunner(
+                config,
+                benchmark_dates=(date(2025, 12, 31), date(2026, 1, 5)),
+            )
+
+            with self.assertRaisesRegex(ValueError, "missing the parent session 2026-01-02"):
                 run_pipeline(config, runner=runner)
 
             self.assertFalse(
@@ -581,7 +609,7 @@ class RunCsi300PostCloseScriptTest(unittest.TestCase):
             _seed_state(config, date(2026, 1, 2))
             runner = RecordingRunner(
                 config,
-                benchmark_dates=(date(2026, 1, 5),),
+                benchmark_dates=(date(2026, 1, 2), date(2026, 1, 5)),
             )
 
             result = run_pipeline(config, runner=runner)
@@ -634,7 +662,8 @@ class RecordingRunner:
         self.config = config
         self.timeout_on = timeout_on
         self.fail_on = fail_on
-        self.benchmark_dates = benchmark_dates or (config.as_of,)
+        # Every seeded parent is 2026-01-02, and the benchmark must contain the parent session.
+        self.benchmark_dates = benchmark_dates or (date(2026, 1, 2), config.as_of)
         self.calls: list[tuple[list[str], int]] = []
 
     def __call__(self, command: list[str], *, timeout: int) -> None:

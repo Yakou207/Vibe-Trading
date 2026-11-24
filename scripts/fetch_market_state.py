@@ -19,6 +19,7 @@ from fintech_quant.data.errors import MissingProviderDependency, ProviderFetchEr
 
 PROVIDER_TIMEOUT_SECONDS = 120.0
 CSI300_HISTORY_START = "20050101"  # CSI 300 base date is 2004-12-31
+CLOSE_TOLERANCE = 0.015  # both providers publish index closes to two decimals
 
 
 @dataclass(frozen=True)
@@ -85,7 +86,45 @@ def _bars_from_akshare(index_symbol: str, start: date, end: date) -> list[IndexB
         rows = _fallback_index_rows(ak, index_symbol, start, end)
         if rows is None:
             raise ProviderFetchError(f"akshare index daily fetch failed for {index_symbol!r}") from exc
+        bars = sorted((_bar_from_row(row) for row in rows), key=lambda bar: bar.trade_date)
+        return _reconcile_with_tencent(ak, index_symbol, bars, start, end)
     return sorted((_bar_from_row(row) for row in rows), key=lambda bar: bar.trade_date)
+
+
+def _reconcile_with_tencent(
+    ak: object,
+    index_symbol: str,
+    bars: list[IndexBar],
+    start: date,
+    end: date,
+) -> list[IndexBar]:
+    # 2026-11-24: the CSIndex history had no 2026-11-23 row, so the cycle's benchmark skipped a
+    # session and the audit failed. Tencent fills sessions CSIndex lacks; any disagreement fails.
+    try:
+        rows = call_with_deadline(
+            PROVIDER_TIMEOUT_SECONDS,
+            ak.stock_zh_index_daily_tx,
+            symbol=index_symbol,
+            start_date=start.strftime("%Y%m%d"),
+            end_date=end.strftime("%Y%m%d"),
+        ).to_dict(orient="records")
+    except Exception as exc:
+        raise ProviderFetchError(f"Tencent cross-check of the CSIndex fallback failed for {index_symbol!r}") from exc
+    tencent = {bar.trade_date: bar.close for bar in map(_bar_from_row, rows) if start <= bar.trade_date <= end}
+    csindex = {bar.trade_date: bar.close for bar in bars if start <= bar.trade_date <= end}
+    only_csindex = sorted(set(csindex) - set(tencent))
+    mismatched = sorted(day for day in set(csindex) & set(tencent) if abs(csindex[day] - tencent[day]) > CLOSE_TOLERANCE)
+    if only_csindex or mismatched:
+        raise ProviderFetchError(
+            f"CSIndex and Tencent disagree for {index_symbol!r}: "
+            f"only_csindex={[day.isoformat() for day in only_csindex[:5]]} "
+            f"close_mismatch={[day.isoformat() for day in mismatched[:5]]}"
+        )
+    filled = sorted(set(tencent) - set(csindex))
+    print(f"index_fallback=csindex tencent_filled={[day.isoformat() for day in filled]}")
+    merged = {bar.trade_date: bar for bar in bars}
+    merged.update({day: IndexBar(trade_date=day, close=tencent[day]) for day in filled})
+    return sorted(merged.values(), key=lambda bar: bar.trade_date)
 
 
 def _fallback_index_rows(ak: object, index_symbol: str, start: date, end: date) -> list[dict[str, object]] | None:

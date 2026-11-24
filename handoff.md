@@ -257,6 +257,27 @@ validation. The auditor has no timing check and accepted all three. The final re
 whether 2026-11-18..11-20 count toward the 40-session window. Excluding them leaves a gap, so the
 epoch would then need supersession.
 
+## 2026-11-24 benchmark gap: audit FAILED, account unaffected
+
+- Eastmoney's index call timed out again, so `fetch_market_state.py` used the CSIndex fallback.
+  At 18:27 CSIndex had no 2026-11-23 row: its history went 11-20, 11-24. Tencent had 11-23
+  (close 3958.29, the same as Eastmoney's in the 11-23 cycle). CSIndex published the row later
+  that evening.
+- The pre-execution check only looked at sessions after the parent (11-23), so the cycle went
+  ahead. The account moved to 11-24 (NAV 96,017.03, all cash, 0 targets, 0 trades). Then the
+  audit found `extra=['2026-11-23']` and returned `FAILED` (valid_sessions 27). The cycle manifest
+  is `c18a66deb5c08894e17ef2ce99f965145cd3d95ad5d41b9db78875af617bf75a`.
+- Trading was not affected: the paper report does not read the benchmark, and the index is below
+  its MA250 with or without 11-23. The 11-24 MA250 in that cycle is 4602.66 instead of 4599.91
+  because one old day stood in for 11-23. The cycle is immutable and stays as written.
+- The auditor reads only the latest cycle's benchmark, so a complete benchmark in the next cycle
+  returns the window to `COLLECTING`. No threshold, weight, risk, cost or factor value changed.
+- Fixes: when Eastmoney fails, the CSIndex history is now cross-checked against Tencent over the
+  output window. Sessions CSIndex lacks are filled from Tencent. A session only CSIndex has, a
+  close that differs by more than 0.015, or a Tencent failure fails the stage. The pre-execution
+  check also requires the parent session to be in the benchmark, so a gap like this one stops the
+  run before the account changes.
+
 ## Scheduled automation (launchd)
 
 Added 2026-10-17. Missed post-close runs were the operational cause of the failed audit: as of
